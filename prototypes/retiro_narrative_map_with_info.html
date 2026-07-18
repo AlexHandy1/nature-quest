@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>PROTOTYPE — species + narrative spike</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  body{margin:0;font-family:sans-serif}
+  #map{height:100vh}
+  #banner{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1000;
+    background:#ffd700;padding:3px 12px;border-radius:4px;font-size:11px;
+    font-weight:bold;white-space:nowrap}
+  #narrative{position:absolute;top:0;right:0;width:340px;height:100vh;z-index:1000;
+    background:white;box-shadow:-2px 0 10px rgba(0,0,0,.2);overflow-y:auto;
+    padding:20px;box-sizing:border-box}
+  #narrative h3{margin-top:0;font-size:15px}
+  #narrative p{font-size:13px;line-height:1.6;color:#333}
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — species info + narrative guide (Claude Agent SDK)</div>
+<div id="map"></div>
+<div id="narrative">
+  <h3>Your Retiro Walk — A Nature Quest</h3>
+  <p>Ah... Retiro Park. Madrid's great green lung, its gravel paths still cool with morning shade, awaits us. And here — barely past the gate — our first encounter. A flash of black and white against the Spanish sky. The Black-billed Magpie. Watch closely, for what appears at first to be simple monochrome plumage reveals, in the right light, a shimmer of iridescent blue and blue-green along the wing and that extraordinary tail. A member of the crow family, and like all corvids, formidably intelligent — adaptable enough to thrive here, thousands of miles from its native range across the western reaches of North America. Indeed, it was only in the year 2000 that science recognised this bird as a species entirely its own, distinct from its Eurasian cousin. A humble beginning to our walk — and already, a lesson in how much remains to be discovered.</p><p>We move on, deeper into the dappled woodland, and now we listen — for our next subject reveals itself first through sound. A curious, sibilant hiss echoes among the trees. The Iberian Green Woodpecker, found nowhere else on Earth but this very peninsula. Look for the telltale dusky ring around its eye — softer, less severe than its European relative's black mask — the subtle mark of a species that only recently earned its own name.</p><p>The path bends now toward water, and the character of our journey shifts entirely. Here, upon the park's great lake, we find the Egyptian Goose, a traveller from Africa, its warm brown eye-patches and rust-toned chest catching the sun. Beside it — or perhaps at a distance, for they keep their own company — drifts the Black Swan, midnight-dark and utterly serene, its blood-red bill cutting through still water. A native of far-off Australia, nomadic by nature, bonded for life to a single mate.</p><p>And so we complete our circuit where the water gathers quietly at its edge — the Common Mallard, humble, sociable, utterly at home. Our journey through Retiro's hidden wilderness draws, gently, to its close.</p>
+</div>
+<script>
+var map = L.map('map').setView([40.41448570055702,-3.683170076146829], 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OpenStreetMap contributors'
+}).addTo(map);
+L.polyline([[40.414847925925926, -3.684565037037037], [40.413754698412696, -3.6842265714285714], [40.414394959183674, -3.682108], [40.41386437209302, -3.6816920930232557], [40.41556654716982, -3.6832586792452826]],{color:'#333',weight:2.5,opacity:0.55,dashArray:'8,7'}).addTo(map);
+
+L.marker([40.414847925925926,-3.684565037037037], {
+  icon: L.divIcon({
+    html: '<div style="background:#e41a1c;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid white;">1</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  })
+}).bindPopup(
+  '<div style="max-width:220px">' +
+  '<b>1. Black-billed Magpie</b><br><i style="color:#888;font-size:11px">Pica pica</i>' +
+  '<img src=\'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/BlackBilledMagpie.jpg/330px-BlackBilledMagpie.jpg\' style=\'width:100%;border-radius:4px;margin:4px 0\'/>' +
+  '<p style="font-size:12px;margin:6px 0 0">The Black-billed Magpie is a medium-sized corvid found across the western half of North America. It has bold black-and-white plumage, with iridescent blue and blue-green highlights visible on its wings and long tail. Members of the crow family, magpies are known for their intelligence and adaptability. This species was once classified as a subspecies of the Eurasian magpie but has been recognized as distinct since 2000.</p>' +
+  '</div>'
+).addTo(map);
+
+L.marker([40.413754698412696,-3.6842265714285714], {
+  icon: L.divIcon({
+    html: '<div style="background:#377eb8;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid white;">2</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  })
+}).bindPopup(
+  '<div style="max-width:220px">' +
+  '<b>2. Iberian Green Woodpecker</b><br><i style="color:#888;font-size:11px">Picus sharpei</i>' +
+  '<img src=\'https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Picus_viridis_sharpei_033.jpg/330px-Picus_viridis_sharpei_033.jpg\' style=\'width:100%;border-radius:4px;margin:4px 0\'/>' +
+  '<p style="font-size:12px;margin:6px 0 0">The Iberian Green Woodpecker (Picus sharpei) is a medium-sized woodpecker found only on the Iberian Peninsula. It closely resembles the European green woodpecker but has less black on its head and a dusky, rather than black, ring around each eye. Its call has a distinctive sibilant, hissing quality. It was previously classified as a subspecies of the European green woodpecker before being recognized as a separate species.</p>' +
+  '</div>'
+).addTo(map);
+
+L.marker([40.414394959183674,-3.682108], {
+  icon: L.divIcon({
+    html: '<div style="background:#4daf4a;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid white;">3</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  })
+}).bindPopup(
+  '<div style="max-width:220px">' +
+  '<b>3. Egyptian Goose</b><br><i style="color:#888;font-size:11px">Alopochen aegyptiaca</i>' +
+  '<img src=\'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg/330px-Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg\' style=\'width:100%;border-radius:4px;margin:4px 0\'/>' +
+  '<p style="font-size:12px;margin:6px 0 0">The Egyptian Goose is a large waterbird native to Africa, related to ducks, geese, and swans. It has brown patches around its eyes, a mostly pale body, and reddish-brown patches on the chest and wings. Popular as an ornamental bird, it has also become established in parts of Europe and the United States outside its native range.</p>' +
+  '</div>'
+).addTo(map);
+
+L.marker([40.41386437209302,-3.6816920930232557], {
+  icon: L.divIcon({
+    html: '<div style="background:#ff7f00;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid white;">4</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  })
+}).bindPopup(
+  '<div style="max-width:220px">' +
+  '<b>4. Black Swan</b><br><i style="color:#888;font-size:11px">Cygnus atratus</i>' +
+  '<img src=\'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg/330px-Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg\' style=\'width:100%;border-radius:4px;margin:4px 0\'/>' +
+  '<p style="font-size:12px;margin:6px 0 0">The black swan is a large waterbird native to Australia, recognizable by its black plumage and red bill. It breeds mainly in the southeast and southwest of the continent and is nomadic, moving in response to changing climatic conditions. Black swans are monogamous, with both parents sharing responsibility for incubating eggs and raising their cygnets.</p>' +
+  '</div>'
+).addTo(map);
+
+L.marker([40.41556654716982,-3.6832586792452826], {
+  icon: L.divIcon({
+    html: '<div style="background:#984ea3;color:white;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,.4);border:2px solid white;">5</div>',
+    iconSize:[32,32], iconAnchor:[16,16], className:''
+  })
+}).bindPopup(
+  '<div style="max-width:220px">' +
+  '<b>5. Common Mallard</b><br><i style="color:#888;font-size:11px">Anas platyrhynchos</i>' +
+  '<img src=\'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Anas_platyrhynchos_male_female_quadrat.jpg/330px-Anas_platyrhynchos_male_female_quadrat.jpg\' style=\'width:100%;border-radius:4px;margin:4px 0\'/>' +
+  '<p style="font-size:12px;margin:6px 0 0">The Common Mallard is a dabbling duck found in wetlands throughout much of the world, including the Americas, Eurasia, and North Africa. Males typically have a glossy green head, a yellow bill, and a white neck ring, while females are mottled brown. They feed on water plants and small aquatic animals and are social birds, often seen gathering in groups or flocks on ponds, lakes, and rivers.</p>' +
+  '</div>'
+).addTo(map);
+
+</script>
+</body>
+</html>
