@@ -4,7 +4,7 @@ PROTOTYPE — retiro_spike.py
 Question: Does the GBIF → species selection → OSM route → map pipeline hold up for Retiro Park?
 Throwaway. Do not promote to production.
 
-Run: source venv/bin/activate && python prototypes/retiro_spike.py
+Run: source venv/bin/activate && python prototypes/scripts/retiro_spike.py
 """
 
 import requests
@@ -293,7 +293,7 @@ L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{
 </body>
 </html>"""
 
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'retiro_map.html')
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'artifacts', 'retiro_map.html')
     with open(out, 'w') as f:
         f.write(html)
     print(f"  Written: {out}")

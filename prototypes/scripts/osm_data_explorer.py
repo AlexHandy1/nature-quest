@@ -4,7 +4,7 @@ PROTOTYPE — osm_data_explorer.py
 Question: What does OSM actually return for the Retiro Park bbox beyond footways?
 Throwaway. Do not promote to production.
 
-Run: source venv/bin/activate && python prototypes/osm_data_explorer.py 2>&1 | tee prototypes/logs/osm_explorer_$(date +%Y%m%d_%H%M%S).log
+Run: source venv/bin/activate && python prototypes/scripts/osm_data_explorer.py 2>&1 | tee prototypes/logs/osm_explorer_$(date +%Y%m%d_%H%M%S).log
 """
 
 import requests
@@ -268,7 +268,7 @@ def show_raw_examples(elements):
         print(f"  {DIM}No relations returned in this bbox{RESET}")
 
 
-def export_sample_json(elements, out_path='prototypes/osm_sample.json'):
+def export_sample_json(elements, out_path='prototypes/artifacts/osm_sample.json'):
     header(f"Exporting annotated sample JSON → {out_path}")
 
     tagged = [e for e in elements if e.get('tags')]
@@ -304,7 +304,7 @@ def main():
     show_natural_features(elements)
     show_leisure_features(elements)
     safe_label = label.replace(' ', '_').replace('/', '-')
-    export_sample_json(elements, out_path=f'prototypes/osm_sample_{safe_label}.json')
+    export_sample_json(elements, out_path=f'prototypes/artifacts/osm_sample_{safe_label}.json')
 
     header("SUMMARY")
     print(f"  Nodes:     {len(nodes):>6,}")

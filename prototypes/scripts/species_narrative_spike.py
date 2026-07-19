@@ -18,7 +18,7 @@ narrative step is a second isolated agent call with no tools.
 
 Requires ANTHROPIC_API_KEY in the environment, and the `claude` CLI on PATH.
 
-Run: source venv/bin/activate && python prototypes/species_narrative_spike.py 2>&1 | tee prototypes/logs/narrative_$(date +%Y%m%d_%H%M%S).log
+Run: source venv/bin/activate && python prototypes/scripts/species_narrative_spike.py 2>&1 | tee prototypes/logs/narrative_$(date +%Y%m%d_%H%M%S).log
 """
 
 import asyncio
@@ -434,7 +434,7 @@ L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{
 </body>
 </html>"""
 
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'retiro_narrative_map_with_info.html')
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'artifacts', 'retiro_narrative_map_with_info.html')
     with open(out, 'w') as f:
         f.write(html)
     print(f"  Written: {out}")
