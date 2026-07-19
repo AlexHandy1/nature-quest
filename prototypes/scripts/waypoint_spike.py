@@ -4,7 +4,7 @@ PROTOTYPE — waypoint_spike.py
 Question: Does a "5 species waypoints + dashed connector" approach feel more useful than a single OSM path?
 Throwaway. Do not promote to production.
 
-Run: source venv/bin/activate && python prototypes/waypoint_spike.py 2>&1 | tee prototypes/logs/waypoint_$(date +%Y%m%d_%H%M%S).log
+Run: source venv/bin/activate && python prototypes/scripts/waypoint_spike.py 2>&1 | tee prototypes/logs/waypoint_$(date +%Y%m%d_%H%M%S).log
 """
 
 import requests
@@ -215,7 +215,7 @@ L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',{{
 </body>
 </html>"""
 
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'retiro_waypoint_map.html')
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'artifacts', 'retiro_waypoint_map.html')
     with open(out, 'w') as f:
         f.write(html)
     print(f"  Written: {out}")

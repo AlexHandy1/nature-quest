@@ -4,7 +4,7 @@ PROTOTYPE — overpass_spike.py
 Isolated test: can we get OSM footpaths for Retiro Park from the OSM REST API?
 Throwaway.
 
-Run: source venv/bin/activate && python prototypes/overpass_spike.py
+Run: source venv/bin/activate && python prototypes/scripts/overpass_spike.py
 """
 
 import requests
