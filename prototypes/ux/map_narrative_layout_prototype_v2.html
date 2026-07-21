@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — map_narrative_layout_prototype_v2.html
+Throwaway UI prototype. Do not promote to production as-is.
+Forked from map_narrative_layout_prototype.html (kept as-is for reference/history).
+
+Question: what should the map + narrative layout look like for a game-like
+adventure walk (Pokemon Go / Zelda / Minecraft feel)?
+
+v1 swapped stock OSM tiles for OpenTopoMap + CSS filters — rejected by the user
+as still reading as "a real map with a filter," not designed game cartography.
+v2 replaces the tile provider entirely with a VECTOR RE-SKIN: real Retiro Park
+geometry (park boundary, lakes, footpaths), captured once via the raw OSM REST
+API (api.openstreetmap.org/api/0.6/map.json — the same endpoint
+overpass_spike.py already uses; Overpass itself was tried and rejected again
+this session, a public instance 504'd), rendered as styled vector shapes with
+a genuinely different treatment per variant — not a filter, a different
+rendering approach. No live OSM/Overpass calls happen in this file at all; see
+PARK_GEO below and WORK_SUMMARY_190726.md Session 2 for the capture method.
+This does NOT yet solve live/arbitrary-location map generation (flagged by the
+user as a real open question for later) — this round is Retiro-only, fixed data.
+
+  A — "Quest Log" (Zelda): slide-out parchment journal, accordion narrative,
+      modal quest-entry per species with a "mark discovered" action. Map:
+      flat parchment fill, ink-dashed trails, under a wood/glass frame.
+  B — "PokéStop" (Pokemon Go): full-bleed map, top XP/discovery bar, pulsing
+      circular markers, bottom-sheet species card, floating Story overlay.
+      Map: candy-flat shapes with a drop-shadow "diorama" pop.
+  C — "Inventory" (Minecraft): split map + blocky inventory-slot sidebar that
+      fills in per species, pixel-font achievement log underneath. Map: real
+      geometry grid-snapped onto a coarse lattice for genuine blockiness.
+
+Run: open this file directly in a browser, e.g.
+  open prototypes/ux/map_narrative_layout_prototype_v2.html
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — map + narrative layout v2 (vector re-skin)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  .map-fill { position: absolute; inset: 0; }
+  .map-split { position: absolute; top: 0; bottom: 0; left: 0; }
+
+  /* Shared grain texture overlay — used only where a variant wants it. */
+  .map-noise {
+    position: absolute; inset: 0; pointer-events: none; z-index: 450;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.35"/></svg>');
+  }
+
+  /* ── Prototype switcher — deliberately loud so it never reads as part of the design ── */
+  #proto-switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 5000; display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; padding: 8px 10px; border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4); font-size: 13px; font-family: monospace;
+    border: 2px solid #ffd700;
+  }
+  #proto-switcher button {
+    background: #ffd700; color: #111; border: none; width: 28px; height: 28px;
+    border-radius: 50%; font-weight: bold; cursor: pointer; font-size: 14px;
+  }
+  #proto-switcher button:hover { background: #fff; }
+  #proto-switcher .label { min-width: 170px; text-align: center; }
+
+  /* ═══════════════ VARIANT A — Quest Log (Zelda) ═══════════════ */
+  .qa-root { position: absolute; inset: 0; background: #1b1f18; }
+  .qa-titlebar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: linear-gradient(#3a2f22, #2a2118); color: #e8d9b5; padding: 8px 24px;
+    border: 2px solid #8a7346; border-radius: 6px; font-family: Georgia, serif;
+    font-size: 16px; letter-spacing: 1px; box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  .qa-journal-tab {
+    position: absolute; top: 90px; left: 0; z-index: 1000; background: #4a3a26;
+    color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
+    font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
+    border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+  }
+  .qa-journal {
+    position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
+    background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
+    border-right: 4px solid #4a3a26; box-shadow: 4px 0 24px rgba(0,0,0,.5);
+    transition: left .35s ease; overflow-y: auto; padding: 70px 20px 20px;
+    font-family: Georgia, serif; color: #3a2f1f;
+  }
+  .qa-journal.open { left: 0; }
+  .qa-journal h2 { font-size: 20px; border-bottom: 2px solid #8a7346; padding-bottom: 8px; }
+  .qa-entry { border: 1px solid #b8a06e; border-radius: 6px; margin-bottom: 10px; background: rgba(255,255,255,.35); }
+  .qa-entry summary {
+    padding: 10px 12px; cursor: pointer; font-weight: bold; display: flex;
+    align-items: center; gap: 8px; list-style: none;
+  }
+  .qa-entry summary::-webkit-details-marker { display: none; }
+  .qa-entry .qa-num {
+    width: 22px; height: 22px; border-radius: 50%; background: #4a3a26; color: #f3e6c8;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0;
+  }
+  .qa-entry .qa-check { margin-left: auto; color: #2f6f2f; font-weight: bold; }
+  .qa-entry-body { padding: 0 12px 12px 42px; font-size: 13.5px; line-height: 1.6; }
+  .qa-map-wrap {
+    position: absolute; inset: 14px; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 0 0 6px #2a2018, 0 0 0 10px #8a7346, 0 0 0 12px #3a2a15,
+                inset 0 0 90px rgba(20,12,4,.75), 0 20px 50px rgba(0,0,0,.6);
+  }
+  .qa-map-wrap .leaflet-container { background: #e4d3a4; }
+  .qa-map-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(58,42,21,0) 45%, rgba(30,20,8,.6) 100%);
+    mix-blend-mode: multiply;
+  }
+  .qa-map-grain { mix-blend-mode: overlay; opacity: .5; }
+  .qa-marker-medallion {
+    background: radial-gradient(circle at 35% 30%, #d9c28a, #7a5a2d 70%); color: #2a1f10;
+    border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center;
+    justify-content: center; font-weight: bold; font-size: 15px; font-family: Georgia, serif;
+    border: 2px solid #3a2a15; box-shadow: 0 3px 8px rgba(0,0,0,.5);
+  }
+  .qa-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qa-modal {
+    width: 320px; background: #f3e6c8; border: 4px double #7a5a2d; border-radius: 4px;
+    padding: 18px; font-family: Georgia, serif; color: #3a2f1f; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  }
+  .qa-modal img { width: 100%; border-radius: 4px; border: 2px solid #7a5a2d; margin: 8px 0; }
+  .qa-modal .qa-close {
+    position: absolute; top: 8px; right: 10px; cursor: pointer; font-weight: bold; color: #7a5a2d;
+  }
+  .qa-modal button.qa-discover {
+    margin-top: 10px; width: 100%; padding: 8px; background: #4a3a26; color: #f3e6c8;
+    border: none; border-radius: 4px; cursor: pointer; font-family: Georgia, serif;
+  }
+
+  /* ═══════════════ VARIANT B — PokéStop (Pokemon Go) ═══════════════ */
+  .pg-root { position: absolute; inset: 0; }
+  .pg-topbar {
+    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+    background: #fff; border-radius: 16px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    display: flex; align-items: center; gap: 12px; font-family: -apple-system, sans-serif;
+  }
+  .pg-topbar .pg-title { font-weight: 800; color: #2b6f4f; font-size: 14px; flex-shrink: 0; }
+  .pg-xpbar { flex: 1; height: 12px; background: #e6e6e6; border-radius: 999px; overflow: hidden; }
+  .pg-xpfill { height: 100%; background: linear-gradient(90deg, #37c871, #1f9e57); transition: width .4s ease; }
+  .pg-count { font-size: 13px; font-weight: 700; color: #333; flex-shrink: 0; }
+  .pg-pin-wrap { position: relative; width: 46px; height: 46px; }
+  .pg-pin-ring {
+    position: absolute; inset: 0; border-radius: 50%; background: rgba(55,200,113,.35);
+    animation: pg-pulse 1.8s ease-out infinite;
+  }
+  .pg-pin-ring.pg-done { background: rgba(255,193,7,.25); animation: none; }
+  @keyframes pg-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+  .pg-pin-core {
+    position: absolute; inset: 8px; border-radius: 50%; background: #37c871; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;
+    border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35);
+  }
+  .pg-pin-core.pg-done { background: #ffc107; }
+  .pg-sheet-backdrop { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.25); }
+  .pg-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2001; background: #fff;
+    border-radius: 22px 22px 0 0; padding: 18px 20px 26px; box-shadow: 0 -8px 30px rgba(0,0,0,.3);
+    max-height: 60vh; overflow-y: auto; animation: pg-slideup .25s ease-out;
+    font-family: -apple-system, sans-serif;
+  }
+  @keyframes pg-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .pg-sheet .pg-handle { width: 40px; height: 5px; background: #ddd; border-radius: 3px; margin: 0 auto 14px; }
+  .pg-sheet img { width: 100%; height: 160px; object-fit: cover; border-radius: 12px; }
+  .pg-sheet h3 { margin: 10px 0 0; font-size: 18px; }
+  .pg-sheet .pg-sci { color: #888; font-size: 12px; font-style: italic; }
+  .pg-sheet p { font-size: 13.5px; line-height: 1.6; color: #333; }
+  .pg-sheet button.pg-continue {
+    width: 100%; padding: 12px; background: #37c871; color: #fff; font-weight: 700;
+    border: none; border-radius: 12px; font-size: 14px; margin-top: 6px; cursor: pointer;
+  }
+  .pg-map-wrap { position: absolute; inset: 0; overflow: hidden; }
+  .pg-map-wrap .leaflet-container { background: linear-gradient(160deg, #eafff3, #cdeedd); }
+  .pg-map-glow {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(255,255,255,0) 55%, rgba(20,50,35,.3) 100%);
+  }
+  .pg-map-scan {
+    position: absolute; left: 0; right: 0; height: 140px; pointer-events: none; z-index: 461;
+    background: linear-gradient(rgba(55,200,113,0), rgba(55,200,113,.16), rgba(55,200,113,0));
+    animation: pg-scan 5s linear infinite;
+  }
+  @keyframes pg-scan { 0% { top: -140px; } 100% { top: 100%; } }
+  .pg-story-fab {
+    position: absolute; bottom: 90px; right: 18px; z-index: 1000; width: 56px; height: 56px;
+    border-radius: 50%; background: #2b6f4f; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 24px; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer;
+    border: 3px solid #fff;
+  }
+  .pg-story-overlay {
+    position: fixed; inset: 0; z-index: 2500; background: #0d2b1c; color: #eafff0;
+    padding: 30px 26px; overflow-y: auto; font-family: -apple-system, sans-serif;
+  }
+  .pg-story-overlay h2 { color: #37c871; }
+  .pg-story-overlay p { line-height: 1.75; font-size: 15px; }
+  .pg-story-close {
+    position: absolute; top: 20px; right: 24px; font-size: 22px; cursor: pointer; color: #fff;
+  }
+
+  /* ═══════════════ VARIANT C — Inventory (Minecraft) ═══════════════ */
+  .mc-root { position: absolute; inset: 0; background: #202020; display: flex; }
+  .mc-map-pane { width: 64%; height: 100%; position: relative; border-right: 6px solid #3a3a3a; }
+  .mc-sidebar {
+    width: 36%; height: 100%; background: #4a4a4a; color: #ddd; display: flex; flex-direction: column;
+    font-family: 'Courier New', monospace;
+  }
+  .mc-sidebar-title {
+    background: #6b6b6b; border-bottom: 4px solid #2a2a2a; padding: 12px; text-align: center;
+    font-weight: bold; letter-spacing: 2px; text-transform: uppercase; font-size: 13px; color: #fff;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .mc-inventory { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 14px; }
+  .mc-slot {
+    aspect-ratio: 1; background: #8b8b8b; border: 3px solid; border-color: #3a3a3a #d8d8d8 #d8d8d8 #3a3a3a;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative;
+    overflow: hidden;
+  }
+  .mc-slot.mc-locked { background: repeating-linear-gradient(45deg,#5a5a5a,#5a5a5a 6px,#525252 6px,#525252 12px); cursor: default; }
+  .mc-slot.mc-locked::after { content: "?"; font-size: 22px; color: #333; font-weight: bold; }
+  .mc-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .mc-slot .mc-slot-num {
+    position: absolute; top: 2px; left: 3px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000;
+  }
+  .mc-detail { margin: 0 14px 14px; background: #2f2f2f; border: 3px solid; border-color: #1a1a1a #555 #555 #1a1a1a; padding: 10px; min-height: 70px; font-size: 12px; line-height: 1.6; }
+  .mc-detail h4 { margin: 0 0 6px; font-size: 13px; color: #ffd76b; text-shadow: 1px 1px 0 #000; }
+  .mc-detail .mc-sci { color: #9fd89f; font-style: italic; font-size: 11px; }
+  .mc-log-title {
+    background: #6b6b6b; border-top: 4px solid #2a2a2a; border-bottom: 4px solid #2a2a2a;
+    padding: 10px 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;
+    color: #fff; text-shadow: 2px 2px 0 #000;
+  }
+  .mc-log { flex: 1; overflow-y: auto; padding: 14px; font-size: 12px; line-height: 1.8; background: #262626; }
+  .mc-log p { margin: 0 0 10px; }
+  .mc-log p::before { content: "» "; color: #7fdc7f; }
+  .mc-map-wrap {
+    position: absolute; inset: 0; overflow: hidden;
+    box-shadow: inset 0 0 0 6px #2a2a2a, inset 0 0 0 10px #8b8b8b, inset 0 0 0 12px #2a2a2a;
+  }
+  .mc-map-wrap .leaflet-container { background: #1c1c1c; }
+  .mc-map-chunks {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 64px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 2px, transparent 2px 64px);
+  }
+  .mc-map-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.5) 100%);
+  }
+  .mc-marker-block {
+    width: 30px; height: 30px; background: #8b8b8b; border: 3px solid; border-color: #3a3a3a #d8d8d8 #d8d8d8 #3a3a3a;
+    display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
+    color: #222; font-family: 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="proto-switcher">
+  <button id="proto-prev" aria-label="previous variant">&#8592;</button>
+  <span class="label" id="proto-label"></span>
+  <button id="proto-next" aria-label="next variant">&#8594;</button>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// Shared data — captured verbatim from
+// prototypes/artifacts/retiro_narrative_map_cost_experiment2_claude_haiku_4_5_20251001.html
+// (Haiku 4.5, non-agentic experiment2 run, 19 July 2026).
+// ─────────────────────────────────────────────────────────────
+const SPECIES = [
+  {
+    num: 1, name: 'Black-billed Magpie', sci: 'Pica pica', color: '#e41a1c',
+    lat: 40.414847925925926, lon: -3.684565037037037,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/BlackBilledMagpie.jpg/330px-BlackBilledMagpie.jpg',
+    desc: "The black-billed magpie is a corvid found in western North America. It has black and white plumage with iridescent blue and blue-green hints visible on the wings and tail. This species was recognized as distinct from the Eurasian magpie in 2000 through genetic studies."
+  },
+  {
+    num: 2, name: 'Iberian Green Woodpecker', sci: 'Picus sharpei', color: '#377eb8',
+    lat: 40.413754698412696, lon: -3.6842265714285714,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Picus_viridis_sharpei_033.jpg/330px-Picus_viridis_sharpei_033.jpg',
+    desc: "The Iberian green woodpecker is a medium-sized woodpecker found only on the Iberian peninsula. It differs from the European green woodpecker in having less black on the head and a dusky rather than black eye-ring. The bird produces a distinctive hiss-like or sibilant call."
+  },
+  {
+    num: 3, name: 'Egyptian Goose', sci: 'Alopochen aegyptiaca', color: '#4daf4a',
+    lat: 40.414394959183674, lon: -3.682108,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg/330px-Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg',
+    desc: "The Egyptian goose is an African waterfowl belonging to the same family as ducks and swans. Due to its popularity as an ornamental bird, it has been introduced to Europe, the United States, and other regions beyond its native range. The species was frequently depicted in ancient Egyptian art."
+  },
+  {
+    num: 4, name: 'Black Swan', sci: 'Cygnus atratus', color: '#ff7f00',
+    lat: 40.41386437209302, lon: -3.6816920930232557,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg/330px-Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg',
+    desc: "The black swan is a large waterbird native to southeast and southwest Australia, with distinctive black plumage and a red bill. Within Australia, it migrates nomadically in patterns determined by climate conditions. Both male and female black swans share responsibilities for incubating eggs and raising their young."
+  },
+  {
+    num: 5, name: 'Common Mallard', sci: 'Anas platyrhynchos', color: '#984ea3',
+    lat: 40.41556654716982, lon: -3.6832586792452826,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Anas_platyrhynchos_male_female_quadrat.jpg/330px-Anas_platyrhynchos_male_female_quadrat.jpg',
+    desc: "The mallard is a dabbling duck that breeds throughout temperate and subtropical regions of the Americas, Eurasia, and North Africa. It has been widely introduced to locations including New Zealand, Australia, and South Africa. Mallards are social waterfowl that live in wetlands, feed on water plants and small animals, and typically gather in groups or flocks."
+  }
+];
+
+// Narrative split per-waypoint for the accordion/log variants. Paragraph 1 is
+// the scene-setting intro (stray leading "# " markdown header from the raw
+// Haiku output stripped — a known quirk noted in WORK_SUMMARY_190726.md, not
+// meaningful content).
+const NARRATIVE_INTRO = "Welcome to Retiro Park, Madrid—a sanctuary where continents converge and the natural world reveals its most extraordinary secrets. We begin our expedition at the crystalline edge of discovery, where an unexpected visitor awaits.";
+const NARRATIVE_BY_SPECIES = [
+  "Here, at our first waypoint, we encounter the black-billed magpie, a corvid whose very presence in these Spanish gardens speaks to the mysteries of migration and adaptation. Notice the striking contrast of its black and white plumage, and if the light catches just so, you'll glimpse the iridescent blues and blue-greens that shimmer across its wings and tail like captured sky. This remarkable bird, long confused with its Eurasian cousin, was only recognized as a distinct species through genetic revelation in the year 2000—a reminder that nature still holds secrets waiting to be unlocked.",
+  "As we move deeper into the park's verdant heart, we're drawn toward the ancient oaks by a distinctive sound—a hiss-like, sibilant call that seems to emerge from the very wood itself. This is the realm of the Iberian green woodpecker, a medium-sized artisan of the trees found nowhere else on Earth save the Iberian peninsula itself. Observe the subtle darkness around its eye and the refined black markings on its head, features that distinguish it from its European relatives. Here is a creature perfectly adapted to these particular woods, a living embodiment of biogeographic distinctiveness.",
+  "Our journey now leads us to water, where the park's lakes shimmer in the afternoon light. The Egyptian goose glides gracefully across the surface—an African wanderer who, thanks to centuries of human fascination as an ornamental bird, has established itself far from its native Nile. The ancients revered this species in their hieroglyphics; today it graces Madrid's waters.",
+  "Beyond it glides a more recent arrival: the black swan, that magnificent Australian native with its obsidian plumage and brilliant crimson bill. Against Europe's pale waterfowl, it seems almost impossibly exotic, yet here it thrives, both parents devoted to their young.",
+  "And finally, completing our circuit, we return to the familiar—the common mallard, humanity's most widely distributed duck, gathered in companionable flocks as they have been for millennia across the world's wetlands. In Retiro's waters, all the world's birds meet, telling the story of nature in our modern age."
+];
+const CENTER = [40.41448570055702, -3.683170076146829];
+const ROUTE_COORDS = SPECIES.map(s => [s.lat, s.lon]);
+
+// Real Retiro Park geometry — captured once via the raw OSM REST API
+// (api.openstreetmap.org/api/0.6/map.json, the same endpoint overpass_spike.py
+// already used; Overpass itself was tried and rejected again this session —
+// a public instance 504'd — so this is deliberately NOT a live call at
+// runtime). park_hull is a convex-hull approximation (Retiro's true boundary
+// is mapped as an OSM relation, which this REST endpoint doesn't return —
+// only nodes/ways); lakes and trails are exact real way geometry. See
+// WORK_SUMMARY_190726.md Session 2 for the full capture method.
+const PARK_GEO = {"lakes":{"estanque_grande":[[40.418182,-3.685175],[40.418307,-3.684662],[40.41822,-3.684633],[40.418249,-3.684492],[40.418251,-3.684479],[40.418254,-3.684468],[40.418267,-3.684404],[40.418269,-3.684393],[40.418272,-3.68438],[40.418302,-3.684237],[40.418395,-3.684272],[40.41841,-3.684209],[40.418414,-3.684192],[40.418418,-3.684175],[40.418439,-3.684081],[40.418444,-3.684063],[40.418448,-3.684046],[40.41847,-3.683952],[40.418474,-3.683933],[40.418478,-3.683915],[40.418501,-3.683818],[40.418504,-3.683801],[40.418507,-3.683788],[40.418531,-3.683688],[40.418377,-3.683623],[40.418225,-3.683569],[40.41798,-3.683498],[40.417982,-3.683474],[40.417654,-3.68334],[40.417586,-3.683311],[40.41758,-3.683326],[40.417575,-3.683331],[40.417569,-3.683334],[40.417563,-3.683335],[40.417508,-3.683311],[40.417503,-3.683306],[40.4175,-3.683295],[40.417502,-3.68328],[40.417486,-3.683274],[40.417471,-3.683294],[40.417452,-3.683314],[40.417444,-3.683322],[40.417447,-3.683332],[40.417433,-3.683341],[40.41743,-3.683334],[40.417409,-3.683347],[40.417381,-3.683361],[40.417357,-3.683369],[40.417341,-3.683372],[40.41732,-3.683374],[40.417319,-3.683386],[40.417303,-3.683385],[40.417303,-3.683374],[40.417285,-3.683372],[40.417268,-3.683368],[40.417251,-3.683363],[40.417236,-3.683356],[40.417222,-3.683349],[40.417204,-3.683338],[40.417192,-3.683329],[40.417187,-3.683339],[40.417175,-3.683329],[40.41718,-3.683319],[40.417165,-3.683304],[40.417152,-3.683288],[40.417136,-3.683265],[40.417128,-3.683253],[40.417121,-3.683239],[40.417114,-3.683223],[40.417106,-3.683204],[40.417097,-3.683209],[40.417092,-3.68319],[40.4171,-3.683186],[40.417094,-3.683167],[40.417091,-3.68315],[40.417088,-3.683134],[40.417085,-3.683118],[40.417067,-3.683111],[40.417063,-3.683126],[40.41706,-3.683131],[40.417056,-3.683135],[40.417052,-3.683136],[40.417047,-3.683136],[40.41699,-3.683113],[40.416987,-3.683109],[40.416983,-3.683102],[40.416982,-3.683096],[40.416982,-3.683088],[40.416984,-3.68308],[40.416914,-3.683054],[40.416925,-3.683005],[40.416755,-3.682939],[40.416116,-3.68269],[40.415771,-3.684235],[40.418182,-3.685175]],"palacio_cristal":[[40.413497,-3.681669],[40.413492,-3.681694],[40.413516,-3.681704],[40.413536,-3.681712],[40.413554,-3.681719],[40.413563,-3.681684],[40.413605,-3.681699],[40.413606,-3.681694],[40.413651,-3.681709],[40.413701,-3.681726],[40.413699,-3.681733],[40.41374,-3.681748],[40.413734,-3.681783],[40.413796,-3.681804],[40.413802,-3.681779],[40.413848,-3.681795],[40.413847,-3.681804],[40.413896,-3.681834],[40.413962,-3.681804],[40.413987,-3.681682],[40.413983,-3.681664],[40.41401,-3.681637],[40.414065,-3.681512],[40.414074,-3.681492],[40.41408,-3.681474],[40.414085,-3.681459],[40.414088,-3.681433],[40.414087,-3.681417],[40.414081,-3.681361],[40.414076,-3.681324],[40.414076,-3.681272],[40.414079,-3.681243],[40.414086,-3.681221],[40.414097,-3.681185],[40.414096,-3.681164],[40.414087,-3.681146],[40.414068,-3.681132],[40.414048,-3.681125],[40.414024,-3.68112],[40.413992,-3.681121],[40.413987,-3.681119],[40.413955,-3.681105],[40.41395,-3.681097],[40.413941,-3.681083],[40.413921,-3.681064],[40.413918,-3.681053],[40.413913,-3.68104],[40.413901,-3.68102],[40.413882,-3.681012],[40.413862,-3.681013],[40.413847,-3.68102],[40.413831,-3.681032],[40.413801,-3.68105],[40.413764,-3.681068],[40.41375,-3.681074],[40.41373,-3.681081],[40.413683,-3.681071],[40.413671,-3.681073],[40.413628,-3.681116],[40.413614,-3.681133],[40.41361,-3.681137],[40.413606,-3.681137],[40.413575,-3.681121],[40.413548,-3.681184],[40.413549,-3.68122],[40.413552,-3.681291],[40.413481,-3.681489],[40.413454,-3.681554],[40.413424,-3.681588],[40.413384,-3.681622],[40.413355,-3.681638],[40.413372,-3.681706],[40.413434,-3.681683],[40.413441,-3.681653],[40.413497,-3.681669]],"noria":[[40.411866,-3.689443],[40.411878,-3.689346],[40.411622,-3.689291],[40.411609,-3.689388],[40.411866,-3.689443]]},"trails":[[[40.419703,-3.67944],[40.418267,-3.678926],[40.417333,-3.678586],[40.416848,-3.678433],[40.415571,-3.677978],[40.415233,-3.677852],[40.414457,-3.677555],[40.413191,-3.677111],[40.412524,-3.676874],[40.411701,-3.676583],[40.411606,-3.676541],[40.411415,-3.676476],[40.411271,-3.676473],[40.411128,-3.6765],[40.411035,-3.67655],[40.411021,-3.676586],[40.409928,-3.67734]],[[40.410388,-3.678399],[40.411758,-3.678664],[40.413092,-3.678985],[40.414623,-3.679347],[40.416318,-3.679759],[40.416697,-3.679729],[40.417129,-3.679842]],[[40.413445,-3.680655],[40.413341,-3.680749],[40.412787,-3.680677],[40.412015,-3.680626],[40.411848,-3.680752],[40.411719,-3.681089],[40.411721,-3.681584],[40.411863,-3.682076],[40.412121,-3.682377],[40.412268,-3.682589],[40.412726,-3.682901],[40.413219,-3.683139],[40.41384,-3.683269],[40.414491,-3.683255],[40.414943,-3.683095],[40.415204,-3.682806],[40.415242,-3.682508]],[[40.410886,-3.682489],[40.410392,-3.682285],[40.410204,-3.682205],[40.409876,-3.6821],[40.409397,-3.682022],[40.409172,-3.681954],[40.409339,-3.681411],[40.409506,-3.681087],[40.409557,-3.680974],[40.409584,-3.680858],[40.409602,-3.680651],[40.409576,-3.680272],[40.409534,-3.680011],[40.409408,-3.679623],[40.409405,-3.679466],[40.409475,-3.679239],[40.409563,-3.679087],[40.409608,-3.678914],[40.409706,-3.678316],[40.409778,-3.677946],[40.409948,-3.677855],[40.41011,-3.678125],[40.410223,-3.678297]],[[40.410676,-3.68412],[40.411179,-3.684235],[40.411507,-3.684304],[40.412196,-3.684464],[40.412548,-3.684544],[40.413243,-3.684697],[40.413586,-3.684776],[40.414019,-3.684876],[40.414867,-3.685065],[40.415357,-3.685171]],[[40.410988,-3.682747],[40.410769,-3.683712],[40.410574,-3.68457],[40.410495,-3.684917],[40.410439,-3.685164],[40.410354,-3.685539],[40.410068,-3.686797],[40.409717,-3.68834],[40.409689,-3.688465],[40.409664,-3.688574]],[[40.411937,-3.678604],[40.413107,-3.67889],[40.414333,-3.679179],[40.414638,-3.679249],[40.415289,-3.679405],[40.416094,-3.679597],[40.416318,-3.679759]],[[40.411792,-3.67925],[40.412981,-3.679532],[40.414032,-3.679782],[40.415739,-3.680187],[40.416213,-3.6803]],[[40.416258,-3.680077],[40.413022,-3.679292],[40.411846,-3.679007]],[[40.410439,-3.685164],[40.410583,-3.685193],[40.411354,-3.685336],[40.411752,-3.685402],[40.412172,-3.685477],[40.412628,-3.685559],[40.413362,-3.685691],[40.413984,-3.685802],[40.41477,-3.685943]],[[40.410986,-3.682973],[40.410819,-3.683728],[40.410621,-3.684624],[40.410499,-3.685178],[40.41014,-3.686805],[40.409995,-3.687462],[40.409795,-3.688366]],[[40.411207,-3.682606],[40.411736,-3.682807],[40.412197,-3.682981],[40.412807,-3.683212],[40.413486,-3.683469],[40.413828,-3.683598],[40.414753,-3.683948],[40.414934,-3.684017],[40.415276,-3.684146]],[[40.411846,-3.679007],[40.411343,-3.67897],[40.410947,-3.679035],[40.410641,-3.679219],[40.410493,-3.679344],[40.410175,-3.679776],[40.410044,-3.680246],[40.41012,-3.680902],[40.410317,-3.681423],[40.410742,-3.681854],[40.410998,-3.682331]],[[40.414429,-3.678525],[40.414007,-3.678438],[40.413783,-3.678381],[40.413625,-3.678314],[40.412739,-3.678085],[40.412776,-3.677858],[40.413271,-3.677761],[40.41394,-3.677904],[40.414492,-3.678074],[40.414461,-3.678302],[40.414429,-3.678525]],[[40.419224,-3.68753],[40.41829,-3.687033],[40.417644,-3.686718],[40.417231,-3.686608],[40.416899,-3.686507],[40.416701,-3.686454],[40.41612,-3.686282],[40.415906,-3.686377],[40.415514,-3.686078],[40.415324,-3.686029]],[[40.40964,-3.688316],[40.410249,-3.685647],[40.410334,-3.685276],[40.410493,-3.68458],[40.41077,-3.683368]],[[40.414063,-3.683687],[40.414039,-3.684331],[40.414011,-3.685093],[40.413994,-3.685536],[40.413959,-3.68648],[40.413928,-3.687312],[40.413884,-3.688491]],[[40.409277,-3.67743],[40.408032,-3.677188],[40.409302,-3.677406],[40.409277,-3.67743]],[[40.410565,-3.684608],[40.41099,-3.684702],[40.411884,-3.684891],[40.41259,-3.685042],[40.413053,-3.685133],[40.413546,-3.685249],[40.414002,-3.685337]],[[40.410892,-3.679711],[40.411036,-3.679767],[40.411358,-3.680094],[40.411415,-3.680259],[40.411333,-3.680724],[40.411154,-3.680872],[40.410928,-3.680931],[40.410652,-3.680897],[40.410534,-3.680846],[40.410268,-3.680588],[40.410223,-3.680099],[40.410509,-3.679682],[40.410892,-3.679711]],[[40.415343,-3.685537],[40.415766,-3.685662],[40.415951,-3.685721],[40.416137,-3.685783],[40.416461,-3.685888],[40.41677,-3.68599],[40.417194,-3.686119],[40.417797,-3.686276],[40.41789,-3.685926],[40.417683,-3.685223]],[[40.42106,-3.681801],[40.420028,-3.6813],[40.4193,-3.680732],[40.419158,-3.68068],[40.418656,-3.680756],[40.418478,-3.680766],[40.418328,-3.680727],[40.417905,-3.680481]],[[40.40964,-3.688316],[40.409795,-3.688366],[40.409881,-3.688372],[40.410056,-3.688115],[40.41042,-3.687622],[40.410678,-3.687303],[40.410788,-3.687014],[40.411068,-3.686611],[40.411238,-3.686415],[40.411341,-3.686186],[40.411297,-3.685963],[40.411262,-3.685639],[40.411354,-3.685336]],[[40.413497,-3.686188],[40.413627,-3.686289],[40.413706,-3.686399],[40.413713,-3.686821],[40.413681,-3.687459],[40.413418,-3.687621],[40.412888,-3.687604],[40.412282,-3.687585],[40.411609,-3.687563]],[[40.415705,-3.684294],[40.416317,-3.681509],[40.416611,-3.680172]],[[40.40932,-3.677939],[40.409542,-3.677807],[40.409913,-3.677545],[40.41014,-3.677378],[40.410248,-3.67733],[40.410451,-3.677208],[40.410696,-3.676985],[40.410975,-3.676836],[40.411218,-3.676783],[40.411624,-3.676693],[40.412311,-3.676939]],[[40.410192,-3.681604],[40.41013,-3.681844],[40.410081,-3.68203],[40.410063,-3.682662],[40.410055,-3.683369],[40.41003,-3.684218],[40.410023,-3.684914],[40.410164,-3.685268],[40.41042,-3.685249]],[[40.409602,-3.680651],[40.409456,-3.680719],[40.409018,-3.680038],[40.408529,-3.679422],[40.408489,-3.678698],[40.408659,-3.678398],[40.40932,-3.677939],[40.409299,-3.677906]],[[40.410855,-3.683335],[40.41161,-3.683575],[40.412315,-3.683787],[40.413358,-3.684105],[40.413961,-3.684304]],[[40.416866,-3.684738],[40.41677,-3.68599],[40.416674,-3.687469],[40.416603,-3.688557],[40.416651,-3.688821]],[[40.415447,-3.684038],[40.415751,-3.682555],[40.416015,-3.681267],[40.416213,-3.6803],[40.416258,-3.680077]],[[40.418523,-3.685373],[40.418115,-3.685216],[40.417012,-3.684794],[40.416444,-3.684577],[40.415705,-3.684294],[40.415559,-3.684238]],[[40.410061,-3.680034],[40.410472,-3.678508],[40.410788,-3.677738],[40.411218,-3.676783],[40.411239,-3.676699],[40.411271,-3.676473]],[[40.416649,-3.688637],[40.416764,-3.688503],[40.416789,-3.688137],[40.41689,-3.686653],[40.416929,-3.686048],[40.416994,-3.685042],[40.417012,-3.684794]],[[40.410769,-3.683712],[40.411547,-3.683918],[40.412257,-3.68412],[40.413303,-3.684391],[40.413635,-3.684473]],[[40.412197,-3.682981],[40.412187,-3.682441],[40.412627,-3.682318],[40.412892,-3.682492],[40.4133,-3.682721],[40.413803,-3.682827],[40.414493,-3.682537]],[[40.41601,-3.686362],[40.416286,-3.687285],[40.416371,-3.685858],[40.416439,-3.684758],[40.416444,-3.684577]],[[40.416472,-3.686903],[40.416123,-3.68684],[40.416074,-3.687749],[40.416419,-3.687827],[40.416632,-3.687458]],[[40.410746,-3.68075],[40.410671,-3.680723],[40.410518,-3.680628],[40.410436,-3.68054],[40.41034,-3.680392],[40.410301,-3.680225],[40.410348,-3.680027],[40.410527,-3.679879],[40.410649,-3.679844],[40.410796,-3.679858],[40.410892,-3.679923],[40.410993,-3.679934],[40.411125,-3.680045],[40.4112,-3.680152],[40.411271,-3.68034],[40.411269,-3.680507],[40.4112,-3.680644],[40.411051,-3.68074],[40.410903,-3.680778],[40.410746,-3.68075]],[[40.409563,-3.682033],[40.409762,-3.68152],[40.409859,-3.680533],[40.409857,-3.680153],[40.410081,-3.679584],[40.410252,-3.679]],[[40.4111,-3.682332],[40.411228,-3.681761],[40.411792,-3.67925],[40.411846,-3.679007]],[[40.408471,-3.678565],[40.40858,-3.678726],[40.408793,-3.679145],[40.409033,-3.679488],[40.409408,-3.679623],[40.409782,-3.679718],[40.410061,-3.680034],[40.410263,-3.680116],[40.410465,-3.680203]],[[40.414218,-3.688512],[40.414307,-3.68586],[40.414477,-3.685442],[40.414651,-3.685333]],[[40.417824,-3.688454],[40.417952,-3.686906],[40.418133,-3.685986],[40.418277,-3.685278]],[[40.418218,-3.677899],[40.417181,-3.678018],[40.417174,-3.678144],[40.417211,-3.678215],[40.418281,-3.678552]]],"park_hull":[[40.408032,-3.677188],[40.40812,-3.681252],[40.409109,-3.68743],[40.409664,-3.688574],[40.411609,-3.689388],[40.411866,-3.689443],[40.416651,-3.688821],[40.417824,-3.688454],[40.417997,-3.688396],[40.419395,-3.687563],[40.419558,-3.687455],[40.42106,-3.681801],[40.418268,-3.676424],[40.4113,-3.676469],[40.40895,-3.676546]]};
+
+let leafletMap = null; // tracked so each variant switch can .remove() the previous instance
+
+function destroyMap() {
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+}
+
+// Grid-snap coordinates onto a coarse lattice — used only by Variant C to turn
+// real smooth park/lake/trail geometry into a genuinely blocky/voxel silhouette
+// (not a filter faking it: the jagged edges are the real data, just quantized).
+function snapToGrid(coords, step) {
+  return coords.map(([lat, lon]) => [Math.round(lat / step) * step, Math.round(lon / step) * step]);
+}
+
+// No tile provider in any variant — the park hull, lakes and trails are
+// rendered as real, styled vector shapes (a "vector re-skin" of actual OSM
+// geometry). Each variant gets its own render function because the treatment
+// differs structurally, not just by colour: A fills flat and dashes ink
+// trails; B duplicates the hull with an offset shadow for a diorama pop;
+// C grid-snaps everything for genuine blockiness.
+
+function renderParkGeometryA(map) {
+  L.polygon(PARK_GEO.park_hull, { color: '#4a3a26', weight: 3, fillColor: '#8a9a5b', fillOpacity: 0.88 }).addTo(map);
+  Object.values(PARK_GEO.lakes).forEach(ring => {
+    L.polygon(ring, { color: '#1c2b33', weight: 2, fillColor: '#2f4858', fillOpacity: 0.9 }).addTo(map);
+  });
+  PARK_GEO.trails.forEach(line => {
+    L.polyline(line, { color: '#6b4f2a', weight: 2, opacity: 0.75, dashArray: '1,6', lineCap: 'round' }).addTo(map);
+  });
+  L.polyline(ROUTE_COORDS, { color: '#c9a227', weight: 3, opacity: 0.9, dashArray: '2,8' }).addTo(map);
+}
+
+function renderParkGeometryB(map) {
+  const SHADOW_OFFSET = -0.0006; // lat offset, degrees — fakes a diorama drop-shadow
+  const shadowHull = PARK_GEO.park_hull.map(([lat, lon]) => [lat + SHADOW_OFFSET, lon]);
+  L.polygon(shadowHull, { color: 'transparent', weight: 0, fillColor: '#0d3d22', fillOpacity: 0.35 }).addTo(map);
+  L.polygon(PARK_GEO.park_hull, { color: '#ffffff', weight: 3, fillColor: '#37c871', fillOpacity: 0.95 }).addTo(map);
+  Object.values(PARK_GEO.lakes).forEach(ring => {
+    L.polygon(ring, { color: '#ffffff', weight: 3, fillColor: '#29b6f6', fillOpacity: 0.95 }).addTo(map);
+  });
+  PARK_GEO.trails.forEach(line => {
+    L.polyline(line, { color: '#fff8e1', weight: 4, opacity: 0.9, dashArray: '2,10', lineCap: 'round' }).addTo(map);
+  });
+  L.polyline(ROUTE_COORDS, { color: '#2b6f4f', weight: 3, opacity: 0.9, dashArray: '4,6', lineCap: 'round' }).addTo(map);
+}
+
+function renderParkGeometryC(map) {
+  const STEP = 0.00028; // ~31m at this latitude — coarse enough to read as "chunks"
+  L.polygon(snapToGrid(PARK_GEO.park_hull, STEP), { color: '#2f4a1e', weight: 2, fillColor: '#5a8f3a', fillOpacity: 0.95, lineJoin: 'miter' }).addTo(map);
+  Object.values(PARK_GEO.lakes).forEach(ring => {
+    L.polygon(snapToGrid(ring, STEP), { color: '#1c3550', weight: 2, fillColor: '#2f5f8f', fillOpacity: 0.95, lineJoin: 'miter' }).addTo(map);
+  });
+  PARK_GEO.trails.forEach(line => {
+    L.polyline(snapToGrid(line, STEP), { color: '#a9855a', weight: 6, opacity: 0.9, lineCap: 'square', lineJoin: 'miter' }).addTo(map);
+  });
+  L.polyline(snapToGrid(ROUTE_COORDS, STEP), { color: '#ffd76b', weight: 4, opacity: 0.95, lineCap: 'square' }).addTo(map);
+}
+
+// ═══════════════════════ VARIANT A — Quest Log ═══════════════════════
+function renderVariantA(container) {
+  container.innerHTML = `
+    <div class="qa-root">
+      <div class="qa-titlebar">⚔ Retiro Park — A Nature Quest</div>
+      <div class="qa-journal-tab" id="qa-tab">QUEST LOG</div>
+      <div class="qa-journal" id="qa-journal">
+        <h2>Quest Log</h2>
+        <p style="font-size:13px;line-height:1.6;margin-bottom:16px">${NARRATIVE_INTRO}</p>
+        ${SPECIES.map((s, i) => `
+          <details class="qa-entry" data-idx="${i}">
+            <summary><span class="qa-num">${s.num}</span> ${s.name} <span class="qa-check" data-check="${i}" style="visibility:hidden">✓</span></summary>
+            <div class="qa-entry-body">${NARRATIVE_BY_SPECIES[i]}</div>
+          </details>
+        `).join('')}
+      </div>
+      <div class="qa-map-wrap">
+        <div id="qa-map" class="map-fill"></div>
+        <div class="map-noise qa-map-grain"></div>
+        <div class="qa-map-vignette"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('qa-tab').onclick = () => document.getElementById('qa-journal').classList.toggle('open');
+
+  destroyMap();
+  leafletMap = L.map('qa-map', { attributionControl: false }).setView(CENTER, 15);
+  renderParkGeometryA(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({ html: `<div class="qa-marker-medallion">${s.num}</div>`, iconSize: [36, 36], iconAnchor: [18, 18], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => openQuestModal(i));
+  });
+}
+
+function openQuestModal(i) {
+  const s = SPECIES[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'qa-modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="qa-modal">
+      <span class="qa-close">✕</span>
+      <div style="font-size:11px;letter-spacing:1px;color:#7a5a2d">QUEST ENTRY ${s.num}/5</div>
+      <h3 style="margin:4px 0 0">${s.name}</h3>
+      <div style="font-style:italic;color:#7a5a2d;font-size:12px">${s.sci}</div>
+      <img src="${s.img}"/>
+      <p style="font-size:13px;line-height:1.5">${s.desc}</p>
+      <button class="qa-discover">Mark Discovered</button>
+    </div>
+  `;
+  backdrop.querySelector('.qa-close').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('.qa-discover').onclick = () => {
+    const chk = document.querySelector(`[data-check="${i}"]`);
+    if (chk) chk.style.visibility = 'visible';
+    backdrop.remove();
+  };
+  document.body.appendChild(backdrop);
+}
+
+// ═══════════════════════ VARIANT B — PokéStop ═══════════════════════
+let pgDiscovered = new Set();
+
+function renderVariantB(container) {
+  pgDiscovered = new Set();
+  container.innerHTML = `
+    <div class="pg-root">
+      <div class="pg-map-wrap">
+        <div id="pg-map" class="map-fill"></div>
+        <div class="pg-map-glow"></div>
+        <div class="pg-map-scan"></div>
+      </div>
+      <div class="pg-topbar">
+        <div class="pg-title">🧭 Retiro Quest</div>
+        <div class="pg-xpbar"><div class="pg-xpfill" id="pg-xpfill" style="width:0%"></div></div>
+        <div class="pg-count" id="pg-count">0 / 5</div>
+      </div>
+      <div class="pg-story-fab" id="pg-story-fab" title="Read the story">📖</div>
+    </div>
+  `;
+  destroyMap();
+  leafletMap = L.map('pg-map', { attributionControl: false }).setView(CENTER, 15);
+  renderParkGeometryB(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({
+      html: `<div class="pg-pin-wrap" data-pin="${i}">
+               <div class="pg-pin-ring"></div>
+               <div class="pg-pin-core">${s.num}</div>
+             </div>`,
+      iconSize: [46, 46], iconAnchor: [23, 23], className: ''
+    });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => openPgSheet(i));
+  });
+
+  document.getElementById('pg-story-fab').onclick = openPgStory;
+}
+
+function updatePgProgress() {
+  const pct = Math.round((pgDiscovered.size / SPECIES.length) * 100);
+  const fill = document.getElementById('pg-xpfill');
+  const count = document.getElementById('pg-count');
+  if (fill) fill.style.width = pct + '%';
+  if (count) count.textContent = `${pgDiscovered.size} / ${SPECIES.length}`;
+  pgDiscovered.forEach(i => {
+    const wrap = document.querySelector(`[data-pin="${i}"]`);
+    if (wrap) {
+      wrap.querySelector('.pg-pin-ring').classList.add('pg-done');
+      wrap.querySelector('.pg-pin-core').classList.add('pg-done');
+    }
+  });
+}
+
+function openPgSheet(i) {
+  const s = SPECIES[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'pg-sheet-backdrop';
+  backdrop.innerHTML = `
+    <div class="pg-sheet">
+      <div class="pg-handle"></div>
+      <img src="${s.img}"/>
+      <h3>${s.name}</h3>
+      <div class="pg-sci">${s.sci}</div>
+      <p>${s.desc}</p>
+      <button class="pg-continue">Continue Walking →</button>
+    </div>
+  `;
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('.pg-continue').onclick = () => {
+    pgDiscovered.add(i);
+    updatePgProgress();
+    backdrop.remove();
+  };
+  document.body.appendChild(backdrop);
+}
+
+function openPgStory() {
+  const overlay = document.createElement('div');
+  overlay.className = 'pg-story-overlay';
+  overlay.innerHTML = `
+    <span class="pg-story-close">✕</span>
+    <h2>Your Retiro Walk — Expedition Log</h2>
+    <p>${NARRATIVE_INTRO}</p>
+    ${NARRATIVE_BY_SPECIES.map(p => `<p>${p}</p>`).join('')}
+  `;
+  overlay.querySelector('.pg-story-close').onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
+// ═══════════════════════ VARIANT C — Inventory ═══════════════════════
+let mcCollected = new Set();
+
+function renderVariantC(container) {
+  mcCollected = new Set();
+  container.innerHTML = `
+    <div class="mc-root">
+      <div class="mc-map-pane">
+        <div class="mc-map-wrap">
+          <div id="mc-map" class="map-fill"></div>
+          <div class="mc-map-chunks"></div>
+          <div class="mc-map-vignette"></div>
+        </div>
+      </div>
+      <div class="mc-sidebar">
+        <div class="mc-sidebar-title">Inventory</div>
+        <div class="mc-inventory" id="mc-inventory"></div>
+        <div class="mc-detail" id="mc-detail">Tap a marker on the map to collect a species.</div>
+        <div class="mc-log-title">Achievement Log</div>
+        <div class="mc-log">
+          <p>${NARRATIVE_INTRO}</p>
+          ${NARRATIVE_BY_SPECIES.map(p => `<p>${p}</p>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  renderMcInventory();
+
+  destroyMap();
+  leafletMap = L.map('mc-map', { attributionControl: false }).setView(CENTER, 15);
+  renderParkGeometryC(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({ html: `<div class="mc-marker-block">${s.num}</div>`, iconSize: [30, 30], iconAnchor: [15, 15], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => collectMcSpecies(i));
+  });
+}
+
+function renderMcInventory() {
+  const grid = document.getElementById('mc-inventory');
+  grid.innerHTML = SPECIES.map((s, i) => `
+    <div class="mc-slot ${mcCollected.has(i) ? '' : 'mc-locked'}" data-slot="${i}">
+      <span class="mc-slot-num">${s.num}</span>
+      ${mcCollected.has(i) ? `<img src="${s.img}"/>` : ''}
+    </div>
+  `).join('');
+  grid.querySelectorAll('.mc-slot').forEach(el => {
+    el.onclick = () => {
+      const i = parseInt(el.dataset.slot, 10);
+      if (mcCollected.has(i)) showMcDetail(i);
+    };
+  });
+}
+
+function collectMcSpecies(i) {
+  mcCollected.add(i);
+  renderMcInventory();
+  showMcDetail(i);
+}
+
+function showMcDetail(i) {
+  const s = SPECIES[i];
+  document.getElementById('mc-detail').innerHTML = `
+    <h4>${s.name}</h4>
+    <div class="mc-sci">${s.sci}</div>
+    <div style="margin-top:6px">${s.desc}</div>
+  `;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Switcher — floating bottom bar, ?variant= URL param, ← → keys
+// ─────────────────────────────────────────────────────────────
+const VARIANTS = {
+  A: { name: 'Quest Log (Zelda)', render: renderVariantA },
+  B: { name: 'PokéStop (Pokemon Go)', render: renderVariantB },
+  C: { name: 'Inventory (Minecraft)', render: renderVariantC },
+};
+const ORDER = ['A', 'B', 'C'];
+
+function currentVariantKey() {
+  const params = new URLSearchParams(location.search);
+  const v = params.get('variant');
+  return ORDER.includes(v) ? v : 'A';
+}
+
+function setVariant(key) {
+  const params = new URLSearchParams(location.search);
+  params.set('variant', key);
+  history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+  render();
+}
+
+function render() {
+  const key = currentVariantKey();
+  const container = document.getElementById('app');
+  VARIANTS[key].render(container);
+  document.getElementById('proto-label').textContent = `${key} — ${VARIANTS[key].name}`;
+}
+
+document.getElementById('proto-prev').onclick = () => {
+  const idx = ORDER.indexOf(currentVariantKey());
+  setVariant(ORDER[(idx - 1 + ORDER.length) % ORDER.length]);
+};
+document.getElementById('proto-next').onclick = () => {
+  const idx = ORDER.indexOf(currentVariantKey());
+  setVariant(ORDER[(idx + 1) % ORDER.length]);
+};
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') document.getElementById('proto-prev').click();
+  if (e.key === 'ArrowRight') document.getElementById('proto-next').click();
+});
+window.addEventListener('popstate', render);
+
+render();
+</script>
+</body>
+</html>

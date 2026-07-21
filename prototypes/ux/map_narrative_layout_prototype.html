@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — map_narrative_layout_prototype.html
+Throwaway UI prototype. Do not promote to production as-is.
+
+Question: what should the map + narrative layout look like for a game-like
+adventure walk (Pokemon Go / Zelda / Minecraft feel)?
+
+Three variants of the map+narrative page, switchable via ?variant=A|B|C,
+using the real fixed species + narrative data captured from
+prototypes/artifacts/retiro_narrative_map_cost_experiment2_claude_haiku_4_5_20251001.html.
+No existing page to host these in yet, so this is a standalone throwaway route
+(sub-shape B) rather than an adjustment to an existing one.
+
+  A — "Quest Log" (Zelda): slide-out parchment journal, accordion narrative,
+      modal quest-entry per species with a "mark discovered" action.
+  B — "PokéStop" (Pokemon Go): full-bleed map, top XP/discovery bar, pulsing
+      circular markers, bottom-sheet species card, floating Story overlay.
+  C — "Inventory" (Minecraft): split map + blocky inventory-slot sidebar that
+      fills in per species, pixel-font achievement log underneath.
+
+Run: open this file directly in a browser, e.g.
+  open prototypes/ux/map_narrative_layout_prototype.html
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — map + narrative layout (game-like UX)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  .map-fill { position: absolute; inset: 0; }
+  .map-split { position: absolute; top: 0; bottom: 0; left: 0; }
+
+  /* ── Map base-layer treatment — shared noise texture, per-variant filter/frame below ──
+     Targets .leaflet-tile-pane specifically (Leaflet keeps raster tiles, vector
+     overlays, markers and popups in separate sibling panes), so these filters
+     touch only the base map imagery, never our custom marker HTML. ── */
+  .map-noise {
+    position: absolute; inset: 0; pointer-events: none; z-index: 450;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.35"/></svg>');
+  }
+
+  /* ── Prototype switcher — deliberately loud so it never reads as part of the design ── */
+  #proto-switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 5000; display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; padding: 8px 10px; border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4); font-size: 13px; font-family: monospace;
+    border: 2px solid #ffd700;
+  }
+  #proto-switcher button {
+    background: #ffd700; color: #111; border: none; width: 28px; height: 28px;
+    border-radius: 50%; font-weight: bold; cursor: pointer; font-size: 14px;
+  }
+  #proto-switcher button:hover { background: #fff; }
+  #proto-switcher .label { min-width: 170px; text-align: center; }
+
+  /* ═══════════════ VARIANT A — Quest Log (Zelda) ═══════════════ */
+  .qa-root { position: absolute; inset: 0; background: #1b1f18; }
+  .qa-titlebar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: linear-gradient(#3a2f22, #2a2118); color: #e8d9b5; padding: 8px 24px;
+    border: 2px solid #8a7346; border-radius: 6px; font-family: Georgia, serif;
+    font-size: 16px; letter-spacing: 1px; box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  .qa-journal-tab {
+    position: absolute; top: 90px; left: 0; z-index: 1000; background: #4a3a26;
+    color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
+    font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
+    border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+  }
+  .qa-journal {
+    position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
+    background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
+    border-right: 4px solid #4a3a26; box-shadow: 4px 0 24px rgba(0,0,0,.5);
+    transition: left .35s ease; overflow-y: auto; padding: 70px 20px 20px;
+    font-family: Georgia, serif; color: #3a2f1f;
+  }
+  .qa-journal.open { left: 0; }
+  .qa-journal h2 { font-size: 20px; border-bottom: 2px solid #8a7346; padding-bottom: 8px; }
+  .qa-entry { border: 1px solid #b8a06e; border-radius: 6px; margin-bottom: 10px; background: rgba(255,255,255,.35); }
+  .qa-entry summary {
+    padding: 10px 12px; cursor: pointer; font-weight: bold; display: flex;
+    align-items: center; gap: 8px; list-style: none;
+  }
+  .qa-entry summary::-webkit-details-marker { display: none; }
+  .qa-entry .qa-num {
+    width: 22px; height: 22px; border-radius: 50%; background: #4a3a26; color: #f3e6c8;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0;
+  }
+  .qa-entry .qa-check { margin-left: auto; color: #2f6f2f; font-weight: bold; }
+  .qa-entry-body { padding: 0 12px 12px 42px; font-size: 13.5px; line-height: 1.6; }
+  .qa-map-wrap {
+    position: absolute; inset: 14px; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 0 0 6px #2a2018, 0 0 0 10px #8a7346, 0 0 0 12px #3a2a15,
+                inset 0 0 90px rgba(20,12,4,.75), 0 20px 50px rgba(0,0,0,.6);
+  }
+  .qa-map-wrap .leaflet-tile-pane {
+    filter: sepia(.6) saturate(1.5) contrast(1.15) brightness(.82) hue-rotate(-8deg);
+  }
+  .qa-map-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(58,42,21,0) 45%, rgba(30,20,8,.75) 100%);
+    mix-blend-mode: multiply;
+  }
+  .qa-map-grain { mix-blend-mode: overlay; opacity: .5; }
+  .qa-marker-medallion {
+    background: radial-gradient(circle at 35% 30%, #d9c28a, #7a5a2d 70%); color: #2a1f10;
+    border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center;
+    justify-content: center; font-weight: bold; font-size: 15px; font-family: Georgia, serif;
+    border: 2px solid #3a2a15; box-shadow: 0 3px 8px rgba(0,0,0,.5);
+  }
+  .qa-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qa-modal {
+    width: 320px; background: #f3e6c8; border: 4px double #7a5a2d; border-radius: 4px;
+    padding: 18px; font-family: Georgia, serif; color: #3a2f1f; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  }
+  .qa-modal img { width: 100%; border-radius: 4px; border: 2px solid #7a5a2d; margin: 8px 0; }
+  .qa-modal .qa-close {
+    position: absolute; top: 8px; right: 10px; cursor: pointer; font-weight: bold; color: #7a5a2d;
+  }
+  .qa-modal button.qa-discover {
+    margin-top: 10px; width: 100%; padding: 8px; background: #4a3a26; color: #f3e6c8;
+    border: none; border-radius: 4px; cursor: pointer; font-family: Georgia, serif;
+  }
+
+  /* ═══════════════ VARIANT B — PokéStop (Pokemon Go) ═══════════════ */
+  .pg-root { position: absolute; inset: 0; }
+  .pg-topbar {
+    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 1000;
+    background: #fff; border-radius: 16px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.2);
+    display: flex; align-items: center; gap: 12px; font-family: -apple-system, sans-serif;
+  }
+  .pg-topbar .pg-title { font-weight: 800; color: #2b6f4f; font-size: 14px; flex-shrink: 0; }
+  .pg-xpbar { flex: 1; height: 12px; background: #e6e6e6; border-radius: 999px; overflow: hidden; }
+  .pg-xpfill { height: 100%; background: linear-gradient(90deg, #37c871, #1f9e57); transition: width .4s ease; }
+  .pg-count { font-size: 13px; font-weight: 700; color: #333; flex-shrink: 0; }
+  .pg-pin-wrap { position: relative; width: 46px; height: 46px; }
+  .pg-pin-ring {
+    position: absolute; inset: 0; border-radius: 50%; background: rgba(55,200,113,.35);
+    animation: pg-pulse 1.8s ease-out infinite;
+  }
+  .pg-pin-ring.pg-done { background: rgba(255,193,7,.25); animation: none; }
+  @keyframes pg-pulse { 0% { transform: scale(.6); opacity: .9; } 100% { transform: scale(1.6); opacity: 0; } }
+  .pg-pin-core {
+    position: absolute; inset: 8px; border-radius: 50%; background: #37c871; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 15px;
+    border: 3px solid #fff; box-shadow: 0 3px 10px rgba(0,0,0,.35);
+  }
+  .pg-pin-core.pg-done { background: #ffc107; }
+  .pg-sheet-backdrop { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.25); }
+  .pg-sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 2001; background: #fff;
+    border-radius: 22px 22px 0 0; padding: 18px 20px 26px; box-shadow: 0 -8px 30px rgba(0,0,0,.3);
+    max-height: 60vh; overflow-y: auto; animation: pg-slideup .25s ease-out;
+    font-family: -apple-system, sans-serif;
+  }
+  @keyframes pg-slideup { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .pg-sheet .pg-handle { width: 40px; height: 5px; background: #ddd; border-radius: 3px; margin: 0 auto 14px; }
+  .pg-sheet img { width: 100%; height: 160px; object-fit: cover; border-radius: 12px; }
+  .pg-sheet h3 { margin: 10px 0 0; font-size: 18px; }
+  .pg-sheet .pg-sci { color: #888; font-size: 12px; font-style: italic; }
+  .pg-sheet p { font-size: 13.5px; line-height: 1.6; color: #333; }
+  .pg-sheet button.pg-continue {
+    width: 100%; padding: 12px; background: #37c871; color: #fff; font-weight: 700;
+    border: none; border-radius: 12px; font-size: 14px; margin-top: 6px; cursor: pointer;
+  }
+  .pg-map-wrap {
+    position: absolute; inset: 0; overflow: hidden;
+  }
+  .pg-map-wrap .leaflet-tile-pane {
+    filter: saturate(1.7) contrast(1.2) brightness(1.1) hue-rotate(-6deg);
+  }
+  .pg-map-glow {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(255,255,255,0) 55%, rgba(20,50,35,.35) 100%);
+  }
+  .pg-map-scan {
+    position: absolute; left: 0; right: 0; height: 140px; pointer-events: none; z-index: 461;
+    background: linear-gradient(rgba(55,200,113,0), rgba(55,200,113,.16), rgba(55,200,113,0));
+    animation: pg-scan 5s linear infinite;
+  }
+  @keyframes pg-scan { 0% { top: -140px; } 100% { top: 100%; } }
+  .pg-story-fab {
+    position: absolute; bottom: 90px; right: 18px; z-index: 1000; width: 56px; height: 56px;
+    border-radius: 50%; background: #2b6f4f; color: #fff; display: flex; align-items: center;
+    justify-content: center; font-size: 24px; box-shadow: 0 6px 18px rgba(0,0,0,.35); cursor: pointer;
+    border: 3px solid #fff;
+  }
+  .pg-story-overlay {
+    position: fixed; inset: 0; z-index: 2500; background: #0d2b1c; color: #eafff0;
+    padding: 30px 26px; overflow-y: auto; font-family: -apple-system, sans-serif;
+  }
+  .pg-story-overlay h2 { color: #37c871; }
+  .pg-story-overlay p { line-height: 1.75; font-size: 15px; }
+  .pg-story-close {
+    position: absolute; top: 20px; right: 24px; font-size: 22px; cursor: pointer; color: #fff;
+  }
+
+  /* ═══════════════ VARIANT C — Inventory (Minecraft) ═══════════════ */
+  .mc-root { position: absolute; inset: 0; background: #202020; display: flex; }
+  .mc-map-pane { width: 64%; height: 100%; position: relative; border-right: 6px solid #3a3a3a; }
+  .mc-sidebar {
+    width: 36%; height: 100%; background: #4a4a4a; color: #ddd; display: flex; flex-direction: column;
+    font-family: 'Courier New', monospace;
+  }
+  .mc-sidebar-title {
+    background: #6b6b6b; border-bottom: 4px solid #2a2a2a; padding: 12px; text-align: center;
+    font-weight: bold; letter-spacing: 2px; text-transform: uppercase; font-size: 13px; color: #fff;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .mc-inventory { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; padding: 14px; }
+  .mc-slot {
+    aspect-ratio: 1; background: #8b8b8b; border: 3px solid; border-color: #3a3a3a #d8d8d8 #d8d8d8 #3a3a3a;
+    display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative;
+    overflow: hidden;
+  }
+  .mc-slot.mc-locked { background: repeating-linear-gradient(45deg,#5a5a5a,#5a5a5a 6px,#525252 6px,#525252 12px); cursor: default; }
+  .mc-slot.mc-locked::after { content: "?"; font-size: 22px; color: #333; font-weight: bold; }
+  .mc-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .mc-slot .mc-slot-num {
+    position: absolute; top: 2px; left: 3px; font-size: 10px; color: #fff; text-shadow: 1px 1px 0 #000;
+  }
+  .mc-detail { margin: 0 14px 14px; background: #2f2f2f; border: 3px solid; border-color: #1a1a1a #555 #555 #1a1a1a; padding: 10px; min-height: 70px; font-size: 12px; line-height: 1.6; }
+  .mc-detail h4 { margin: 0 0 6px; font-size: 13px; color: #ffd76b; text-shadow: 1px 1px 0 #000; }
+  .mc-detail .mc-sci { color: #9fd89f; font-style: italic; font-size: 11px; }
+  .mc-log-title {
+    background: #6b6b6b; border-top: 4px solid #2a2a2a; border-bottom: 4px solid #2a2a2a;
+    padding: 10px 12px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px;
+    color: #fff; text-shadow: 2px 2px 0 #000;
+  }
+  .mc-log { flex: 1; overflow-y: auto; padding: 14px; font-size: 12px; line-height: 1.8; background: #262626; }
+  .mc-log p { margin: 0 0 10px; }
+  .mc-log p::before { content: "» "; color: #7fdc7f; }
+  .mc-map-wrap {
+    position: absolute; inset: 0; overflow: hidden;
+    box-shadow: inset 0 0 0 6px #2a2a2a, inset 0 0 0 10px #8b8b8b, inset 0 0 0 12px #2a2a2a;
+  }
+  .mc-map-wrap .leaflet-tile-pane {
+    filter: saturate(1.4) contrast(1.4) brightness(.82) hue-rotate(4deg) grayscale(.08);
+  }
+  .mc-map-chunks {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, transparent 2px 64px),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 2px, transparent 2px 64px);
+  }
+  .mc-map-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
+  }
+  .mc-marker-block {
+    width: 30px; height: 30px; background: #8b8b8b; border: 3px solid; border-color: #3a3a3a #d8d8d8 #d8d8d8 #3a3a3a;
+    display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;
+    color: #222; font-family: 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="proto-switcher">
+  <button id="proto-prev" aria-label="previous variant">&#8592;</button>
+  <span class="label" id="proto-label"></span>
+  <button id="proto-next" aria-label="next variant">&#8594;</button>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// Shared data — captured verbatim from
+// prototypes/artifacts/retiro_narrative_map_cost_experiment2_claude_haiku_4_5_20251001.html
+// (Haiku 4.5, non-agentic experiment2 run, 19 July 2026).
+// ─────────────────────────────────────────────────────────────
+const SPECIES = [
+  {
+    num: 1, name: 'Black-billed Magpie', sci: 'Pica pica', color: '#e41a1c',
+    lat: 40.414847925925926, lon: -3.684565037037037,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/49/BlackBilledMagpie.jpg/330px-BlackBilledMagpie.jpg',
+    desc: "The black-billed magpie is a corvid found in western North America. It has black and white plumage with iridescent blue and blue-green hints visible on the wings and tail. This species was recognized as distinct from the Eurasian magpie in 2000 through genetic studies."
+  },
+  {
+    num: 2, name: 'Iberian Green Woodpecker', sci: 'Picus sharpei', color: '#377eb8',
+    lat: 40.413754698412696, lon: -3.6842265714285714,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Picus_viridis_sharpei_033.jpg/330px-Picus_viridis_sharpei_033.jpg',
+    desc: "The Iberian green woodpecker is a medium-sized woodpecker found only on the Iberian peninsula. It differs from the European green woodpecker in having less black on the head and a dusky rather than black eye-ring. The bird produces a distinctive hiss-like or sibilant call."
+  },
+  {
+    num: 3, name: 'Egyptian Goose', sci: 'Alopochen aegyptiaca', color: '#4daf4a',
+    lat: 40.414394959183674, lon: -3.682108,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg/330px-Egyptian_goose_%28Alopochen_aegyptiaca%29_London.jpg',
+    desc: "The Egyptian goose is an African waterfowl belonging to the same family as ducks and swans. Due to its popularity as an ornamental bird, it has been introduced to Europe, the United States, and other regions beyond its native range. The species was frequently depicted in ancient Egyptian art."
+  },
+  {
+    num: 4, name: 'Black Swan', sci: 'Cygnus atratus', color: '#ff7f00',
+    lat: 40.41386437209302, lon: -3.6816920930232557,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/30/Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg/330px-Black_swan_%28Cygnus_atratus%29_Scottsdale.jpg',
+    desc: "The black swan is a large waterbird native to southeast and southwest Australia, with distinctive black plumage and a red bill. Within Australia, it migrates nomadically in patterns determined by climate conditions. Both male and female black swans share responsibilities for incubating eggs and raising their young."
+  },
+  {
+    num: 5, name: 'Common Mallard', sci: 'Anas platyrhynchos', color: '#984ea3',
+    lat: 40.41556654716982, lon: -3.6832586792452826,
+    img: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bf/Anas_platyrhynchos_male_female_quadrat.jpg/330px-Anas_platyrhynchos_male_female_quadrat.jpg',
+    desc: "The mallard is a dabbling duck that breeds throughout temperate and subtropical regions of the Americas, Eurasia, and North Africa. It has been widely introduced to locations including New Zealand, Australia, and South Africa. Mallards are social waterfowl that live in wetlands, feed on water plants and small animals, and typically gather in groups or flocks."
+  }
+];
+
+// Narrative split per-waypoint for the accordion/log variants. Paragraph 1 is
+// the scene-setting intro (stray leading "# " markdown header from the raw
+// Haiku output stripped — a known quirk noted in WORK_SUMMARY_190726.md, not
+// meaningful content).
+const NARRATIVE_INTRO = "Welcome to Retiro Park, Madrid—a sanctuary where continents converge and the natural world reveals its most extraordinary secrets. We begin our expedition at the crystalline edge of discovery, where an unexpected visitor awaits.";
+const NARRATIVE_BY_SPECIES = [
+  "Here, at our first waypoint, we encounter the black-billed magpie, a corvid whose very presence in these Spanish gardens speaks to the mysteries of migration and adaptation. Notice the striking contrast of its black and white plumage, and if the light catches just so, you'll glimpse the iridescent blues and blue-greens that shimmer across its wings and tail like captured sky. This remarkable bird, long confused with its Eurasian cousin, was only recognized as a distinct species through genetic revelation in the year 2000—a reminder that nature still holds secrets waiting to be unlocked.",
+  "As we move deeper into the park's verdant heart, we're drawn toward the ancient oaks by a distinctive sound—a hiss-like, sibilant call that seems to emerge from the very wood itself. This is the realm of the Iberian green woodpecker, a medium-sized artisan of the trees found nowhere else on Earth save the Iberian peninsula itself. Observe the subtle darkness around its eye and the refined black markings on its head, features that distinguish it from its European relatives. Here is a creature perfectly adapted to these particular woods, a living embodiment of biogeographic distinctiveness.",
+  "Our journey now leads us to water, where the park's lakes shimmer in the afternoon light. The Egyptian goose glides gracefully across the surface—an African wanderer who, thanks to centuries of human fascination as an ornamental bird, has established itself far from its native Nile. The ancients revered this species in their hieroglyphics; today it graces Madrid's waters.",
+  "Beyond it glides a more recent arrival: the black swan, that magnificent Australian native with its obsidian plumage and brilliant crimson bill. Against Europe's pale waterfowl, it seems almost impossibly exotic, yet here it thrives, both parents devoted to their young.",
+  "And finally, completing our circuit, we return to the familiar—the common mallard, humanity's most widely distributed duck, gathered in companionable flocks as they have been for millennia across the world's wetlands. In Retiro's waters, all the world's birds meet, telling the story of nature in our modern age."
+];
+const CENTER = [40.41448570055702, -3.683170076146829];
+const ROUTE_COORDS = SPECIES.map(s => [s.lat, s.lon]);
+
+let leafletMap = null; // tracked so each variant switch can .remove() the previous instance
+
+function destroyMap() {
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+}
+
+// OpenTopoMap instead of stock OSM streets — contour lines, hillshading and
+// green terrain shading read as "adventure map" out of the box, no API key
+// needed. Per-variant CSS filters (applied to .leaflet-tile-pane only, via
+// the *-map-wrap classes below) push this same base into each variant's
+// palette instead of every variant looking like the same default map.
+function baseTileLayer(map) {
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+    maxZoom: 17
+  }).addTo(map);
+  L.polyline(ROUTE_COORDS, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(map);
+}
+
+// ═══════════════════════ VARIANT A — Quest Log ═══════════════════════
+function renderVariantA(container) {
+  container.innerHTML = `
+    <div class="qa-root">
+      <div class="qa-titlebar">⚔ Retiro Park — A Nature Quest</div>
+      <div class="qa-journal-tab" id="qa-tab">QUEST LOG</div>
+      <div class="qa-journal" id="qa-journal">
+        <h2>Quest Log</h2>
+        <p style="font-size:13px;line-height:1.6;margin-bottom:16px">${NARRATIVE_INTRO}</p>
+        ${SPECIES.map((s, i) => `
+          <details class="qa-entry" data-idx="${i}">
+            <summary><span class="qa-num">${s.num}</span> ${s.name} <span class="qa-check" data-check="${i}" style="visibility:hidden">✓</span></summary>
+            <div class="qa-entry-body">${NARRATIVE_BY_SPECIES[i]}</div>
+          </details>
+        `).join('')}
+      </div>
+      <div class="qa-map-wrap">
+        <div id="qa-map" class="map-fill"></div>
+        <div class="map-noise qa-map-grain"></div>
+        <div class="qa-map-vignette"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('qa-tab').onclick = () => document.getElementById('qa-journal').classList.toggle('open');
+
+  destroyMap();
+  leafletMap = L.map('qa-map').setView(CENTER, 15);
+  baseTileLayer(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({ html: `<div class="qa-marker-medallion">${s.num}</div>`, iconSize: [36, 36], iconAnchor: [18, 18], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => openQuestModal(i));
+  });
+}
+
+function openQuestModal(i) {
+  const s = SPECIES[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'qa-modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="qa-modal">
+      <span class="qa-close">✕</span>
+      <div style="font-size:11px;letter-spacing:1px;color:#7a5a2d">QUEST ENTRY ${s.num}/5</div>
+      <h3 style="margin:4px 0 0">${s.name}</h3>
+      <div style="font-style:italic;color:#7a5a2d;font-size:12px">${s.sci}</div>
+      <img src="${s.img}"/>
+      <p style="font-size:13px;line-height:1.5">${s.desc}</p>
+      <button class="qa-discover">Mark Discovered</button>
+    </div>
+  `;
+  backdrop.querySelector('.qa-close').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('.qa-discover').onclick = () => {
+    const chk = document.querySelector(`[data-check="${i}"]`);
+    if (chk) chk.style.visibility = 'visible';
+    backdrop.remove();
+  };
+  document.body.appendChild(backdrop);
+}
+
+// ═══════════════════════ VARIANT B — PokéStop ═══════════════════════
+let pgDiscovered = new Set();
+
+function renderVariantB(container) {
+  pgDiscovered = new Set();
+  container.innerHTML = `
+    <div class="pg-root">
+      <div class="pg-map-wrap">
+        <div id="pg-map" class="map-fill"></div>
+        <div class="pg-map-glow"></div>
+        <div class="pg-map-scan"></div>
+      </div>
+      <div class="pg-topbar">
+        <div class="pg-title">🧭 Retiro Quest</div>
+        <div class="pg-xpbar"><div class="pg-xpfill" id="pg-xpfill" style="width:0%"></div></div>
+        <div class="pg-count" id="pg-count">0 / 5</div>
+      </div>
+      <div class="pg-story-fab" id="pg-story-fab" title="Read the story">📖</div>
+    </div>
+  `;
+  destroyMap();
+  leafletMap = L.map('pg-map').setView(CENTER, 15);
+  baseTileLayer(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({
+      html: `<div class="pg-pin-wrap" data-pin="${i}">
+               <div class="pg-pin-ring"></div>
+               <div class="pg-pin-core">${s.num}</div>
+             </div>`,
+      iconSize: [46, 46], iconAnchor: [23, 23], className: ''
+    });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => openPgSheet(i));
+  });
+
+  document.getElementById('pg-story-fab').onclick = openPgStory;
+}
+
+function updatePgProgress() {
+  const pct = Math.round((pgDiscovered.size / SPECIES.length) * 100);
+  const fill = document.getElementById('pg-xpfill');
+  const count = document.getElementById('pg-count');
+  if (fill) fill.style.width = pct + '%';
+  if (count) count.textContent = `${pgDiscovered.size} / ${SPECIES.length}`;
+  pgDiscovered.forEach(i => {
+    const wrap = document.querySelector(`[data-pin="${i}"]`);
+    if (wrap) {
+      wrap.querySelector('.pg-pin-ring').classList.add('pg-done');
+      wrap.querySelector('.pg-pin-core').classList.add('pg-done');
+    }
+  });
+}
+
+function openPgSheet(i) {
+  const s = SPECIES[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'pg-sheet-backdrop';
+  backdrop.innerHTML = `
+    <div class="pg-sheet">
+      <div class="pg-handle"></div>
+      <img src="${s.img}"/>
+      <h3>${s.name}</h3>
+      <div class="pg-sci">${s.sci}</div>
+      <p>${s.desc}</p>
+      <button class="pg-continue">Continue Walking →</button>
+    </div>
+  `;
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('.pg-continue').onclick = () => {
+    pgDiscovered.add(i);
+    updatePgProgress();
+    backdrop.remove();
+  };
+  document.body.appendChild(backdrop);
+}
+
+function openPgStory() {
+  const overlay = document.createElement('div');
+  overlay.className = 'pg-story-overlay';
+  overlay.innerHTML = `
+    <span class="pg-story-close">✕</span>
+    <h2>Your Retiro Walk — Expedition Log</h2>
+    <p>${NARRATIVE_INTRO}</p>
+    ${NARRATIVE_BY_SPECIES.map(p => `<p>${p}</p>`).join('')}
+  `;
+  overlay.querySelector('.pg-story-close').onclick = () => overlay.remove();
+  document.body.appendChild(overlay);
+}
+
+// ═══════════════════════ VARIANT C — Inventory ═══════════════════════
+let mcCollected = new Set();
+
+function renderVariantC(container) {
+  mcCollected = new Set();
+  container.innerHTML = `
+    <div class="mc-root">
+      <div class="mc-map-pane">
+        <div class="mc-map-wrap">
+          <div id="mc-map" class="map-fill"></div>
+          <div class="mc-map-chunks"></div>
+          <div class="mc-map-vignette"></div>
+        </div>
+      </div>
+      <div class="mc-sidebar">
+        <div class="mc-sidebar-title">Inventory</div>
+        <div class="mc-inventory" id="mc-inventory"></div>
+        <div class="mc-detail" id="mc-detail">Tap a marker on the map to collect a species.</div>
+        <div class="mc-log-title">Achievement Log</div>
+        <div class="mc-log">
+          <p>${NARRATIVE_INTRO}</p>
+          ${NARRATIVE_BY_SPECIES.map(p => `<p>${p}</p>`).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  renderMcInventory();
+
+  destroyMap();
+  leafletMap = L.map('mc-map').setView(CENTER, 15);
+  baseTileLayer(leafletMap);
+
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({ html: `<div class="mc-marker-block">${s.num}</div>`, iconSize: [30, 30], iconAnchor: [15, 15], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => collectMcSpecies(i));
+  });
+}
+
+function renderMcInventory() {
+  const grid = document.getElementById('mc-inventory');
+  grid.innerHTML = SPECIES.map((s, i) => `
+    <div class="mc-slot ${mcCollected.has(i) ? '' : 'mc-locked'}" data-slot="${i}">
+      <span class="mc-slot-num">${s.num}</span>
+      ${mcCollected.has(i) ? `<img src="${s.img}"/>` : ''}
+    </div>
+  `).join('');
+  grid.querySelectorAll('.mc-slot').forEach(el => {
+    el.onclick = () => {
+      const i = parseInt(el.dataset.slot, 10);
+      if (mcCollected.has(i)) showMcDetail(i);
+    };
+  });
+}
+
+function collectMcSpecies(i) {
+  mcCollected.add(i);
+  renderMcInventory();
+  showMcDetail(i);
+}
+
+function showMcDetail(i) {
+  const s = SPECIES[i];
+  document.getElementById('mc-detail').innerHTML = `
+    <h4>${s.name}</h4>
+    <div class="mc-sci">${s.sci}</div>
+    <div style="margin-top:6px">${s.desc}</div>
+  `;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Switcher — floating bottom bar, ?variant= URL param, ← → keys
+// ─────────────────────────────────────────────────────────────
+const VARIANTS = {
+  A: { name: 'Quest Log (Zelda)', render: renderVariantA },
+  B: { name: 'PokéStop (Pokemon Go)', render: renderVariantB },
+  C: { name: 'Inventory (Minecraft)', render: renderVariantC },
+};
+const ORDER = ['A', 'B', 'C'];
+
+function currentVariantKey() {
+  const params = new URLSearchParams(location.search);
+  const v = params.get('variant');
+  return ORDER.includes(v) ? v : 'A';
+}
+
+function setVariant(key) {
+  const params = new URLSearchParams(location.search);
+  params.set('variant', key);
+  history.replaceState(null, '', `${location.pathname}?${params.toString()}`);
+  render();
+}
+
+function render() {
+  const key = currentVariantKey();
+  const container = document.getElementById('app');
+  VARIANTS[key].render(container);
+  document.getElementById('proto-label').textContent = `${key} — ${VARIANTS[key].name}`;
+}
+
+document.getElementById('proto-prev').onclick = () => {
+  const idx = ORDER.indexOf(currentVariantKey());
+  setVariant(ORDER[(idx - 1 + ORDER.length) % ORDER.length]);
+};
+document.getElementById('proto-next').onclick = () => {
+  const idx = ORDER.indexOf(currentVariantKey());
+  setVariant(ORDER[(idx + 1) % ORDER.length]);
+};
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement && document.activeElement.isContentEditable)) return;
+  if (e.key === 'ArrowLeft') document.getElementById('proto-prev').click();
+  if (e.key === 'ArrowRight') document.getElementById('proto-next').click();
+});
+window.addEventListener('popstate', render);
+
+render();
+</script>
+</body>
+</html>
