@@ -98,7 +98,61 @@ All 9 backbone kingdom values, confirmed via live `species/match` calls (all `EX
 | Protozoa | 7 |
 | Viruses | 8 |
 
-This set is small and stable enough to hardcode as a local lookup, checked before any live `species/match` call (saves a network round-trip for the single most common case — "plants", "animals", "fungi" intents). Class/order/family/genus are **not** pre-loaded upfront (GBIF has 400+ classes alone) — always resolve those live via `species/match`. A small curated cache for common lay terms (birds→Aves, insects→Insecta, mammals→Mammalia, etc.) may be worth adding *after* this prototype runs and shows which terms actually recur — not built speculatively now.
+This set is small and stable enough to hardcode as a local lookup, checked before any live `species/match` call (saves a network round-trip for the single most common case — "plants", "animals", "fungi" intents). Stored as `prototypes/reference/gbif_kingdom_keys.json`.
+
+### 2.4 Why "unranked" clade names (Vertebrata, Tetrapoda, Gnathostomata, Osteichthyes, Eukaryota) must never be used as `taxonValue`
+
+The GBIF **portal's** occurrence-search UI shows a classification-tree breadcrumb (e.g. `Eukaryota → Animalia → Vertebrata → Gnathostomata → Osteichthyes → Chordata → Tetrapoda → Aves → Passeriformes → Anatidae`) when browsing a specific taxon's lineage. Several of these labels are **not** resolvable the way our pipeline expects, and testing them live explains why:
+
+- `species/match?name=Eukaryota` → `matchType: NONE` (no match at all).
+- `species/match?name=Vertebrata` (no rank) → matches an unrelated **red algae genus** called `Vertebrata` (`matchType: HIGHERRANK`, confidence 92).
+- `species/match?name=Tetrapoda` (no rank) → matches an unrelated **arachnid genus** called `Tetrapoda`.
+
+Root cause, confirmed via `species/search` (which, unlike `match`, returns results across *all* GBIF checklist datasets, not just one): unranked `Tetrapoda`/`Vertebrata`-style clade nodes genuinely exist in GBIF's data — but under *other* checklist datasets, not the **GBIF Backbone Taxonomy** (`datasetKey: d7dddbf4-2cf0-4f39-9b2a-bb099caae36c`) that `occurrence/search`'s `*Key` params and `species/match` (by default) both query against. Within the backbone specifically, `Tetrapoda` only exists as a `GENUS`-ranked arachnid entry — there is no unranked "Tetrapoda-the-clade" node in that dataset. The GBIF portal's classification-tree view blends multiple datasets for browsing convenience; our pipeline does not (and should not).
+
+**Consequence for this design:** none — already consistent with §3's schema, which scopes `taxonRank` to `kingdom | phylum | class | order | family | genus` (real, ranked backbone levels). This confirms that scoping is not just a simplification but a correctness requirement: informal clade labels from the portal's browsing UI (anything you'd see as an intermediate, unranked node in a classification breadcrumb) must never be treated as valid `taxonValue` input, since they are either unresolvable or resolve to wrong, unrelated organisms when queried against the backbone. Worth a line in the `gbif_docs_summary.md` reference doc (§6) warning against this specific failure mode, with `Tetrapoda`→arachnid as the concrete cautionary example.
+
+### 2.5 Curated class-level cache — common Animalia subdivisions
+
+Class/order/family/genus are **not** pre-loaded exhaustively (GBIF has 400+ classes alone) — always resolve those live via `species/match` by default. However, one curated subset is worth pre-loading now rather than waiting for real usage data (superseding §2.3's original "wait and see" stance for this specific case): most lay queries about animals will land at the *class* level within `Animalia` (e.g. "birds," "insects," "mammals"), not at the kingdom level, so these are predictable enough to seed upfront.
+
+Verified live (`species/match?name={X}&rank=CLASS`), stored as `prototypes/reference/gbif_common_class_keys.json`:
+
+| Lay term | Class | `classKey` | Match |
+|---|---|---|---|
+| Birds | Aves | 212 | EXACT, confidence 96 |
+| Insects | Insecta | 216 | EXACT, confidence 96 |
+| Mammals | Mammalia | 359 | EXACT, confidence 96 |
+| Amphibians | Amphibia | 131 | EXACT, confidence 96 |
+| Spiders (arachnids) | Arachnida | 367 | EXACT, confidence 96 |
+| Snails/slugs (gastropods) | Gastropoda | 225 | EXACT, confidence 96 |
+
+**Reptiles — resolved, as a 4-class union.** Investigated further after initial design: `species/match?name=Reptilia&rank=CLASS` returns `matchType: HIGHERRANK` (falls back a rank to `Chordata`), and the full record for the `CLASS`-ranked `Reptilia` entry (`usageKey: 12170551`) explains why — its own `remarks` field states: *"In the 2022 Catalogue of Life checklist, the previous class Reptilia has been retired as a paraphyletic group. Recognizing the wide-spread use of this name, GBIF continues to include it as a pro parte synonym for Crocodylia (crocodilians), Squamata (lizards and snakes), Testudines (turtles) and Sphenodontia, so that it can be found in common searches."* Confirmed by listing all direct children of `Chordata` (`GET /v1/species/44/children`) — the backbone genuinely has four separate, `ACCEPTED`, `CLASS`-ranked replacements:
+
+| Reptile group | Class | `classKey` |
+|---|---|---|
+| Crocodilians | Crocodylia | 11493978 |
+| Lizards & snakes | Squamata | 11592253 |
+| Turtles | Testudines | 11418114 |
+| Tuatara | Sphenodontia | 11569602 |
+
+A "reptiles" request becomes **four parallel `class` filters** (same mechanism as any mixed-taxa request, e.g. "birds, plants, mammals" — see §4), not one unresolvable filter. All 4 added to `prototypes/reference/gbif_common_class_keys.json` and the worked-examples table in `gbif_docs_summary.md`.
+
+**Fish — resolved as a data-driven, coverage-based holding solution (not taxonomically complete).** The same `Chordata`-children listing (paginated fully: 7,508 total children, of which 16 are `CLASS` and 47 are `ORDER` rank) shows why fish doesn't have an equally clean fix as reptiles: ray-finned fish (most fish species) isn't a class in the current backbone at all — it's represented only as **46 separate orders** (excluding one non-fish stray, `Copelata`, a `DOUBTFUL`-status tunicate order that also appears as a direct `Chordata` child), plus **6 unrelated classes** for other fish lineages (`Elasmobranchii` sharks/rays, `Holocephali` chimaeras, `Myxini` hagfish, `Petromyzonti` lampreys, `Coelacanthi`, `Dipneusti` lungfish) — 52 fish-related groups total, no small taxonomically-complete union like reptiles had.
+
+Instead of taxonomic completeness, ranked all 52 by **real global GBIF occurrence count** (`occurrence/search?{classKey|orderKey}={key}&limit=0`, reading `count`):
+
+| Rank | Order | `orderKey` | Global occurrence count |
+|---|---|---|---|
+| 1 | Perciformes | 587 | 32,122,767 |
+| 2 | Cypriniformes | 1153 | 11,820,952 |
+| 3 | Scorpaeniformes | 590 | 8,371,211 |
+| 4 | Gadiformes | 549 | 8,233,353 |
+| 5 | Clupeiformes | 538 | 7,880,534 |
+
+These top 5 alone account for **~67% of all 101.8M fish-related occurrence records** across the full set of 52 groups checked. A "fish" request becomes 5 parallel `order` filters (same mixed-taxa mechanism as reptiles/mixed-taxa requests) — a practical majority-coverage approximation, explicitly not exhaustive. Stored in `prototypes/reference/gbif_common_order_keys.json` (a new, order-scoped cache file, parallel to the class-scoped `gbif_common_class_keys.json` — kept separate since the validation lookup in §5 is scoped by rank).
+
+Note: `Cypriniformes` (carp) ranking #2 is a good sign for this specific app — carp are very likely present in Retiro's actual lake, confirmed earlier in this session (`orderKey=1153` returned 73 real `Cyprinus carpio` records in the Retiro polygon, vs. only 4 near-useless hits from a `q=fish` text-search attempt that also produced a false-positive heron record).
 
 ---
 
@@ -143,7 +197,7 @@ Per filter group:
 ## 5. Validation / guardrails summary
 
 One uniform mechanism, applied per `taxonFilter`:
-1. Check the local kingdom map (§2.3) first if `taxonRank == "kingdom"`.
+1. Check the local kingdom map (§2.3, `gbif_kingdom_keys.json`) first if `taxonRank == "kingdom"`; check the curated class cache (§2.5, `gbif_common_class_keys.json`, now includes the 4 reptile classes) first if `taxonRank == "class"`; check the curated order cache (§2.5, `gbif_common_order_keys.json`, the 5 fish orders) first if `taxonRank == "order"`.
 2. Otherwise (or if not found there), call `species/match?name={taxonValue}&rank={taxonRank uppercase}`.
 3. Accept if `matchType == "EXACT"`, or `matchType == "FUZZY" and confidence >= 85`.
 4. Otherwise, treat the filter as unresolved → dropped, contributing to the empty-group/redistribution/surfacing behaviour in §4.
@@ -154,14 +208,17 @@ One uniform mechanism, applied per `taxonFilter`:
 
 ## 6. Reference materials to build (`prototypes/reference/`)
 
-New folder. Two files, to be drafted by the implementing agent and reviewed by the user before use in prompts:
+New folder. Three files (built during this planning session — kingdom and class-cache JSON files already created and verified; `gbif_docs_summary.md` still to be drafted and reviewed by the user before use in prompts):
 
 1. **`gbif_docs_summary.md`** — curated, hand-written markdown (not a raw OpenAPI dump) covering:
    - API mechanics actually used: `occurrence/search`'s relevant params (§2.1) and `species/match`'s params/response shape (§2.2), described plainly enough for an LLM prompt.
-   - The verified kingdom enum table (§2.3).
-   - 10-15 worked lay-term → GBIF rank/value examples, focusing on ambiguous cases (e.g. "trees" → still `kingdom`/`Plantae`, no dedicated "tree" rank; "insects" → `class`/`Insecta`; "birds" → `class`/`Aves`) — this is where LLM hallucination risk is highest.
+   - The verified kingdom enum table (§2.3) and curated class cache (§2.5).
+   - The unranked-clade-name warning from §2.4, with `Tetrapoda`→arachnid as the concrete cautionary example.
+   - 10-15 worked lay-term → GBIF rank/value examples, focusing on ambiguous cases (e.g. "trees" → still `kingdom`/`Plantae`, no dedicated "tree" rank; "insects" → `class`/`Insecta`; "birds" → `class`/`Aves`) — this is where LLM hallucination risk is highest. Include "reptiles"/"fish" as known-unresolved examples per §2.5, so the LLM/prompt doesn't need to guess at them either.
    - Explicit note that qualitative/descriptive terms have no GBIF equivalent and should be dropped, not guessed.
-2. **`gbif_kingdom_keys.json`** (or embedded directly in the script as a constant — implementer's call) — the 9-value static map from §2.3.
+2. **`gbif_kingdom_keys.json`** — done, the 9-value static map from §2.3.
+3. **`gbif_common_class_keys.json`** — done, 10 values: the original 6 common Animalia classes plus the 4 reptile classes from §2.5.
+4. **`gbif_common_order_keys.json`** — done, the 5-value fish holding solution from §2.5 (Perciformes, Cypriniformes, Scorpaeniformes, Gadiformes, Clupeiformes — coverage-based, not exhaustive).
 
 Do not include the full raw OpenAPI spec text (§1, out of scope for this round).
 
@@ -178,13 +235,15 @@ Do not include the full raw OpenAPI spec text (§1, out of scope for this round)
 - `prototypes/scripts/intent_query_spike.py` — new, self-contained (does **not** import from `waypoint_spike.py` or other prototype scripts — established pattern in this codebase, each prototype stays standalone; re-implement the small amount of shared logic like `haversine_m` or the GBIF fetch loop locally if needed).
 - `prototypes/scripts/test_intent_query_spike.py` — light TDD (§9), tests for the deterministic logic only.
 - `prototypes/reference/gbif_docs_summary.md` — §6.
-- `prototypes/reference/gbif_kingdom_keys.json` — §6.
+- `prototypes/reference/gbif_kingdom_keys.json` — §6, done.
+- `prototypes/reference/gbif_common_class_keys.json` — §2.5/§6, done.
+- `prototypes/reference/gbif_common_order_keys.json` — §2.5/§6, done.
 
 ---
 
 ## 8. Test intents (manual validation of the LLM step — not automated, since LLM output isn't deterministic)
 
-Run all 8 against the built script and eyeball the output:
+Run all 10 against the built script and eyeball the output:
 
 1. `"Today I want to learn about plants"` → expect `taxonFilters: [{kingdom, Plantae}]`.
 2. `"I'm curious about insects"` → expect `taxonFilters: [{class, Insecta}]`.
@@ -194,15 +253,17 @@ Run all 8 against the built script and eyeball the output:
 6. `"Show me something colourful"` (qualitative, unmappable) → expect `taxonFilters: []`, no invented `q` value — confirms the qualitative-intent guardrail (§3/§5).
 7. A deliberately made-up/misspelled taxon (e.g. a nonsense word) → expect the resolution step to return `matchType: NONE` and the filter dropped — confirms the validation/fallback path (§5) end-to-end, not just the LLM's own output.
 8. `"Show me a mix of birds, plants and mammals"` → expect `taxonFilters` with 3 entries (`class/Aves`, `kingdom/Plantae`, `class/Mammalia`), and the final species list should actually contain a mix (confirms §4's quota/round-robin merge works, not just that 3 GBIF calls fired).
+9. `"I want to see reptiles"` → expect `taxonFilters` with 4 entries (`class/Crocodylia`, `class/Squamata`, `class/Testudines`, `class/Sphenodontia`), all resolved via the curated class cache (§2.5) — confirms the reptile 4-class union works end-to-end, and that the class cache is actually being hit (not falling through to a live `species/match` call for these).
+10. `"Show me some fish"` → expect `taxonFilters` with 5 entries (`order/Perciformes`, `order/Cypriniformes`, `order/Scorpaeniformes`, `order/Gadiformes`, `order/Clupeiformes`), resolved via the curated order cache (§2.5) — confirms the fish holding solution works end-to-end. Given `Cypriniformes` (carp) is confirmed present in Retiro's real data (§2.5), this case should return actual species, not just an empty/fallback result.
 
-**Success criteria:** each case produces a valid, resolved GBIF query (or a correctly-empty one with the right fallback), returns ≥1 species where expected, and cases 5-7 correctly fall back rather than erroring or inventing values. Case 8 specifically must show real mixing (not e.g. 5 birds and 0 mammals/plants) unless Retiro's real data makes a group genuinely empty — in which case the surfacing behaviour (§4) must fire instead of silent failure.
+**Success criteria:** each case produces a valid, resolved GBIF query (or a correctly-empty one with the right fallback), returns ≥1 species where expected, and cases 5-7 correctly fall back rather than erroring or inventing values. Case 8 specifically must show real mixing (not e.g. 5 birds and 0 mammals/plants) unless Retiro's real data makes a group genuinely empty — in which case the surfacing behaviour (§4) must fire instead of silent failure. Cases 9-10 must resolve via the local cache files (§2.5), not a live `species/match` call — worth confirming with a log/print statement during manual testing, since a silent fallback to the live call would still "work" but wouldn't prove the cache is wired in correctly.
 
 ---
 
 ## 9. Testing (light TDD — see `WORK_SUMMARY_180726.md`/`WORK_SUMMARY_190726.md` for why prototypes are normally test-free, and this session's `/grill-me` Q9 for why this one differs)
 
 Write tests (`test_intent_query_spike.py`) **only** for the deterministic, non-LLM, non-network logic:
-- Kingdom-map lookup (hit and miss cases).
+- Kingdom-map and class-cache lookup (hit and miss cases for both).
 - `species/match` response validation logic (`EXACT` accept, `FUZZY` ≥85 accept, `FUZZY` <85 reject, `NONE` reject) — test against fixed mock response dicts, not live calls.
 - Quota/round-robin species selection across groups, including the degradation case (a group with fewer results than its quota, or zero) and redistribution to other groups.
 
@@ -214,5 +275,6 @@ Do **not** test the LLM call itself or make real network calls in the test suite
 
 - Naming decision (Nature Walker vs. Nature Quest) — still open, do not rename files.
 - Full end-to-end integration (this species-selection step → waypoint ordering → map/narrative generation) is the next round after this one works in isolation.
-- Class/order-level curated key cache — build later from real usage, not upfront.
+- Family/genus-level curated key caches (beyond the class/order-level ones built in §2.5) — build later from real usage, not upfront.
+- **Fish coverage is a holding solution, not a closed decision.** The 5-order cache (§2.5) covers ~67% of fish observations by volume, not all of them — revisit if real usage shows the missing ~33% (other orders/classes) matters in practice, e.g. via a broader or scenario-specific (e.g. "common park/lake fish") curated list.
 - Whether `/grill-me` (or a preceding step) should mandate pulling verified third-party API references before an interview starts, to avoid repeating this session's process issue — flagged in `WORK_SUMMARY_210726.md`, not yet actioned.

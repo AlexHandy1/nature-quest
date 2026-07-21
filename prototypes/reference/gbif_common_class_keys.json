@@ -1,0 +1,13 @@
+{
+  "_note": "Curated subset only, not exhaustive. Covers common lay-term Animalia subdivisions verified as clean EXACT matches against the GBIF Backbone Taxonomy. Anything not listed here falls through to a live species/match call. 'Reptiles' has no single class in the current backbone (2022 Catalogue of Life split retired class Reptilia into 4 classes) so the 4 entries below must be used together, as a group, to represent a 'reptiles' request - not individually. Fish are deliberately excluded - see PLANNING_INTENT_QUERY_210726.md for why.",
+  "Aves": 212,
+  "Insecta": 216,
+  "Mammalia": 359,
+  "Amphibia": 131,
+  "Arachnida": 367,
+  "Gastropoda": 225,
+  "Crocodylia": 11493978,
+  "Squamata": 11592253,
+  "Testudines": 11418114,
+  "Sphenodontia": 11569602
+}
