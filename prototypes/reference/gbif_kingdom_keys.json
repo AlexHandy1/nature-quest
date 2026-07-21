@@ -1,0 +1,11 @@
+{
+  "incertae sedis": 0,
+  "Animalia": 1,
+  "Archaea": 2,
+  "Bacteria": 3,
+  "Chromista": 4,
+  "Fungi": 5,
+  "Plantae": 6,
+  "Protozoa": 7,
+  "Viruses": 8
+}

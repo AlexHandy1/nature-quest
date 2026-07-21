@@ -1,0 +1,8 @@
+{
+  "_note": "Curated subset only, not exhaustive. Fish have no single class in the current GBIF backbone (ray-finned fish, most fish species, exist only as ~46 separate orders directly under Chordata, plus a handful of unrelated classes for sharks/lampreys/etc). These 5 orders were selected as a data-driven holding solution: ranked by real global GBIF occurrence count across all 52 fish-related classes/orders, the top 5 alone account for ~67% of all fish-related observations in GBIF. Not a taxonomically complete 'fish' filter - a practical majority-coverage approximation. See PLANNING_INTENT_QUERY_210726.md for the full methodology and counts.",
+  "Perciformes": 587,
+  "Cypriniformes": 1153,
+  "Scorpaeniformes": 590,
+  "Gadiformes": 549,
+  "Clupeiformes": 538
+}

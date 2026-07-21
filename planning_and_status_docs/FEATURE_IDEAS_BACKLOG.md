@@ -19,3 +19,7 @@ Users state a goal or interest for that day — "Today I want to learn about pla
 **Why this matters:** It is the primary thing that makes Nature Walker impossible to replicate without AI. A static app can show you the ten most common birds; only an AI-backed system can hear "I want to learn about fungi" and construct a coherent, accurate, engaging walk from GBIF occurrence data in seconds.
 
 **Architecture implication:** The pipeline must be intent-driven from the start. Species selection, waypoint ordering, information retrieval, and narrative generation all receive the user's stated intent as a first-class input. Efficiency matters — the system needs to generate fresh combinations quickly enough to feel live, which shapes how GBIF queries are structured, how species info is cached or retrieved, and how narrative prompts are templated.
+
+## WebGL 3D map experience
+
+Explore WebGL for a genuinely 3D, game-like map experience (vs. the current 2D Leaflet-based prototypes). Aimed at the fantasy video game journey direction — closer to the depth/perspective feel of Zelda/Minecraft-style exploration than a flat top-down map can offer.
