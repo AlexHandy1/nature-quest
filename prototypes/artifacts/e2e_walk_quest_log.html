@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — e2e walk spike (Zelda quest log)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  .map-fill { position: absolute; inset: 0; }
+  .map-noise {
+    position: absolute; inset: 0; pointer-events: none; z-index: 450;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.35"/></svg>');
+  }
+  #run-banner {
+    position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 5000;
+    background: #111; color: #ffd700; padding: 6px 14px; border-radius: 999px;
+    font-size: 11px; font-family: monospace; border: 2px solid #ffd700; max-width: 80vw;
+    text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .qa-root { position: absolute; inset: 0; background: #1b1f18; }
+  .qa-titlebar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: linear-gradient(#3a2f22, #2a2118); color: #e8d9b5; padding: 8px 24px;
+    border: 2px solid #8a7346; border-radius: 6px; font-family: Georgia, serif;
+    font-size: 16px; letter-spacing: 1px; box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  .qa-journal-tab {
+    position: absolute; top: 90px; left: 0; z-index: 1000; background: #4a3a26;
+    color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
+    font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
+    border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+  }
+  .qa-journal {
+    position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
+    background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
+    border-right: 4px solid #4a3a26; box-shadow: 4px 0 24px rgba(0,0,0,.5);
+    transition: left .35s ease; overflow-y: auto; padding: 70px 20px 20px;
+    font-family: Georgia, serif; color: #3a2f1f;
+  }
+  .qa-journal.open { left: 0; }
+  .qa-journal h2 { font-size: 20px; border-bottom: 2px solid #8a7346; padding-bottom: 8px; }
+  .qa-entry { border: 1px solid #b8a06e; border-radius: 6px; margin-bottom: 10px; background: rgba(255,255,255,.35); }
+  .qa-entry summary {
+    padding: 10px 12px; cursor: pointer; font-weight: bold; display: flex;
+    align-items: center; gap: 8px; list-style: none;
+  }
+  .qa-entry summary::-webkit-details-marker { display: none; }
+  .qa-entry .qa-num {
+    width: 22px; height: 22px; border-radius: 50%; background: #4a3a26; color: #f3e6c8;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0;
+  }
+  .qa-entry .qa-check { margin-left: auto; color: #2f6f2f; font-weight: bold; }
+  .qa-entry-body { padding: 0 12px 12px 42px; font-size: 13.5px; line-height: 1.6; }
+  .qa-map-wrap {
+    position: absolute; inset: 14px; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 0 0 6px #2a2018, 0 0 0 10px #8a7346, 0 0 0 12px #3a2a15,
+                inset 0 0 90px rgba(20,12,4,.75), 0 20px 50px rgba(0,0,0,.6);
+  }
+  .qa-map-wrap .leaflet-tile-pane {
+    filter: sepia(.6) saturate(1.5) contrast(1.15) brightness(.82) hue-rotate(-8deg);
+  }
+  .qa-map-vignette {
+    position: absolute; inset: 0; pointer-events: none; z-index: 460;
+    background: radial-gradient(ellipse at center, rgba(58,42,21,0) 45%, rgba(30,20,8,.75) 100%);
+    mix-blend-mode: multiply;
+  }
+  .qa-map-grain { mix-blend-mode: overlay; opacity: .5; }
+  .qa-marker-medallion {
+    background: radial-gradient(circle at 35% 30%, #d9c28a, #7a5a2d 70%); color: #2a1f10;
+    border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center;
+    justify-content: center; font-weight: bold; font-size: 15px; font-family: Georgia, serif;
+    border: 2px solid #3a2a15; box-shadow: 0 3px 8px rgba(0,0,0,.5);
+  }
+  .qa-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qa-modal {
+    width: 320px; background: #f3e6c8; border: 4px double #7a5a2d; border-radius: 4px;
+    padding: 18px; font-family: Georgia, serif; color: #3a2f1f; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  }
+  .qa-modal img { width: 100%; border-radius: 4px; border: 2px solid #7a5a2d; margin: 8px 0; }
+  .qa-modal .qa-close { position: absolute; top: 8px; right: 10px; cursor: pointer; font-weight: bold; color: #7a5a2d; }
+  .qa-modal button.qa-discover {
+    margin-top: 10px; width: 100%; padding: 8px; background: #4a3a26; color: #f3e6c8;
+    border: none; border-radius: 4px; cursor: pointer; font-family: Georgia, serif;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="run-banner">PROTOTYPE — e2e walk spike · query: &quot;I want to see insects in Retiro&quot;</div>
+<script>
+const SPECIES = [
+  {num:1,name:'Ariana',sci:'Pararge aegeria',color:'#e41a1c',lat:40.41665857142857,lon:-3.681411428571429,img:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e2/The_Atlas_of_Ancient_and_Classical_Geography_by_Samuel_Butler%2C_Ernest_Rhys%2C_ed._%281907%2C_1908%29.jpg/330px-The_Atlas_of_Ancient_and_Classical_Geography_by_Samuel_Butler%2C_Ernest_Rhys%2C_ed._%281907%2C_1908%29.jpg',desc:'Pararge aegeria, known as the Ariana, is a butterfly species. Its common name refers to a historical geographical region in the ancient world that stretched across parts of Central Asia, Iran, Afghanistan, and Pakistan.'},
+  {num:2,name:'Gulfodet dyndflue',sci:'Eristalis pertinax',color:'#377eb8',lat:40.418576333333334,lon:-3.680721333333333,img:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/64/Eristalis.pertinax_male.jpg/330px-Eristalis.pertinax_male.jpg',desc:'Eristalis pertinax is a hoverfly found in Asia and Europe, first described in 1763. Its larvae are rat-tailed maggots that live in drainage ditches, sewage, and other water-filled environments with high organic content and low oxygen levels.'},
+  {num:3,name:'Fourmi du liège',sci:'Crematogaster scutellaris',color:'#4daf4a',lat:40.414047333333336,lon:-3.681134333333333,img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/31/Formicidae_-_Crematogaster_scutellaris.JPG/330px-Formicidae_-_Crematogaster_scutellaris.JPG',desc:'Crematogaster scutellaris, commonly called the cork ant, is an ant species belonging to the subfamily Myrmicinae within the family Formicidae.'},
+  {num:4,name:'Painted Lady',sci:'Vanessa cardui',color:'#ff7f00',lat:40.4129285,lon:-3.68137675,img:'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/0_Belle-dame_%28Vanessa_cardui%29_-_Echinacea_purpurea_-_Havr%C3%A9_%283%29.jpg/330px-0_Belle-dame_%28Vanessa_cardui%29_-_Echinacea_purpurea_-_Havr%C3%A9_%283%29.jpg',desc:'Vanessa cardui, commonly known as the Painted Lady, is the most widespread butterfly species in the world. It was formerly called the Cosmopolitan in North America.'},
+  {num:5,name:'Pine Processionary',sci:'Thaumetopoea pityocampa',color:'#984ea3',lat:40.411227333333336,lon:-3.679695,img:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Thaumetopea.pityocampa.01.jpg/330px-Thaumetopea.pityocampa.01.jpg',desc:'Thaumetopoea pityocampa, the Pine Processionary, is a moth whose caterpillars are known for their irritating hairs and distinctive procession behavior. It is one of the most destructive species to pine and cedar forests in Central Asia, North Africa, and southern Europe, and has been documented since ancient times.'}
+];
+const NARRATIVE_INTRO = "We venture into the verdant heart of Retiro Park, where the urban sprawl of Madrid fades into a tapestry of ancient oaks and flowering shrubs. Here, in this carefully preserved sanctuary that has graced the Spanish capital for centuries, life operates on a scale both humble and extraordinary. As we walk these winding paths, we shall discover the intricate dramas of small creatures\u2014dramas no less compelling than those of their larger cousins. Let us begin our exploration.";
+const NARRATIVE_BY_SPECIES = ["At our first waypoint, nestled among the dappled shadows of the park's woody margins, we encounter the Ariana\u2014a delicate butterfly whose spotted wings catch fragments of sunlight. This modest insect bears the name of an ancient geographical region that once stretched across distant lands of Central Asia, a poetic reminder that even the smallest creatures carry within them the echoes of history. Here, fluttering between the flowering plants, the Ariana continues its timeless dance of survival and reproduction, utterly indifferent to the metropolis that surrounds its world.", "Moving deeper into the park's ecosystem, we discover something quite remarkable at a water-filled hollow near the path\u2014the Gulfodet dyndflue, or rat-tailed maggot fly. This unassuming hoverfly, first catalogued by science in 1763, possesses larvae that thrive in the very margins of decay, transforming filth and stagnation into life. Hovering with surprising grace above the murky water, this creature demonstrates nature's profound principle: that beauty and purpose can emerge from the most unexpected and seemingly inhospitable corners of our world.", "Upon the weathered bark of an ancient cork oak, we come upon the Fourmi du li\u00e8ge\u2014the cork ant\u2014a tiny architectural genius of the insect world. These remarkable creatures, belonging to the subfamily Myrmicinae, have carved their miniature empire into the very tree that gives them their name, creating chambers and galleries within the cork's protective layers. In observing their coordinated labor, we witness one of nature's most enduring success stories: a perfectly evolved society that has persisted for millions of years.", "As we continue our wandering path through the park's sun-dappled glades, a flash of orange and black arrests our attention\u2014the magnificent Painted Lady, the most cosmopolitan of all butterfly species. Once known simply as the Cosmopolitan for its presence on every continent save Antarctica, this supremely adaptable insect has journeyed farther and conquered more diverse landscapes than perhaps any other butterfly on Earth. Here in Retiro Park, it continues its ancient migrations, indifferent to borders, carrying within its brief life the essence of global wandering.", "Our final discovery brings us to the towering pines at the park's edge, where we pause to observe something both wondrous and sobering\u2014the Pine Processionary moth, whose caterpillars march in their famous single-file processions through the branches above us. These remarkable creatures, documented since the ancient world, possess hairs of such irritating potency that they have shaped the very forests they inhabit across Central Asia, North Africa, and southern Europe. As we watch their silhouettes processing across the sky, we are reminded that even destruction can be beautiful, and that every creature, no matter how destructive to human interests, plays its appointed role in nature's grand, eternal design."];
+const CENTER = [40.41468761428571, -3.6808677690476186];
+const ROUTE_COORDS = SPECIES.map(s => [s.lat, s.lon]);
+
+function baseTileLayer(map) {
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+    maxZoom: 17
+  }).addTo(map);
+  L.polyline(ROUTE_COORDS, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(map);
+}
+
+function openQuestModal(i) {
+  const s = SPECIES[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'qa-modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="qa-modal">
+      <span class="qa-close">✕</span>
+      <div style="font-size:11px;letter-spacing:1px;color:#7a5a2d">QUEST ENTRY ${s.num}/${SPECIES.length}</div>
+      <h3 style="margin:4px 0 0">${s.name}</h3>
+      <div style="font-style:italic;color:#7a5a2d;font-size:12px">${s.sci}</div>
+      ${s.img ? `<img src="${s.img}"/>` : ''}
+      <p style="font-size:13px;line-height:1.5">${s.desc}</p>
+      <button class="qa-discover">Mark Discovered</button>
+    </div>
+  `;
+  backdrop.querySelector('.qa-close').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  backdrop.querySelector('.qa-discover').onclick = () => {
+    const chk = document.querySelector(`[data-check="${i}"]`);
+    if (chk) chk.style.visibility = 'visible';
+    backdrop.remove();
+  };
+  document.body.appendChild(backdrop);
+}
+
+function render() {
+  const container = document.getElementById('app');
+  container.innerHTML = `
+    <div class="qa-root">
+      <div class="qa-titlebar">⚔ Retiro Park — A Nature Quest</div>
+      <div class="qa-journal-tab" id="qa-tab">QUEST LOG</div>
+      <div class="qa-journal" id="qa-journal">
+        <h2>Quest Log</h2>
+        <p style="font-size:13px;line-height:1.6;margin-bottom:16px">${NARRATIVE_INTRO}</p>
+        ${SPECIES.map((s, i) => `
+          <details class="qa-entry" data-idx="${i}">
+            <summary><span class="qa-num">${s.num}</span> ${s.name} <span class="qa-check" data-check="${i}" style="visibility:hidden">✓</span></summary>
+            <div class="qa-entry-body">${NARRATIVE_BY_SPECIES[i]}</div>
+          </details>
+        `).join('')}
+      </div>
+      <div class="qa-map-wrap">
+        <div id="qa-map" class="map-fill"></div>
+        <div class="map-noise qa-map-grain"></div>
+        <div class="qa-map-vignette"></div>
+      </div>
+    </div>
+  `;
+  document.getElementById('qa-tab').onclick = () => document.getElementById('qa-journal').classList.toggle('open');
+
+  const map = L.map('qa-map').setView(CENTER, 15);
+  baseTileLayer(map);
+  SPECIES.forEach((s, i) => {
+    const icon = L.divIcon({ html: `<div class="qa-marker-medallion">${s.num}</div>`, iconSize: [36, 36], iconAnchor: [18, 18], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(map).on('click', () => openQuestModal(i));
+  });
+}
+
+render();
+</script>
+</body>
+</html>

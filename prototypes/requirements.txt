@@ -3,3 +3,4 @@ claude-agent-sdk
 anthropic
 python-dotenv
 pytest
+flask
