@@ -9,7 +9,9 @@ placeholder is replaced with a real Leaflet.draw polygon tool, so the walk
 searches whatever area the user actually draws instead of a hardcoded park.
 Throwaway. Do not promote to production.
 
-Four JS-swapped states in one page (no navigation/reload):
+Five JS-swapped states in one page (no navigation/reload):
+  -1. (intro card) — welcome/onboarding: explains the three-step flow before
+                     the user lands cold on an unexplained map.
   0. #view-draw    — full-screen map with a polygon draw tool; user draws an
                      area, then confirms it before moving on.
   1. #view-form    — landing form: shows the drawn area's point count (with
@@ -20,8 +22,9 @@ Four JS-swapped states in one page (no navigation/reload):
                      ported (duplicated, not shared) from e2e_walk_spike.py's
                      generate_quest_log_map(), fed with real data from the
                      server response instead of pre-baked JS arrays. Includes
-                     a persistent query bar to regenerate a new walk without
-                     leaving this view (drawn area stays fixed).
+                     a persistent query bar with both "New Walk" (same drawn
+                     area, new query) and "New Area" (back to state 0) so the
+                     user isn't stuck re-querying the same shape forever.
 
 Duplication vs generate_quest_log_map() is a deliberate, session-agreed
 choice — matches this codebase's established "prototypes stay standalone"
@@ -100,6 +103,8 @@ convention rather than extracting a shared asset for a still-throwaway UI.
   .qw-field select:disabled { color: #a89878; background: rgba(0,0,0,.05); cursor: not-allowed; }
   .qw-field .qw-hint { font-size: 11px; color: #8a7346; margin-top: 4px; }
   .qw-examples { font-size: 11.5px; color: #7a5a2d; margin: -8px 0 16px; line-height: 1.5; }
+  .qw-intro-steps { font-size: 13px; line-height: 1.6; padding-left: 22px; margin: 0 0 20px; }
+  .qw-intro-steps li { margin-bottom: 8px; }
   .qw-examples button {
     background: none; border: none; color: #5a4326; text-decoration: underline;
     cursor: pointer; font-family: Georgia, serif; font-size: 11.5px; padding: 0;
@@ -138,7 +143,11 @@ convention rather than extracting a shared asset for a still-throwaway UI.
     color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
     font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
     border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+    transition: left .35s ease;
   }
+  /* When the journal is open, the tab tracks its edge (x=380) instead of
+     sitting at x=0 over the journal's own heading/intro text. */
+  .qa-root:has(.qa-journal.open) .qa-journal-tab { left: 380px; }
   .qa-journal {
     position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
     background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
@@ -257,6 +266,27 @@ async function submitQuery(query) {
   }
 }
 
+// ═══════════════════════ STATE -1 — Welcome / onboarding ═══════════════════════
+function showIntro() {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card">
+        <h1>⚔ A Nature Quest</h1>
+        <div class="qw-subtitle">Discover the wild life of any area you choose</div>
+        <ol class="qw-intro-steps">
+          <li>Draw a shape on the map around the area you want to explore.</li>
+          <li>Tell us what you'd like to discover there (e.g. "show me some birds").</li>
+          <li>Get a guided walk through that area's real, recorded sightings.</li>
+        </ol>
+        <button id="qw-start-drawing" class="qw-submit">Start Drawing</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('qw-start-drawing').onclick = () => showDraw();
+}
+
 // ═══════════════════════ STATE 0 — Draw your own area ═══════════════════════
 function showDraw() {
   destroyMap();
@@ -266,7 +296,7 @@ function showDraw() {
       <div id="qw-draw-map"></div>
       <div id="qw-draw-banner">
         <h2>⚔ Draw Your Quest Area</h2>
-        <p>Use the polygon tool (top-left) to outline where you want to walk, then confirm.</p>
+        <p>Use the polygon tool (top-left corner of the map) to click out the edges of your area, then click the first point again to close the shape. When you're happy with it, press Confirm Area below.</p>
       </div>
       <div id="qw-draw-actions">
         <button id="qw-draw-clear" type="button">Clear</button>
@@ -439,6 +469,7 @@ function renderMapView(data) {
       <div id="qa-regen-bar">
         <input id="qa-regen-input" type="text" placeholder="Ask for a new walk, e.g. 'show me insects'"/>
         <button id="qa-regen-btn">New Walk</button>
+        <button id="qa-new-area-btn" title="Draw a different area">New Area</button>
       </div>
     </div>
   `;
@@ -465,9 +496,13 @@ function renderMapView(data) {
   };
   regenBtn.onclick = doRegen;
   regenInput.onkeydown = (e) => { if (e.key === 'Enter') doRegen(); };
+  document.getElementById('qa-new-area-btn').onclick = () => {
+    drawnPolygon = null;
+    showDraw();
+  };
 }
 
-showDraw();
+showIntro();
 </script>
 </body>
 </html>
