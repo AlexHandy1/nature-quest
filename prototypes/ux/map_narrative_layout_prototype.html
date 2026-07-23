@@ -12,7 +12,7 @@ prototypes/artifacts/retiro_narrative_map_cost_experiment2_claude_haiku_4_5_2025
 No existing page to host these in yet, so this is a standalone throwaway route
 (sub-shape B) rather than an adjustment to an existing one.
 
-  A — "Quest Log" (Zelda): slide-out parchment journal, accordion narrative,
+  A — "Quest Log" (adventure-style): slide-out parchment journal, accordion narrative,
       modal quest-entry per species with a "mark discovered" action.
   B — "PokéStop" (Pokemon Go): full-bleed map, top XP/discovery bar, pulsing
       circular markers, bottom-sheet species card, floating Story overlay.
@@ -60,7 +60,7 @@ Run: open this file directly in a browser, e.g.
   #proto-switcher button:hover { background: #fff; }
   #proto-switcher .label { min-width: 170px; text-align: center; }
 
-  /* ═══════════════ VARIANT A — Quest Log (Zelda) ═══════════════ */
+  /* ═══════════════ VARIANT A — Quest Log (adventure-style) ═══════════════ */
   .qa-root { position: absolute; inset: 0; background: #1b1f18; }
   .qa-titlebar {
     position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
@@ -568,7 +568,7 @@ function showMcDetail(i) {
 // Switcher — floating bottom bar, ?variant= URL param, ← → keys
 // ─────────────────────────────────────────────────────────────
 const VARIANTS = {
-  A: { name: 'Quest Log (Zelda)', render: renderVariantA },
+  A: { name: 'Quest Log (adventure-style)', render: renderVariantA },
   B: { name: 'PokéStop (Pokemon Go)', render: renderVariantB },
   C: { name: 'Inventory (Minecraft)', render: renderVariantC },
 };
