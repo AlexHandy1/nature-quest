@@ -10,7 +10,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 - **Working scripts are checkpoints — copy, don't edit.** Once a script has been run and validated, don't modify it in place to add new functionality. Copy it to a new file first (see `e2e_walk_spike.py` vs `e2e_walk_spike_server.py` below) and change the copy. The original stays a stable, known-good reference.
 - **Plain Messages API by default, not the Claude Agent SDK.** Every LLM call in the current pipeline is a plain `anthropic.Anthropic().messages.create()` call (tool-use for structured output where needed), not the Claude Agent SDK. This is an implementation-layer choice, not a claim about the system's overall behaviour — the dynamic, query-driven species/route/narrative generation described in the root `README.md` could be reasonably described as a nature AI agent; "not the Agent SDK" just means that behaviour is built on direct API calls rather than an agent-loop/tool-calling framework. Cost/time experiments (`species_narrative_cost_experiment1.py` vs `2.py`) showed the Agent SDK's subprocess/agent-loop overhead adds real, unnecessary cost and latency for these single-shot, no-tool-loop tasks.
 - **Haiku by default.** `claude-haiku-4-5-20251001` is the default model across the current pipeline (`e2e_walk_spike.py`, `server.py`), chosen after spot-checks showed it matches Sonnet 5's output quality on these call shapes for roughly half the cost and faster wall time. Sonnet 5 remains the fallback if a future task shows a real quality gap.
-- **Fixed test location: Retiro Park, Madrid.** Every script uses the same hardcoded GBIF polygon (`GBIF_POLYGON`) and park-centre point (`CENTER_LAT`/`CENTER_LON`) so results are comparable across prototypes. Custom/user-drawn locations are an explicit, not-yet-built next step (see `web/index.html`'s disabled "draw your own area" control).
+- **Fixed test location: Retiro Park, Madrid.** `e2e_walk_spike.py`, `e2e_walk_spike_server.py`, and `server.py`/`index.html` all use the same hardcoded GBIF polygon (`GBIF_POLYGON`) and park-centre point (`CENTER_LAT`/`CENTER_LON`) so results are comparable across those prototypes. Custom/user-drawn locations are prototyped separately in `e2e_walk_spike_polygon.py` / `server_polygon.py` / `web/index_polygon.html` (see §8 below) — a standalone fork, per the checkpoint convention above, not a change to the fixed-Retiro scripts.
 - **Full logging.** Every script prints prompts, raw LLM responses, token usage, and cost/timing summaries as it runs (`prototypes/logs/` holds captured runs via `... | tee prototypes/logs/<name>_$(date +%Y%m%d_%H%M%S).log`). Keep new scripts at the same logging level — it's what makes runs comparable after the fact.
 - **Light TDD, scoped to deterministic logic only.** Unit tests exist only for pure, non-LLM, non-network logic (taxon resolution/validation, quota merge — see `test_intent_query_spike.py`). LLM output and rendering/geometry code are validated manually/visually, not unit tested, per this codebase's stated norm for prototypes.
 - **Virtual env.** `python -m venv venv && source venv/bin/activate && pip install -r prototypes/requirements.txt`. Requires `ANTHROPIC_API_KEY` in the environment (`.env` file, loaded via `python-dotenv`) for any script that calls the Anthropic API.
@@ -21,7 +21,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 |---|---|
 | `scripts/` | All prototype Python scripts + their tests. |
 | `reference/` | Curated GBIF API reference material (hand-written docs + verified static key caches) fed into LLM prompts — see below. |
-| `web/` | The single-page browser frontend served by `scripts/server.py`. |
+| `web/` | Single-page browser frontends: `index.html` (served by `scripts/server.py`, fixed to Retiro) and `index_polygon.html` (served by `scripts/server_polygon.py`, user-drawn area). |
 | `artifacts/` | Generated output — HTML maps written by the various scripts. Regenerated on each run; not hand-maintained. |
 | `ux/` | Standalone HTML UX mockups, not wired to any real data pipeline (hand-captured demo data instead). |
 | `logs/` | Captured stdout from real runs (`... \| tee prototypes/logs/...log`) — the actual evidence behind decisions recorded in `planning_and_status_docs/`. |
@@ -75,15 +75,33 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
   Requires `ANTHROPIC_API_KEY` in the environment. Logs the full pipeline output (same as the CLI scripts) to whatever terminal `server.py` is running in, plus a `[server] /run-walk ...` line per request. Errors are caught and returned as JSON (surfaced inline in the frontend's landing form), not left as an unhandled Flask crash.
 - **`web/index.html`** — single-page frontend, no build step, no framework. Three JS-swapped states in one page (no navigation/reload): landing form (location fixed to Retiro, a disabled "draw your own area" placeholder for future custom-polygon support, NL query textarea) → generic loading spinner with rotating quest-flavoured status text → the adventure-style quest-log map view (duplicated from `e2e_walk_spike.py`'s `generate_quest_log_map()`, fed with real data from the server response instead of pre-baked JS arrays), with a persistent query bar docked on the map view so a new walk can be requested without leaving the map.
 
+### 8. User-drawn polygon areas — prototyped, several open items remain (see `planning_and_status_docs/WORK_SUMMARY_230726.md`)
+- **`e2e_walk_spike_polygon.py`** — fork of `e2e_walk_spike_server.py` (untouched). `run_pipeline()` takes `polygon_wkt` / `center_lat` / `center_lon` as parameters instead of reading hardcoded `GBIF_POLYGON`/`CENTER_LAT`/`CENTER_LON` globals, so an arbitrary user-drawn polygon can be searched instead of the fixed Retiro one. Also widens the GBIF `year` filter to a range (`YEAR_RANGE = "2023,2026"`, GBIF accepts a comma range) rather than the single `YEAR = 2026` the Retiro scripts use — user-drawn areas won't have Retiro's observation density, so a single year risks empty results. CLI-runnable standalone via `--polygon` / `--center-lat` / `--center-lon` flags, defaulting to the Retiro geometry.
+- **`server_polygon.py`** — fork of `server.py`, on port **5051** (so it can run alongside `server.py`'s 5050). `/run-walk` accepts `{query, polygon}` (a list of `[lat, lon]` vertices from the browser) instead of `{query, location}`; converts to GBIF WKT (`polygon_points_to_wkt` — flips to `lon lat` order, closes the ring) and a centroid (`polygon_centroid` — simple average of vertices) before calling `e2e_walk_spike_polygon.run_pipeline()`.
+- **`web/index_polygon.html`** — fork of `index.html`, adds a real Leaflet.draw (`leaflet-draw@1.0.4`) polygon tool. Five JS-swapped states: welcome/onboarding card → full-screen draw-your-area map → landing form (query + drawn-area summary) → loading → the adventure-style quest-log map (with both "New Walk" and "New Area" actions, the latter returning to the draw step).
+  ```
+  source venv/bin/activate
+  python prototypes/scripts/server_polygon.py
+  # open http://localhost:5051
+  ```
+- **Validated this round:** a user-drawn polygon survives the full trip — browser Leaflet coordinates → GBIF WKT geometry → real occurrence search → waypoint ordering from the drawn area's own centroid → rendered quest-log map.
+- **Known issues / open items** (see `planning_and_status_docs/WORK_SUMMARY_230726.md` for full detail): the "show me something rare" test intent hangs/fails and needs investigating across all test intents; behaviour for sparse/no-observation areas isn't defined; the drawn area's boundary isn't shown once you reach the map view; onboarding/UX still needs deeper design thought; no caching yet; Retiro isn't offered as a quick default alongside draw-your-own; centroid is a naive average-of-vertices (not weighted toward where observations actually cluster).
+
 ## What's proven vs. still open
 
-**Proven end-to-end:** NL query → real GBIF species selection (including mixed-taxa and empty-group handling) → real waypoint ordering → real GBIF/Wikipedia enrichment → real generated narrative → rendered, interactive map — triggerable from a browser, on Haiku, for a few cents per run.
+**Proven end-to-end:** NL query → real GBIF species selection (including mixed-taxa and empty-group handling) → real waypoint ordering → real GBIF/Wikipedia enrichment → real generated narrative → rendered, interactive map — triggerable from a browser, on Haiku, for a few cents per run. Also proven for an arbitrary user-drawn area, not just the fixed Retiro polygon (see §8).
 
 **Explicitly open / not built yet:**
 - Background-job + polling for real per-step loading progress in the web frontend (currently one blocking request + generic spinner).
-- Custom/user-drawn walking areas (location is hardcoded to Retiro Park everywhere).
 - Fish taxon coverage is a ~67%-by-volume holding solution, not exhaustive (`reference/gbif_common_order_keys.json`).
 - The longer-term WebGL 3D map direction (Variant A/Leaflet is the interim choice).
 - Naming decision (Nature Walker vs. Nature Quest) — still open.
+- The "show me something rare" test intent hangs/fails — needs investigation across all test intents, with a defined desired behaviour.
+- Behaviour for sparse/no-observation areas (drawn or otherwise) isn't defined beyond a generic error message.
+- Deeper UX design for the draw-your-own-area flow: how to introduce/explain it, showing the drawn boundary on the quest-log map, dropping the sword-emoji styling.
+- Caching (not yet scoped — likely GBIF responses and/or LLM calls).
+- Retiro Park as a quick default/selectable option alongside draw-your-own-area.
+- A better-than-centroid method for anchoring the map/route on the densest cluster of observations, not a naive average of the drawn polygon's vertices.
+- A full technical plan for the production build (testing, CI/CD, observability/monitoring) — not started.
 
 See `planning_and_status_docs/` for the full session-by-session history behind these decisions.
