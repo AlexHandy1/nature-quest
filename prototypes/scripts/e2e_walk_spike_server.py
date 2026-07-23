@@ -11,7 +11,7 @@ of just the ordered species list, so a caller (server.py) can render its own
 view from the result instead of relying on the CLI's static artifact file.
 
 Question: does the full chain — NL query -> GBIF species selection ->
-waypoint ordering -> species enrichment + narrative -> Zelda quest-log map —
+waypoint ordering -> species enrichment + narrative -> adventure-style quest-log map —
 work end-to-end in one measurable run, on the cheapest validated model
 (Haiku, non-agentic plain Messages API calls)?
 Throwaway. Do not promote to production.
@@ -32,7 +32,7 @@ file layout rationale):
      calls. The narrative call here is changed to ask for structured JSON
      (intro + one paragraph per waypoint) instead of one flowing blob, to
      drive the quest-log's per-waypoint accordion.
-  4. map_narrative_layout_prototype.html Variant A ("Quest Log" / Zelda) —
+  4. map_narrative_layout_prototype.html Variant A ("Quest Log" / adventure-style) —
      ported as the sole map/narrative UI (no variant switcher), with full
      interactivity (journal toggle, click-to-open modal, mark-discovered),
      fed with real generated data instead of the hand-captured demo data.
@@ -507,7 +507,7 @@ like:
 # ── Step: structured narrative (intro + per-waypoint) — plain message call ──
 # Differs from species_narrative_cost_experiment2.py's narrative call: that
 # one produces a single flowing blob; this asks for JSON (intro + one
-# paragraph per waypoint) so the Zelda quest-log's per-entry accordion has
+# paragraph per waypoint) so the adventure-style quest-log's per-entry accordion has
 # real generated text, not one blob repeated 5 times.
 
 def generate_structured_narrative(client, ordered_species, model):
@@ -576,10 +576,10 @@ with exactly {len(ordered_species)} entries in "waypoints", in visiting order.""
     return {"intro": intro or "(no intro generated)", "waypoints": waypoint_narratives, **stats}
 
 
-# ── Step: render Zelda "Quest Log" map (Variant A, ported, full interactivity) ──
+# ── Step: render adventure-style "Quest Log" map (Variant A, ported, full interactivity) ──
 
 def generate_quest_log_map(ordered_species, intro, waypoint_narratives, user_query):
-    header("STEP: Render Zelda quest-log map (Variant A)")
+    header("STEP: Render adventure-style quest-log map (Variant A)")
 
     lats = [sp["hotspot_lat"] for sp in ordered_species]
     lons = [sp["hotspot_lon"] for sp in ordered_species]
@@ -607,7 +607,7 @@ def generate_quest_log_map(ordered_species, intro, waypoint_narratives, user_que
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>PROTOTYPE — e2e walk spike (Zelda quest log)</title>
+<title>PROTOTYPE — e2e walk spike (adventure-style quest log)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -909,7 +909,7 @@ def parse_args():
 def main():
     args = parse_args()
     print(f"\n{BOLD}PROTOTYPE: End-to-End Walk Spike{RESET}")
-    print(f"{DIM}Question: does NL query -> species -> waypoints -> narrative -> Zelda map "
+    print(f"{DIM}Question: does NL query -> species -> waypoints -> narrative -> adventure-style map "
           f"work end-to-end in one run, on Haiku?{RESET}")
     print(f"{DIM}intent-model={args.intent_model} description-model={args.description_model} "
           f"narrative-model={args.narrative_model}{RESET}")

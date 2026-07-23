@@ -1,19 +1,30 @@
 <!DOCTYPE html>
 <!--
-PROTOTYPE — prototypes/web/index.html
-Single-page frontend for server.py. Throwaway. Do not promote to production.
+PROTOTYPE — prototypes/web/index_polygon.html
+Fork of index.html (untouched — see this codebase's "copy, don't edit a
+validated checkpoint" convention). Serves the same adventure-style quest-log
+experience, backed by server_polygon.py instead of server.py. Only
+difference: the fixed Retiro-only "draw your own area (coming soon)"
+placeholder is replaced with a real Leaflet.draw polygon tool, so the walk
+searches whatever area the user actually draws instead of a hardcoded park.
+Throwaway. Do not promote to production.
 
-Three JS-swapped states in one page (no navigation/reload):
-  1. #view-form    — landing form: location (Retiro fixed, "draw your own
-                     area" disabled placeholder), NL query textarea.
+Five JS-swapped states in one page (no navigation/reload):
+  -1. (intro card) — welcome/onboarding: explains the three-step flow before
+                     the user lands cold on an unexplained map.
+  0. #view-draw    — full-screen map with a polygon draw tool; user draws an
+                     area, then confirms it before moving on.
+  1. #view-form    — landing form: shows the drawn area's point count (with
+                     a "redraw" link back to state 0), NL query textarea.
   2. #view-loading — generic spinner + rotating quest-flavoured status text
                      while POST /run-walk blocks (~15-25s).
-  3. #view-map     — the adventure-style "Quest Log" map/journal/modal UI, ported
-                     (duplicated, not shared) from e2e_walk_spike.py's
+  3. #view-map     — the adventure-style "Quest Log" map/journal/modal UI,
+                     ported (duplicated, not shared) from e2e_walk_spike.py's
                      generate_quest_log_map(), fed with real data from the
                      server response instead of pre-baked JS arrays. Includes
-                     a persistent query bar to regenerate a new walk without
-                     leaving this view (location stays fixed at Retiro).
+                     a persistent query bar with both "New Walk" (same drawn
+                     area, new query) and "New Area" (back to state 0) so the
+                     user isn't stuck re-querying the same shape forever.
 
 Duplication vs generate_quest_log_map() is a deliberate, session-agreed
 choice — matches this codebase's established "prototypes stay standalone"
@@ -23,9 +34,11 @@ convention rather than extracting a shared asset for a still-throwaway UI.
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>PROTOTYPE — Nature Walker</title>
+<title>PROTOTYPE — Nature Walker (draw your own area)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; font-family: Georgia, serif; }
@@ -35,6 +48,29 @@ convention rather than extracting a shared asset for a still-throwaway UI.
     position: absolute; inset: 0; pointer-events: none; z-index: 450;
     background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="90" height="90"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(%23n)" opacity="0.35"/></svg>');
   }
+
+  /* ── State 0: draw-your-area ── */
+  #view-draw { position: absolute; inset: 0; }
+  #qw-draw-map { position: absolute; inset: 0; }
+  #qw-draw-banner {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(42,32,21,.92); color: #f3e6c8; border: 2px solid #8a7346; border-radius: 10px;
+    padding: 12px 20px; font-family: Georgia, serif; text-align: center; max-width: 90vw;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  }
+  #qw-draw-banner h2 { margin: 0 0 4px; font-size: 16px; }
+  #qw-draw-banner p { margin: 0; font-size: 12px; color: #c9b98f; }
+  #qw-draw-actions {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    display: flex; gap: 10px;
+  }
+  #qw-draw-actions button {
+    font-family: Georgia, serif; font-size: 13px; padding: 9px 18px; border-radius: 999px;
+    border: 2px solid #8a7346; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  }
+  #qw-draw-clear { background: rgba(42,32,21,.92); color: #f3e6c8; }
+  #qw-draw-confirm { background: #4a3a26; color: #f3e6c8; }
+  #qw-draw-confirm:disabled { background: #5a5245; color: #a89878; cursor: not-allowed; }
 
   /* ── Shared parchment-card look for form + loading states ── */
   .qw-center-stage {
@@ -67,6 +103,8 @@ convention rather than extracting a shared asset for a still-throwaway UI.
   .qw-field select:disabled { color: #a89878; background: rgba(0,0,0,.05); cursor: not-allowed; }
   .qw-field .qw-hint { font-size: 11px; color: #8a7346; margin-top: 4px; }
   .qw-examples { font-size: 11.5px; color: #7a5a2d; margin: -8px 0 16px; line-height: 1.5; }
+  .qw-intro-steps { font-size: 13px; line-height: 1.6; padding-left: 22px; margin: 0 0 20px; }
+  .qw-intro-steps li { margin-bottom: 8px; }
   .qw-examples button {
     background: none; border: none; color: #5a4326; text-decoration: underline;
     cursor: pointer; font-family: Georgia, serif; font-size: 11.5px; padding: 0;
@@ -105,7 +143,11 @@ convention rather than extracting a shared asset for a still-throwaway UI.
     color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
     font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
     border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+    transition: left .35s ease;
   }
+  /* When the journal is open, the tab tracks its edge (x=380) instead of
+     sitting at x=0 over the journal's own heading/intro text. */
+  .qa-root:has(.qa-journal.open) .qa-journal-tab { left: 380px; }
   .qa-journal {
     position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
     background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
@@ -190,7 +232,7 @@ convention rather than extracting a shared asset for a still-throwaway UI.
 <script>
 const LOADING_MESSAGES = [
   "Consulting the biodiversity records...",
-  "Scouting Retiro Park for waypoints...",
+  "Scouting your drawn area for waypoints...",
   "Charting the route between sightings...",
   "Writing your quest log...",
   "Sketching the map...",
@@ -198,6 +240,7 @@ const LOADING_MESSAGES = [
 
 let leafletMap = null;
 let lastQuery = "";
+let drawnPolygon = null; // array of [lat, lon] vertices, or null until confirmed
 
 function destroyMap() {
   if (leafletMap) { leafletMap.remove(); leafletMap = null; }
@@ -210,7 +253,7 @@ async function submitQuery(query) {
     const resp = await fetch('/run-walk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, location: 'retiro' }),
+      body: JSON.stringify({ query, polygon: drawnPolygon }),
     });
     const data = await resp.json();
     if (!resp.ok || data.status !== 'ok') {
@@ -223,28 +266,100 @@ async function submitQuery(query) {
   }
 }
 
-// ═══════════════════════ STATE 1 — Landing form ═══════════════════════
-function showForm(errorMessage) {
+// ═══════════════════════ STATE -1 — Welcome / onboarding ═══════════════════════
+function showIntro() {
   destroyMap();
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="qw-center-stage">
       <div class="qw-card">
         <h1>⚔ A Nature Quest</h1>
-        <div class="qw-subtitle">Discover the wild life of Retiro Park</div>
+        <div class="qw-subtitle">Discover the wild life of any area you choose</div>
+        <ol class="qw-intro-steps">
+          <li>Draw a shape on the map around the area you want to explore.</li>
+          <li>Tell us what you'd like to discover there (e.g. "show me some birds").</li>
+          <li>Get a guided walk through that area's real, recorded sightings.</li>
+        </ol>
+        <button id="qw-start-drawing" class="qw-submit">Start Drawing</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('qw-start-drawing').onclick = () => showDraw();
+}
+
+// ═══════════════════════ STATE 0 — Draw your own area ═══════════════════════
+function showDraw() {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div id="view-draw">
+      <div id="qw-draw-map"></div>
+      <div id="qw-draw-banner">
+        <h2>⚔ Draw Your Quest Area</h2>
+        <p>Use the polygon tool (top-left corner of the map) to click out the edges of your area, then click the first point again to close the shape. When you're happy with it, press Confirm Area below.</p>
+      </div>
+      <div id="qw-draw-actions">
+        <button id="qw-draw-clear" type="button">Clear</button>
+        <button id="qw-draw-confirm" type="button" disabled>Confirm Area</button>
+      </div>
+    </div>
+  `;
+
+  leafletMap = L.map('qw-draw-map').setView([40.4153, -3.6844], 14);
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+    maxZoom: 17,
+  }).addTo(leafletMap);
+
+  const drawnItems = new L.FeatureGroup();
+  leafletMap.addLayer(drawnItems);
+  const drawControl = new L.Control.Draw({
+    draw: { polygon: true, marker: false, circle: false, circlemarker: false, rectangle: false, polyline: false },
+    edit: { featureGroup: drawnItems, remove: false },
+  });
+  leafletMap.addControl(drawControl);
+
+  const confirmBtn = document.getElementById('qw-draw-confirm');
+  function updateConfirmState() {
+    confirmBtn.disabled = drawnItems.getLayers().length === 0;
+  }
+
+  leafletMap.on(L.Draw.Event.CREATED, (e) => {
+    drawnItems.clearLayers(); // one polygon at a time
+    drawnItems.addLayer(e.layer);
+    updateConfirmState();
+  });
+  leafletMap.on(L.Draw.Event.EDITED, updateConfirmState);
+  leafletMap.on(L.Draw.Event.DELETED, updateConfirmState);
+
+  document.getElementById('qw-draw-clear').onclick = () => {
+    drawnItems.clearLayers();
+    updateConfirmState();
+  };
+  confirmBtn.onclick = () => {
+    const layers = drawnItems.getLayers();
+    if (!layers.length) return;
+    drawnPolygon = layers[0].getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+    showForm();
+  };
+}
+
+// ═══════════════════════ STATE 1 — Landing form ═══════════════════════
+function showForm(errorMessage) {
+  destroyMap();
+  const app = document.getElementById('app');
+  const areaSummary = drawnPolygon
+    ? `Custom area selected (${drawnPolygon.length} points) — <a href="#" id="qw-redraw">redraw</a>`
+    : `No area drawn yet — <a href="#" id="qw-redraw">draw one</a>`;
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card">
+        <h1>⚔ A Nature Quest</h1>
+        <div class="qw-subtitle">Discover the wild life of the area you drew</div>
         <form id="qw-form">
           <div class="qw-field">
-            <label for="qw-location">Location</label>
-            <select id="qw-location">
-              <option value="retiro">Retiro Park, Madrid</option>
-            </select>
-          </div>
-          <div class="qw-field">
-            <label for="qw-custom-area">Custom area</label>
-            <select id="qw-custom-area" disabled>
-              <option>Draw your own area (coming soon)</option>
-            </select>
-            <div class="qw-hint">Custom-drawn walking areas aren't supported yet — every quest starts in Retiro for now.</div>
+            <label for="qw-custom-area">Quest area</label>
+            <div class="qw-hint">${areaSummary}</div>
           </div>
           <div class="qw-field">
             <label for="qw-query">What do you want to discover?</label>
@@ -254,19 +369,20 @@ function showForm(errorMessage) {
             Try: ${['Today I want to learn about plants', 'Show me a mix of birds, plants and mammals', 'Show me something rare']
               .map(ex => `<button type="button" data-ex="${ex.replace(/"/g, '&quot;')}">${ex}</button>`).join(' &middot; ')}
           </div>
-          <button type="submit" class="qw-submit">Begin Your Quest</button>
+          <button type="submit" class="qw-submit" ${drawnPolygon ? '' : 'disabled'}>Begin Your Quest</button>
         </form>
         ${errorMessage ? `<div class="qw-error">${errorMessage}</div>` : ''}
       </div>
     </div>
   `;
+  document.getElementById('qw-redraw').onclick = (e) => { e.preventDefault(); showDraw(); };
   document.querySelectorAll('.qw-examples button').forEach(btn => {
     btn.onclick = () => { document.getElementById('qw-query').value = btn.dataset.ex; };
   });
   document.getElementById('qw-form').onsubmit = (e) => {
     e.preventDefault();
     const query = document.getElementById('qw-query').value.trim();
-    if (!query) return;
+    if (!query || !drawnPolygon) return;
     submitQuery(query);
   };
 }
@@ -333,7 +449,7 @@ function renderMapView(data) {
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="qa-root">
-      <div class="qa-titlebar">⚔ Retiro Park — A Nature Quest</div>
+      <div class="qa-titlebar">⚔ A Nature Quest</div>
       <div class="qa-journal-tab" id="qa-tab">QUEST LOG</div>
       <div class="qa-journal" id="qa-journal">
         <h2>Quest Log</h2>
@@ -353,6 +469,7 @@ function renderMapView(data) {
       <div id="qa-regen-bar">
         <input id="qa-regen-input" type="text" placeholder="Ask for a new walk, e.g. 'show me insects'"/>
         <button id="qa-regen-btn">New Walk</button>
+        <button id="qa-new-area-btn" title="Draw a different area">New Area</button>
       </div>
     </div>
   `;
@@ -379,9 +496,13 @@ function renderMapView(data) {
   };
   regenBtn.onclick = doRegen;
   regenInput.onkeydown = (e) => { if (e.key === 'Enter') doRegen(); };
+  document.getElementById('qa-new-area-btn').onclick = () => {
+    drawnPolygon = null;
+    showDraw();
+  };
 }
 
-showForm();
+showIntro();
 </script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 ## Decision
 
-**FOR NOW**, go with the Zelda-style map treatment, based off the OpenTopoMap non-vector stylised version in `prototypes/ux/map_narrative_layout_prototype.html` (Variant A) — not the vector re-skin in `map_narrative_layout_prototype_v2.html`.
+**FOR NOW**, go with the adventure-style map treatment, based off the OpenTopoMap non-vector stylised version in `prototypes/ux/map_narrative_layout_prototype.html` (Variant A) — not the vector re-skin in `map_narrative_layout_prototype_v2.html`.
 
 **Why:** interim direction while the WebGL 3D map exploration (added to `FEATURE_IDEAS_BACKLOG.md` this session) is investigated as the longer-term map experience.
 
@@ -13,7 +13,7 @@ Added "WebGL 3D map experience" to `planning_and_status_docs/FEATURE_IDEAS_BACKL
 ## Next steps
 
 1. Investigate WebGL as the 3D map direction.
-2. In the meantime, treat v1's Zelda variant (OpenTopoMap + CSS filter) as the reference map style rather than continuing to iterate the v2 vector re-skin.
+2. In the meantime, treat v1's adventure-style variant (OpenTopoMap + CSS filter) as the reference map style rather than continuing to iterate the v2 vector re-skin.
 
 ---
 

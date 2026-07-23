@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-PROTOTYPE — e2e_walk_spike.py
-Question: does the full chain — NL query -> GBIF species selection ->
-waypoint ordering -> species enrichment + narrative -> adventure-style quest-log map —
-work end-to-end in one measurable run, on the cheapest validated model
-(Haiku, non-agentic plain Messages API calls)?
+PROTOTYPE — e2e_walk_spike_polygon.py
+Fork of e2e_walk_spike_server.py (which stays untouched — see this
+codebase's "copy, don't edit a validated checkpoint" convention). Only
+difference: GBIF_POLYGON / CENTER_LAT / CENTER_LON are no longer hardcoded
+module constants. run_pipeline() instead takes polygon_wkt + center_lat/
+center_lon, so a caller can pass a user-drawn polygon instead of the fixed
+Retiro Park one. CLI behaviour is preserved via a --polygon flag that
+defaults to the same Retiro WKT used everywhere else in this codebase.
+
+Question: does swapping the fixed Retiro polygon for an arbitrary
+user-drawn one work end-to-end — real GBIF occurrence search against a
+custom geometry, waypoint ordering from the drawn area's centroid (not a
+hand-picked park centre), through to the same adventure-style quest-log map?
 Throwaway. Do not promote to production.
 
 Integrates, standalone (no cross-script imports, per this codebase's
@@ -23,7 +31,7 @@ file layout rationale):
      calls. The narrative call here is changed to ask for structured JSON
      (intro + one paragraph per waypoint) instead of one flowing blob, to
      drive the quest-log's per-waypoint accordion.
-  4. map_narrative_layout_prototype.html Variant A ("Quest Log" / adventure-style) —
+  4. map_narrative_layout_prototype.html Variant A ("Quest Log" style) —
      ported as the sole map/narrative UI (no variant switcher), with full
      interactivity (journal toggle, click-to-open modal, mark-discovered),
      fed with real generated data instead of the hand-captured demo data.
@@ -43,7 +51,7 @@ tested there (test_intent_query_spike.py).
 
 Requires ANTHROPIC_API_KEY in the environment.
 
-Run: source venv/bin/activate && python prototypes/scripts/e2e_walk_spike.py "Today I want to learn about plants" 2>&1 | tee prototypes/logs/e2e_walk_$(date +%Y%m%d_%H%M%S).log
+Run: source venv/bin/activate && python prototypes/scripts/e2e_walk_spike_polygon.py "Today I want to learn about plants" 2>&1 | tee prototypes/logs/e2e_walk_polygon_$(date +%Y%m%d_%H%M%S).log
 """
 
 import argparse
@@ -64,9 +72,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-GBIF_POLYGON = "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))"
-YEAR = 2026
-CENTER_LAT, CENTER_LON = 40.4153, -3.6844
+# Same Retiro geometry every other prototype script hardcodes — kept here
+# only as the CLI default so this script is still runnable standalone.
+# The web path (server_polygon.py) always passes a caller-supplied polygon.
+DEFAULT_POLYGON = "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))"
+DEFAULT_CENTER_LAT, DEFAULT_CENTER_LON = 40.4153, -3.6844
+# A wider range than the fixed-Retiro scripts' single YEAR=2026 — arbitrary
+# user-drawn areas won't have Retiro's observation density, so a single
+# year risks empty results. GBIF's occurrence/search accepts a comma range
+# for the year param (e.g. "2023,2026" = inclusive between those years).
+YEAR_RANGE = "2023,2026"
 TARGET_SPECIES_COUNT = 5
 MIN_FUZZY_CONFIDENCE = 85
 MAX_OUTPUT_TOKENS = 2048
@@ -171,10 +186,10 @@ def validate_species_match(response, requested_rank, min_fuzzy_confidence=85):
     return None
 
 
-def order_waypoints(species):
+def order_waypoints(species, center_lat, center_lon):
     remaining = list(range(len(species)))
     ordered = []
-    cur_lat, cur_lon = CENTER_LAT, CENTER_LON
+    cur_lat, cur_lon = center_lat, center_lon
 
     while remaining:
         nearest = min(
@@ -328,13 +343,13 @@ def resolve_taxon_filter(taxon_filter, caches):
 
 # ── Step 3: fetch + rank species for one resolved filter ────────
 
-def fetch_gbif_occurrences(extra_params):
+def fetch_gbif_occurrences(polygon_wkt, extra_params):
     results = []
     offset = 0
     while True:
         params = {
-            "geometry": GBIF_POLYGON,
-            "year": YEAR,
+            "geometry": polygon_wkt,
+            "year": YEAR_RANGE,
             "hasCoordinate": "true",
             "occurrenceStatus": "PRESENT",
             "limit": 300,
@@ -376,11 +391,11 @@ def rank_species(occurrences, sort):
     return species_list
 
 
-def fetch_and_rank_group(taxon_filter, key, key_param, q, sort):
+def fetch_and_rank_group(taxon_filter, key, key_param, q, sort, polygon_wkt):
     extra_params = {key_param: key}
     if q:
         extra_params["q"] = q
-    occurrences = fetch_gbif_occurrences(extra_params)
+    occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params)
     species_list = rank_species(occurrences, sort)
     label = f"{taxon_filter['taxonRank']}/{taxon_filter['taxonValue']}"
     print(f"  {label:<30} {len(occurrences):>5} occurrences -> {len(species_list)} species")
@@ -777,7 +792,17 @@ render();
 
 # ── Main pipeline ────────────────────────────────────────────────
 
-def run_pipeline(user_query, intent_model, description_model, narrative_model):
+def run_pipeline(user_query, intent_model, description_model, narrative_model,
+                  polygon_wkt=DEFAULT_POLYGON, center_lat=DEFAULT_CENTER_LAT,
+                  center_lon=DEFAULT_CENTER_LON, open_browser=True):
+    """Returns {"species": [...], "intro": str, "waypoints": [...], "map_path": str}
+    on success, or None if no species were found for the query. `polygon_wkt` is the
+    GBIF-format WKT geometry to search within; `center_lat`/`center_lon` is the point
+    waypoint ordering starts from (the drawn area's centroid, when caller-supplied —
+    not necessarily inside the polygon for odd/concave shapes, same caveat a
+    hand-picked park centre would have). `open_browser=False` is used by
+    server_polygon.py, which renders its own view from the returned data rather
+    than opening the CLI's static artifact file."""
     run_start = time.perf_counter()
     client = Anthropic()
 
@@ -805,11 +830,11 @@ def run_pipeline(user_query, intent_model, description_model, narrative_model):
     gbif_start = time.perf_counter()
     if resolved:
         with ThreadPoolExecutor(max_workers=len(resolved)) as pool:
-            futures = [pool.submit(fetch_and_rank_group, tf, key, key_param, q, sort) for tf, key, key_param in resolved]
+            futures = [pool.submit(fetch_and_rank_group, tf, key, key_param, q, sort, polygon_wkt) for tf, key, key_param in resolved]
             group_results = [f.result() for f in futures]
     else:
         extra_params = {"q": q} if q else {}
-        occurrences = fetch_gbif_occurrences(extra_params)
+        occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params)
         species_list = rank_species(occurrences, sort)
         print(f"  {'(default, no filter)':<30} {len(occurrences):>5} occurrences -> {len(species_list)} species")
         group_results = [("(default, no filter)", species_list)]
@@ -832,8 +857,8 @@ def run_pipeline(user_query, intent_model, description_model, narrative_model):
     for i, sp in enumerate(selected, 1):
         print(f"  {i}. {sp['species']:<40} {sp['count']:>4} obs  ({sp['kingdom']})")
 
-    header("STEP 5: Order waypoints (nearest-neighbour from park centre)")
-    ordered = order_waypoints(selected)
+    header("STEP 5: Order waypoints (nearest-neighbour from drawn area's centre)")
+    ordered = order_waypoints(selected, center_lat, center_lon)
 
     header(f"STEP 6: GBIF common name lookups ({len(ordered)} species)")
     for sp in ordered:
@@ -872,9 +897,16 @@ def run_pipeline(user_query, intent_model, description_model, narrative_model):
     print(f"  {'TOTAL LLM wall time (3 calls)':<32} {'':<28} {total_llm_wall:>6.1f}s")
     print(f"  {'TOTAL cost (LLM only, GBIF/wiki free)':<32} {'':<28} {'':>7} {'':>6} {'':>6} ${total_cost:>7.4f}")
 
-    print(f"\n  {GREEN}Opening map -> {map_path}{RESET}\n")
-    webbrowser.open(f"file://{map_path}")
-    return ordered
+    if open_browser:
+        print(f"\n  {GREEN}Opening map -> {map_path}{RESET}\n")
+        webbrowser.open(f"file://{map_path}")
+
+    return {
+        "species": ordered,
+        "intro": narrative_result["intro"],
+        "waypoints": narrative_result["waypoints"],
+        "map_path": map_path,
+    }
 
 
 def parse_args():
@@ -883,22 +915,27 @@ def parse_args():
     parser.add_argument("--intent-model", default=DEFAULT_MODEL, help="Model for NL -> structured GBIF query")
     parser.add_argument("--description-model", default=DEFAULT_MODEL, help="Model for batched per-species descriptions")
     parser.add_argument("--narrative-model", default=DEFAULT_MODEL, help="Model for the structured narrative guide")
+    parser.add_argument("--polygon", default=DEFAULT_POLYGON, help="GBIF-format WKT polygon to search within (defaults to the Retiro Park polygon)")
+    parser.add_argument("--center-lat", type=float, default=DEFAULT_CENTER_LAT, help="Latitude waypoint ordering starts from")
+    parser.add_argument("--center-lon", type=float, default=DEFAULT_CENTER_LON, help="Longitude waypoint ordering starts from")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    print(f"\n{BOLD}PROTOTYPE: End-to-End Walk Spike{RESET}")
-    print(f"{DIM}Question: does NL query -> species -> waypoints -> narrative -> adventure-style map "
-          f"work end-to-end in one run, on Haiku?{RESET}")
+    print(f"\n{BOLD}PROTOTYPE: End-to-End Walk Spike — user-drawn polygon{RESET}")
+    print(f"{DIM}Question: does swapping the fixed Retiro polygon for an arbitrary "
+          f"user-drawn one work end-to-end, on Haiku?{RESET}")
     print(f"{DIM}intent-model={args.intent_model} description-model={args.description_model} "
           f"narrative-model={args.narrative_model}{RESET}")
+    print(f"{DIM}polygon={args.polygon} center=({args.center_lat}, {args.center_lon}){RESET}")
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print(f"\n{RED}ANTHROPIC_API_KEY is not set — export it before running this script.{RESET}")
         sys.exit(1)
 
-    run_pipeline(args.query, args.intent_model, args.description_model, args.narrative_model)
+    run_pipeline(args.query, args.intent_model, args.description_model, args.narrative_model,
+                 polygon_wkt=args.polygon, center_lat=args.center_lat, center_lon=args.center_lon)
 
 
 if __name__ == "__main__":
