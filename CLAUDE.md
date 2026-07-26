@@ -4,7 +4,9 @@ Always look for and read any ARCHITECTURE*.md files or README files across the p
 
 For any new feature or project planning, run /grill-me to stress-test the plan before building. Do not run this when operating autonomously.
 
-For any coding work:
+When sanity-checking a state model or UI direction before committing to a real implementation, use /prototype to build throwaway code that answers the question.
+
+For any production coding work:
 - Always follow test driven development as outlined in /tdd and /testing.
 - Look for opportunities to validate your own work and get feedback directly. Design and run an end-to-end smoke test or practical validation. For projects involving web UI use the /agent-browser skill to review UIs directly.
 - Prefer the simplest change that moves things forward. Avoid large refactors or multiple concerns in one go.
@@ -25,6 +27,7 @@ This CLAUDE.md provides the framework. Skills contain the detailed guidance. Loa
 |-------|---------|-----------|
 | plan-recap | Read planning docs and produce a session briefing | Start of every session |
 | grill-me | Stress-test a plan by interviewing the user | New features or project planning (not autonomous runs) |
+| prototype | Build throwaway code to sanity-check a state model or UI direction | Before committing to a design when the logic or UI feel is uncertain |
 | tdd | RED-GREEN-REFACTOR workflow, recovery strategies | Starting any code work |
 | testing | Test patterns, factories, antipatterns | Starting any code work |
 | agent-browser | Browser automation for reviewing web UIs | Validating web/UI changes |

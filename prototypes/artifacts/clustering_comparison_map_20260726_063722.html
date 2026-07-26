@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — clustering vs. average centroid</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #banner {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5000;
+    background: #111; color: #fff; padding: 8px 16px; border-radius: 8px;
+    font-size: 12px; max-width: 90vw; text-align: center;
+  }
+  #legend {
+    position: fixed; bottom: 12px; left: 12px; z-index: 5000;
+    background: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.3); line-height: 1.6;
+  }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — clustering vs. average centroid · grid=5x5 · query: &quot;Show me something rare&quot;</div>
+<div id="map"></div>
+<div id="legend">
+  <div><span class="swatch" style="background:#999;border:2px solid #555"></span> old: plain average</div>
+  <div><span class="swatch" style="background:#111"></span> new: density cluster</div>
+  <div>click a species marker to show its raw occurrences</div>
+  <div>dashed box: full occurrence extent · solid filled box: winning grid cell</div>
+</div>
+<script>
+const SPECIES = [
+  {num:1,name:'Common Violet',sci:'Viola odorata',color:'#e41a1c',count:1,avgLat:40.414061,avgLon:-3.685882,clusterLat:40.414061,clusterLon:-3.685882,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.414061, -3.685882]]},
+  {num:2,name:'Asiatic peafowl',sci:'Pavo cristatus',color:'#377eb8',count:1,avgLat:40.413588,avgLon:-3.683617,clusterLat:40.413588,clusterLon:-3.683617,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.413588, -3.683617]]},
+  {num:3,name:'Common Greenfinch',sci:'Chloris chloris',color:'#4daf4a',count:1,avgLat:40.413129,avgLon:-3.683205,clusterLat:40.413129,clusterLon:-3.683205,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.413129, -3.683205]]},
+  {num:4,name:'Appelvienke',sci:'Coccothraustes coccothraustes',color:'#ff7f00',count:1,avgLat:40.413129,avgLon:-3.683205,clusterLat:40.413129,clusterLon:-3.683205,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.413129, -3.683205]]},
+  {num:5,name:'Astur Lacepède, 1799',sci:'Astur Lacepède, 1799',color:'#984ea3',count:1,avgLat:40.413037,avgLon:-3.681874,clusterLat:40.413037,clusterLon:-3.681874,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.413037, -3.681874]]}
+];
+const CENTER = [40.41338879999999, -3.6835566];
+const ROUTE_COORDS = SPECIES.map(s => [s.clusterLat, s.clusterLon]);
+
+const map = L.map('map').setView(CENTER, 15);
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+  maxZoom: 17
+}).addTo(map);
+L.polyline(ROUTE_COORDS, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(map);
+
+let openDetail = null;
+
+SPECIES.forEach(s => {
+  // Raw occurrence points + winning grid cell — built but not added to the
+  // map until this species' marker is clicked (toggleDetail below).
+  const detailLayer = L.layerGroup();
+  s.points.forEach(p => {
+    L.circleMarker(p, { radius: 3, color: s.color, weight: 1, fillColor: s.color, fillOpacity: 0.7 }).addTo(detailLayer);
+  });
+  if (s.bbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.bbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 1, dashArray: '4,4', fillOpacity: 0
+    }).addTo(detailLayer);
+  }
+  if (s.winningCellBbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.winningCellBbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 3, fillColor: s.color, fillOpacity: 0.15
+    }).addTo(detailLayer);
+  }
+
+  function toggleDetail() {
+    if (openDetail === detailLayer) {
+      map.removeLayer(detailLayer);
+      openDetail = null;
+    } else {
+      if (openDetail) map.removeLayer(openDetail);
+      detailLayer.addTo(map);
+      openDetail = detailLayer;
+    }
+  }
+
+  // Old marker: plain average
+  L.circleMarker([s.avgLat, s.avgLon], {
+    radius: 8, color: '#555', weight: 2, fillColor: '#999', fillOpacity: 0.9
+  }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>OLD: plain average<br>${s.count} total observations`
+  );
+
+  // New marker: density cluster (primary, numbered)
+  const icon = L.divIcon({
+    html: `<div style="background:${s.color};color:#fff;border-radius:50%;width:28px;height:28px;` +
+          `display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;` +
+          `border:2px solid #111;box-shadow:0 2px 6px rgba(0,0,0,.4)">${s.num}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+  });
+  L.marker([s.clusterLat, s.clusterLon], { icon }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>NEW: density cluster` +
+    (s.fallback ? ' (fallback: too few points, same as average)' : `<br>moved ${s.distanceM.toFixed(0)}m from average`) +
+    `<br>${s.count} total observations`
+  );
+});
+</script>
+</body>
+</html>

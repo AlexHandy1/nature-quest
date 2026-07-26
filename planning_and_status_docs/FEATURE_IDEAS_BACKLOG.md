@@ -23,3 +23,11 @@ Users state a goal or interest for that day — "Today I want to learn about pla
 ## WebGL 3D map experience
 
 Explore WebGL for a genuinely 3D, game-like map experience (vs. the current 2D Leaflet-based prototypes). Aimed at the fantasy video game journey direction — closer to the depth/perspective feel of Zelda/Minecraft-style exploration than a flat top-down map can offer.
+
+## Show raw observations behind a species' cluster marker
+
+On click/selection of a species in the final map, show all of that species' raw underlying observations (not just the single hotspot marker), so users get a sense of the real distribution behind the cluster to help guide their walk — e.g. "this species is common across a wide area" vs. "this species was only seen in one tight spot." Prototyped in `prototypes/scripts/e2e_walk_spike_clustering.py` (click-to-reveal raw occurrence points + winning grid cell).
+
+## Explore GBIF's AWS-hosted cache/snapshot for large queries
+
+Live `occurrence/search` pagination (300 records/request) doesn't scale for common taxa in dense areas — a single "birds in Retiro Park" query returned 55,756 matching occurrences, requiring ~186 sequential paginated requests. GBIF publishes a bulk-access snapshot on AWS (their public dataset / Open Data on AWS listing) that may allow querying large result sets far more efficiently than paginating the live REST API one page at a time. Worth investigating as the production-scale answer to the fetch-scaling issue found in `WORK_SUMMARY_250726.md`, instead of ad-hoc mitigations like the prototype's count-then-fallback-year guard.

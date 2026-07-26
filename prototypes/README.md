@@ -87,6 +87,19 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 - **Validated this round:** a user-drawn polygon survives the full trip — browser Leaflet coordinates → GBIF WKT geometry → real occurrence search → waypoint ordering from the drawn area's own centroid → rendered quest-log map.
 - **Known issues / open items** (see `planning_and_status_docs/WORK_SUMMARY_230726.md` for full detail): the "show me something rare" test intent hangs/fails and needs investigating across all test intents; behaviour for sparse/no-observation areas isn't defined; the drawn area's boundary isn't shown once you reach the map view; onboarding/UX still needs deeper design thought; no caching yet; Retiro isn't offered as a quick default alongside draw-your-own; centroid is a naive average-of-vertices (not weighted toward where observations actually cluster).
 
+### 9. Density-cluster species markers — prototyped, real trade-offs surfaced (see `planning_and_status_docs/WORK_SUMMARY_250726.md`)
+- **`e2e_walk_spike_clustering.py`** — fork of `e2e_walk_spike_polygon.py`. Tests whether an adaptive N×N density-grid cluster (`cluster_species_hotspot()`) is a better species-marker location than the plain average-of-all-occurrences centroid used elsewhere (`rank_species()`'s `hotspot_lat`/`hotspot_lon`). Strips the per-species description and narrative LLM calls (out of scope, costly to rerun); keeps NL-query species selection and polygon-area support. Renders a comparison map: old (average) vs. new (density-cluster) marker per species, click-to-reveal raw occurrence points and the winning grid cell's own bounds. Also adds a scale guard to `fetch_gbif_occurrences()` (probe count first, fall back from the full `YEAR_RANGE` to a single year above 1000 occurrences) and a retry wrapper for transient bad GBIF responses — not yet backported to the other scripts sharing this fetch logic.
+  ```
+  source venv/bin/activate
+  python prototypes/scripts/e2e_walk_spike_clustering.py "Today I want to learn about plants" \
+    --polygon-file prototypes/reference/rascafria_area.geojson \
+    2>&1 | tee prototypes/logs/e2e_walk_clustering_$(date +%Y%m%d_%H%M%S).log
+  ```
+  `--polygon-file` omitted defaults to Retiro. No unit tests (explicit call for this prototype — throwaway, not the usual light-TDD norm).
+- **Validated this round:** clustering meaningfully diverges from the plain average whenever a species has enough occurrences (confirmed on Retiro plants and Rascafría birds, 55-332m and 111-261m divergence respectively).
+- **New problem found, not solved:** GBIF data itself can contain many exact-duplicate/low-precision coordinates for a single recording location shared across species (confirmed at Rascafría — several species' clusters collapsed onto one identical coordinate, stacking markers illegibly). This is a real data artifact, not a clustering bug, but the pipeline has no handling for it — see open items below.
+- **Also confirmed:** the previously-flagged "show me something rare" hang (§8 below, `WORK_SUMMARY_230726.md`) was very likely the same GBIF fetch-scaling issue found here — that query resolves to no taxon filter, which returns tens of thousands of unfiltered occurrences without the scale guard.
+
 ## What's proven vs. still open
 
 **Proven end-to-end:** NL query → real GBIF species selection (including mixed-taxa and empty-group handling) → real waypoint ordering → real GBIF/Wikipedia enrichment → real generated narrative → rendered, interactive map — triggerable from a browser, on Haiku, for a few cents per run. Also proven for an arbitrary user-drawn area, not just the fixed Retiro polygon (see §8).
@@ -96,12 +109,14 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 - Fish taxon coverage is a ~67%-by-volume holding solution, not exhaustive (`reference/gbif_common_order_keys.json`).
 - The longer-term WebGL 3D map direction (Variant A/Leaflet is the interim choice).
 - Naming decision (Nature Walker vs. Nature Quest) — still open.
-- The "show me something rare" test intent hangs/fails — needs investigation across all test intents, with a defined desired behaviour.
+- The "show me something rare" test intent hang is very likely explained by the GBIF fetch-scaling issue below (root-caused in §9) — not yet backported/re-verified against the actual polygon/server scripts where it was first seen.
+- **GBIF fetch scaling**: `fetch_gbif_occurrences()`'s live pagination (300/page) doesn't scale for common taxa in dense areas — a single unfiltered or common-class query can mean tens of thousands of occurrences and hundreds of sequential page requests. §9's count-then-fallback-year guard is a prototype-only stopgap, not a production design (candidates: GBIF's AWS-hosted snapshot/cache, smarter pagination — see `FEATURE_IDEAS_BACKLOG.md`).
 - Behaviour for sparse/no-observation areas (drawn or otherwise) isn't defined beyond a generic error message.
 - Deeper UX design for the draw-your-own-area flow: how to introduce/explain it, showing the drawn boundary on the quest-log map, dropping the sword-emoji styling.
 - Caching (not yet scoped — likely GBIF responses and/or LLM calls).
 - Retiro Park as a quick default/selectable option alongside draw-your-own-area.
-- A better-than-centroid method for anchoring the map/route on the densest cluster of observations, not a naive average of the drawn polygon's vertices.
+- Density-cluster species markers (§9) work when a species has enough occurrences, but surfaced a new open problem: shared/duplicate coordinates in the underlying GBIF data can make multiple species' markers collapse onto the same spot, with no waypoint-ordering or UX handling for it yet.
+- "Rare" query handling needs its own design pass — current behaviour (unfiltered + sort-by-rarest) surfaces only singleton, clustering-irrelevant records and occasional messy species labels.
 - A full technical plan for the production build (testing, CI/CD, observability/monitoring) — not started.
 
 See `planning_and_status_docs/` for the full session-by-session history behind these decisions.
