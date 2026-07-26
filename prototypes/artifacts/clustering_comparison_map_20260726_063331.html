@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — clustering vs. average centroid</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #banner {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5000;
+    background: #111; color: #fff; padding: 8px 16px; border-radius: 8px;
+    font-size: 12px; max-width: 90vw; text-align: center;
+  }
+  #legend {
+    position: fixed; bottom: 12px; left: 12px; z-index: 5000;
+    background: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.3); line-height: 1.6;
+  }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — clustering vs. average centroid · grid=5x5 · query: &quot;Show me some fish and birds&quot;</div>
+<div id="map"></div>
+<div id="legend">
+  <div><span class="swatch" style="background:#999;border:2px solid #555"></span> old: plain average</div>
+  <div><span class="swatch" style="background:#111"></span> new: density cluster</div>
+  <div>click a species marker to show its raw occurrences</div>
+  <div>dashed box: full occurrence extent · solid filled box: winning grid cell</div>
+</div>
+<script>
+const SPECIES = [
+  {num:1,name:'Black-billed Magpie',sci:'Pica pica',color:'#e41a1c',count:87,avgLat:40.41480303448276,avgLon:-3.684623701149425,clusterLat:40.415210916666666,clusterLon:-3.683595,distanceM:98.19226670899015,fallback:false,bbox:[40.408585, -3.68879, 40.42102, -3.678627],winningCellBbox:[40.413559, -3.6847248, 40.416046, -3.6826922],points:[[40.412142, -3.682228], [40.413497, -3.687147], [40.418615, -3.685692], [40.4129, -3.681609], [40.414024, -3.681738], [40.413129, -3.683205], [40.415329, -3.684891], [40.415258, -3.683466], [40.417185, -3.683043], [40.415425, -3.687322], [40.413588, -3.683617], [40.416192, -3.687767], [40.415638, -3.684025], [40.415462, -3.68615], [40.419377, -3.687277], [40.414744, -3.685532], [40.412727, -3.688652], [40.415845, -3.683415], [40.411848, -3.682042], [40.415353, -3.682741], [40.409184, -3.68742], [40.414118, -3.681532], [40.408813, -3.679376], [40.408585, -3.678627], [40.415504, -3.687584], [40.42102, -3.680665], [40.414457, -3.682603], [40.414132, -3.68879], [40.418293, -3.686805], [40.415195, -3.683423], [40.415893, -3.684144], [40.414725, -3.680817], [40.414514, -3.687209], [40.417797, -3.679605], [40.415195, -3.683423], [40.413013, -3.685702], [40.412097, -3.687183], [40.412815, -3.688724], [40.418108, -3.685284], [40.415258, -3.683466], [40.416172, -3.685383], [40.415223, -3.685504], [40.419197, -3.688478], [40.419606, -3.687507], [40.418552, -3.687163], [40.413329, -3.683367], [40.412378, -3.680947], [40.41455, -3.685063], [40.412688, -3.681361], [40.411358, -3.687786], [40.411702, -3.687773], [40.412797, -3.687175], [40.410537, -3.686301], [40.413563, -3.684733], [40.410975, -3.686829], [40.413933, -3.68473], [40.40952, -3.68038], [40.41491, -3.687786], [40.415653, -3.687487], [40.414305, -3.68152], [40.41313, -3.686887], [40.415258, -3.683466], [40.41703, -3.686612], [40.413597, -3.685732], [40.420461, -3.680884], [40.416825, -3.682355], [40.418842, -3.680395], [40.411221, -3.687052], [40.414792, -3.684488], [40.41024, -3.687001], [40.41211, -3.679988], [40.416358, -3.688789], [40.41715, -3.681855], [40.419147, -3.686515], [40.416283, -3.684622], [40.416927, -3.680864], [40.414173, -3.684886], [40.415726, -3.686039], [40.415372, -3.68808], [40.413517, -3.681183], [40.417456, -3.682234], [40.414213, -3.68212], [40.41965, -3.684742], [40.415258, -3.683466], [40.419178, -3.688495], [40.41309, -3.685088], [40.412918, -3.68721]]},
+  {num:2,name:'Aischgrund Carp',sci:'Cyprinus carpio',color:'#377eb8',count:52,avgLat:40.415935769230764,avgLon:-3.683634153846154,clusterLat:40.41371771428572,clusterLon:-3.6815625714285716,distanceM:302.6353256708454,fallback:false,bbox:[40.413512, -3.687448, 40.418187, -3.681047],winningCellBbox:[40.413512, -3.6823272, 40.414446999999996, -3.681047],points:[[40.416639, -3.684465], [40.415861, -3.683877], [40.416129, -3.684345], [40.417605, -3.683188], [40.413769, -3.68176], [40.413555, -3.681047], [40.41378, -3.681763], [40.415842, -3.684079], [40.413647, -3.681755], [40.415783, -3.684145], [40.415969, -3.683461], [40.413612, -3.681162], [40.416829, -3.684659], [40.417427, -3.684863], [40.417247, -3.68394], [40.415611, -3.684373], [40.417572, -3.683305], [40.415928, -3.683962], [40.418127, -3.68512], [40.415838, -3.684038], [40.415695, -3.68271], [40.413805, -3.681645], [40.413945, -3.687448], [40.418013, -3.684967], [40.414078, -3.681188], [40.417551, -3.684794], [40.413656, -3.681775], [40.416072, -3.68284], [40.417587, -3.684928], [40.418045, -3.684588], [40.415992, -3.683421], [40.418178, -3.685162], [40.413692, -3.681933], [40.417683, -3.684953], [40.41698, -3.684767], [40.415614, -3.683849], [40.416079, -3.683478], [40.413739, -3.681635], [40.413512, -3.681592], [40.416415, -3.684534], [40.413703, -3.681733], [40.413912, -3.681734], [40.417003, -3.684667], [40.416124, -3.68394], [40.418053, -3.685095], [40.418187, -3.685187], [40.415808, -3.684188], [40.415261, -3.684499], [40.413588, -3.681154], [40.417974, -3.685102], [40.417833, -3.685033], [40.418113, -3.68513]]},
+  {num:3,name:'Common Sunfish',sci:'Lepomis gibbosus',color:'#4daf4a',count:2,avgLat:40.413673,avgLon:-3.6812804999999997,clusterLat:40.413673,clusterLon:-3.6812804999999997,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.41379, -3.681397], [40.413556, -3.681164]]},
+  {num:4,name:'Carp',sci:'Carassius auratus',color:'#ff7f00',count:2,avgLat:40.413765,avgLon:-3.681088,clusterLat:40.413765,clusterLon:-3.681088,distanceM:0.0,fallback:true,bbox:null,winningCellBbox:null,points:[[40.413902, -3.681071], [40.413628, -3.681105]]},
+  {num:5,name:'Iberian Green Woodpecker',sci:'Picus sharpei',color:'#984ea3',count:64,avgLat:40.413775015625,avgLon:-3.684251875,clusterLat:40.41046722222222,clusterLon:-3.687262,distanceM:447.47304815688784,fallback:false,bbox:[40.408744, -3.688326, 40.42062, -3.676595],winningCellBbox:[40.408744, -3.688326, 40.4111192, -3.6859798],points:[[40.415697, -3.687347], [40.414966, -3.686555], [40.409193, -3.678089], [40.415733, -3.686748], [40.418968, -3.684585], [40.418219, -3.680616], [40.413349, -3.683775], [40.413071, -3.682766], [40.413129, -3.683205], [40.414966, -3.686555], [40.413242, -3.680296], [40.410237, -3.686808], [40.416609, -3.679755], [40.418007, -3.682915], [40.413588, -3.683617], [40.41518, -3.686558], [40.417965, -3.688326], [40.410447, -3.687413], [40.410713, -3.684553], [40.410516, -3.687652], [40.414061, -3.685882], [40.411349, -3.68743], [40.411032, -3.686239], [40.411197, -3.676595], [40.415845, -3.683415], [40.413745, -3.687892], [40.409879, -3.67993], [40.412992, -3.680105], [40.408744, -3.678624], [40.411609, -3.6873], [40.413733, -3.684036], [40.411416, -3.681694], [40.418733, -3.686593], [40.414112, -3.681752], [40.410427, -3.684446], [40.411778, -3.685469], [40.411535, -3.686895], [40.410261, -3.686431], [40.411738, -3.681853], [40.410397, -3.681624], [40.410576, -3.687583], [40.413555, -3.681176], [40.42062, -3.683775], [40.410316, -3.68796], [40.410482, -3.681011], [40.41655, -3.679226], [40.41565, -3.68774], [40.412955, -3.681137], [40.418144, -3.686175], [40.420392, -3.684604], [40.415011, -3.680821], [40.410347, -3.687764], [40.410473, -3.687508], [40.416187, -3.686861], [40.409881, -3.682449], [40.414497, -3.681592], [40.411319, -3.688114], [40.417748, -3.686266], [40.416901, -3.687296], [40.414979, -3.686206], [40.416599, -3.681861], [40.419889, -3.683902], [40.415097, -3.682908], [40.415055, -3.685846]]}
+];
+const CENTER = [40.41336677063492, -3.6829576142857143];
+const ROUTE_COORDS = SPECIES.map(s => [s.clusterLat, s.clusterLon]);
+
+const map = L.map('map').setView(CENTER, 15);
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+  maxZoom: 17
+}).addTo(map);
+L.polyline(ROUTE_COORDS, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(map);
+
+let openDetail = null;
+
+SPECIES.forEach(s => {
+  // Raw occurrence points + winning grid cell — built but not added to the
+  // map until this species' marker is clicked (toggleDetail below).
+  const detailLayer = L.layerGroup();
+  s.points.forEach(p => {
+    L.circleMarker(p, { radius: 3, color: s.color, weight: 1, fillColor: s.color, fillOpacity: 0.7 }).addTo(detailLayer);
+  });
+  if (s.bbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.bbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 1, dashArray: '4,4', fillOpacity: 0
+    }).addTo(detailLayer);
+  }
+  if (s.winningCellBbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.winningCellBbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 3, fillColor: s.color, fillOpacity: 0.15
+    }).addTo(detailLayer);
+  }
+
+  function toggleDetail() {
+    if (openDetail === detailLayer) {
+      map.removeLayer(detailLayer);
+      openDetail = null;
+    } else {
+      if (openDetail) map.removeLayer(openDetail);
+      detailLayer.addTo(map);
+      openDetail = detailLayer;
+    }
+  }
+
+  // Old marker: plain average
+  L.circleMarker([s.avgLat, s.avgLon], {
+    radius: 8, color: '#555', weight: 2, fillColor: '#999', fillOpacity: 0.9
+  }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>OLD: plain average<br>${s.count} total observations`
+  );
+
+  // New marker: density cluster (primary, numbered)
+  const icon = L.divIcon({
+    html: `<div style="background:${s.color};color:#fff;border-radius:50%;width:28px;height:28px;` +
+          `display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;` +
+          `border:2px solid #111;box-shadow:0 2px 6px rgba(0,0,0,.4)">${s.num}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+  });
+  L.marker([s.clusterLat, s.clusterLon], { icon }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>NEW: density cluster` +
+    (s.fallback ? ' (fallback: too few points, same as average)' : `<br>moved ${s.distanceM.toFixed(0)}m from average`) +
+    `<br>${s.count} total observations`
+  );
+});
+</script>
+</body>
+</html>

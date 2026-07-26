@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — clustering vs. average centroid</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #map { position: absolute; inset: 0; }
+  #banner {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 5000;
+    background: #111; color: #fff; padding: 8px 16px; border-radius: 8px;
+    font-size: 12px; max-width: 90vw; text-align: center;
+  }
+  #legend {
+    position: fixed; bottom: 12px; left: 12px; z-index: 5000;
+    background: #fff; padding: 10px 14px; border-radius: 8px; font-size: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.3); line-height: 1.6;
+  }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — clustering vs. average centroid · grid=5x5 · query: &quot;Show me a mix of birds and insects&quot;</div>
+<div id="map"></div>
+<div id="legend">
+  <div><span class="swatch" style="background:#999;border:2px solid #555"></span> old: plain average</div>
+  <div><span class="swatch" style="background:#111"></span> new: density cluster</div>
+  <div>click a species marker to show its raw occurrences</div>
+  <div>dashed box: full occurrence extent · solid filled box: winning grid cell</div>
+</div>
+<script>
+const SPECIES = [
+  {num:1,name:'Iberian Marbled White',sci:'Melanargia lachesis',color:'#e41a1c',count:3,avgLat:40.88031633333333,avgLon:-3.879223666666667,clusterLat:40.879946000000004,clusterLon:-3.8773995,distanceM:158.79420978843874,fallback:false,bbox:[40.879903, -3.882872, 40.881057, -3.877367],winningCellBbox:[40.879903, -3.878468, 40.880133799999996, -3.877367],points:[[40.879989, -3.877432], [40.879903, -3.877367], [40.881057, -3.882872]]},
+  {num:2,name:'Spanish Festoon',sci:'Zerynthia rumina',color:'#377eb8',count:3,avgLat:40.876022666666664,avgLon:-3.8765543333333334,clusterLat:40.8762095,clusterLon:-3.8767495,distanceM:26.473686670159335,fallback:false,bbox:[40.875649, -3.876799, 40.876219, -3.876164],winningCellBbox:[40.876105, -3.876799, 40.876219, -3.876672],points:[[40.875649, -3.876164], [40.876219, -3.876799], [40.8762, -3.8767]]},
+  {num:3,name:'Acorn Jay',sci:'Garrulus glandarius',color:'#4daf4a',count:21,avgLat:40.87460361904762,avgLon:-3.8792112857142858,clusterLat:40.87226,clusterLon:-3.879334,distanceM:260.80272754220476,fallback:false,bbox:[40.87226, -3.880673, 40.880703, -3.877605],winningCellBbox:[40.87226, -3.8794458, 40.8739486, -3.8788321999999997],points:[[40.880661, -3.880673], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.880703, -3.880184], [40.880558, -3.879923], [40.87689, -3.877605], [40.876804, -3.877636], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87971, -3.87837], [40.87971, -3.87837], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334]]},
+  {num:4,name:'C F',sci:'Fringilla coelebs',color:'#ff7f00',count:17,avgLat:40.87388117647058,avgLon:-3.8793095294117648,clusterLat:40.87226,clusterLon:-3.879334,distanceM:180.27834034530835,fallback:false,bbox:[40.87226, -3.882575, 40.88029, -3.877605],winningCellBbox:[40.87226, -3.879593, 40.873866, -3.878599],points:[[40.88029, -3.882575], [40.87226, -3.879334], [40.87689, -3.877605], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87971, -3.87837], [40.87971, -3.87837], [40.87226, -3.879334], [40.87226, -3.879334]]},
+  {num:5,name:'Blackbird',sci:'Turdus merula',color:'#984ea3',count:15,avgLat:40.87325333333333,avgLon:-3.879205466666667,clusterLat:40.87226,clusterLon:-3.879334,distanceM:110.98108598589594,fallback:false,bbox:[40.87226, -3.879334, 40.87971, -3.87837],winningCellBbox:[40.87226, -3.879334, 40.87375, -3.8791412],points:[[40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87226, -3.879334], [40.87971, -3.87837], [40.87971, -3.87837], [40.87226, -3.879334], [40.87226, -3.879334]]}
+];
+const CENTER = [40.8745871, -3.8784301999999995];
+const ROUTE_COORDS = SPECIES.map(s => [s.clusterLat, s.clusterLon]);
+
+const map = L.map('map').setView(CENTER, 15);
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+  maxZoom: 17
+}).addTo(map);
+L.polyline(ROUTE_COORDS, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(map);
+
+let openDetail = null;
+
+SPECIES.forEach(s => {
+  // Raw occurrence points + winning grid cell — built but not added to the
+  // map until this species' marker is clicked (toggleDetail below).
+  const detailLayer = L.layerGroup();
+  s.points.forEach(p => {
+    L.circleMarker(p, { radius: 3, color: s.color, weight: 1, fillColor: s.color, fillOpacity: 0.7 }).addTo(detailLayer);
+  });
+  if (s.bbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.bbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 1, dashArray: '4,4', fillOpacity: 0
+    }).addTo(detailLayer);
+  }
+  if (s.winningCellBbox && !s.fallback) {
+    const [minLat, minLon, maxLat, maxLon] = s.winningCellBbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {
+      color: s.color, weight: 3, fillColor: s.color, fillOpacity: 0.15
+    }).addTo(detailLayer);
+  }
+
+  function toggleDetail() {
+    if (openDetail === detailLayer) {
+      map.removeLayer(detailLayer);
+      openDetail = null;
+    } else {
+      if (openDetail) map.removeLayer(openDetail);
+      detailLayer.addTo(map);
+      openDetail = detailLayer;
+    }
+  }
+
+  // Old marker: plain average
+  L.circleMarker([s.avgLat, s.avgLon], {
+    radius: 8, color: '#555', weight: 2, fillColor: '#999', fillOpacity: 0.9
+  }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>OLD: plain average<br>${s.count} total observations`
+  );
+
+  // New marker: density cluster (primary, numbered)
+  const icon = L.divIcon({
+    html: `<div style="background:${s.color};color:#fff;border-radius:50%;width:28px;height:28px;` +
+          `display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;` +
+          `border:2px solid #111;box-shadow:0 2px 6px rgba(0,0,0,.4)">${s.num}</div>`,
+    iconSize: [28, 28], iconAnchor: [14, 14], className: ''
+  });
+  L.marker([s.clusterLat, s.clusterLon], { icon }).addTo(map).on('click', toggleDetail).bindPopup(
+    `<b>${s.name}</b> (${s.sci})<br>NEW: density cluster` +
+    (s.fallback ? ' (fallback: too few points, same as average)' : `<br>moved ${s.distanceM.toFixed(0)}m from average`) +
+    `<br>${s.count} total observations`
+  );
+});
+</script>
+</body>
+</html>

@@ -42,6 +42,8 @@ MIN_FUZZY_CONFIDENCE = 85
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 DEFAULT_GRID_N = 5
 MIN_POINTS_TO_CLUSTER = 3  # <=2 points: clustering is meaningless, fall back to plain average
+LARGE_RESULT_THRESHOLD = 1000  # above this, fall back to FALLBACK_YEAR instead of the full YEAR_RANGE
+FALLBACK_YEAR = "2026"
 
 MODEL_PRICING = {
     "claude-sonnet-5": (2.00, 10.00),
@@ -183,6 +185,12 @@ def cluster_species_hotspot(occurrence_points, grid_n=DEFAULT_GRID_N):
     cluster_lat = sum(p[0] for p in winning_points) / len(winning_points)
     cluster_lon = sum(p[1] for p in winning_points) / len(winning_points)
 
+    winning_row, winning_col = winning_cell
+    cell_min_lat = min_lat + winning_row * lat_step if lat_step else min_lat
+    cell_max_lat = min_lat + (winning_row + 1) * lat_step if lat_step else max_lat
+    cell_min_lon = min_lon + winning_col * lon_step if lon_step else min_lon
+    cell_max_lon = min_lon + (winning_col + 1) * lon_step if lon_step else max_lon
+
     cell_width_m = haversine_m(min_lat, min_lon, min_lat, min_lon + lon_step) if lon_step else 0.0
     cell_height_m = haversine_m(min_lat, min_lon, min_lat + lat_step, min_lon) if lat_step else 0.0
     distance_m = haversine_m(avg_lat, avg_lon, cluster_lat, cluster_lon)
@@ -194,6 +202,7 @@ def cluster_species_hotspot(occurrence_points, grid_n=DEFAULT_GRID_N):
         "cell_width_m": cell_width_m, "cell_height_m": cell_height_m,
         "distance_m": distance_m, "fallback_reason": None,
         "bbox": (min_lat, min_lon, max_lat, max_lon),
+        "winning_cell_bbox": (cell_min_lat, cell_min_lon, cell_max_lat, cell_max_lon),
     }
 
 
@@ -385,23 +394,48 @@ def resolve_taxon_filter(taxon_filter, caches):
 
 # ── Step 3: fetch + rank species for one resolved filter ────────
 
-def fetch_gbif_occurrences(polygon_wkt, extra_params):
+def gbif_search(params, label, retries=2):
+    for attempt in range(retries + 1):
+        resp = requests.get("https://api.gbif.org/v1/occurrence/search", params=params, timeout=30)
+        data = resp.json()
+        if resp.status_code == 200 and isinstance(data, dict):
+            return data
+        print(f"  {YELLOW}[retry] {label}: unexpected response (status={resp.status_code}, "
+              f"type={type(data).__name__}), attempt {attempt + 1}/{retries + 1}{RESET}")
+        time.sleep(1)
+    return {"results": [], "endOfRecords": True, "count": 0}
+
+
+def fetch_gbif_occurrences(polygon_wkt, extra_params, label="?"):
+    probe_params = {
+        "geometry": polygon_wkt, "year": YEAR_RANGE, "hasCoordinate": "true",
+        "occurrenceStatus": "PRESENT", "limit": 0, **extra_params,
+    }
+    probe = gbif_search(probe_params, label)
+    total = probe.get("count", 0)
+
+    year_value = YEAR_RANGE
+    if total > LARGE_RESULT_THRESHOLD:
+        print(f"  {YELLOW}[scale guard] {label}: {total} occurrences under year={YEAR_RANGE} "
+              f"(>{LARGE_RESULT_THRESHOLD}) — falling back to year={FALLBACK_YEAR}{RESET}")
+        year_value = FALLBACK_YEAR
+
     results = []
     offset = 0
     while True:
         params = {
             "geometry": polygon_wkt,
-            "year": YEAR_RANGE,
+            "year": year_value,
             "hasCoordinate": "true",
             "occurrenceStatus": "PRESENT",
             "limit": 300,
             "offset": offset,
             **extra_params,
         }
-        resp = requests.get("https://api.gbif.org/v1/occurrence/search", params=params, timeout=30)
-        data = resp.json()
+        data = gbif_search(params, label)
         page = data.get("results", [])
         results.extend(page)
+        print(f"    {DIM}[fetch {label}] year={year_value} offset={offset} got={len(page)} running_total={len(results)}{RESET}")
         if data.get("endOfRecords", True):
             break
         offset += 300
@@ -448,9 +482,9 @@ def fetch_and_rank_group(taxon_filter, key, key_param, q, sort, polygon_wkt, gri
     extra_params = {key_param: key}
     if q:
         extra_params["q"] = q
-    occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params)
-    species_list = rank_species(occurrences, sort, grid_n)
     label = f"{taxon_filter['taxonRank']}/{taxon_filter['taxonValue']}"
+    occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params, label=label)
+    species_list = rank_species(occurrences, sort, grid_n)
     print(f"  {label:<30} {len(occurrences):>5} occurrences -> {len(species_list)} species")
     return label, species_list
 
@@ -513,13 +547,15 @@ def generate_cluster_comparison_map(ordered_species, user_query, grid_n):
         c = sp["cluster"]
         raw_points_js = json.dumps(sp["occurrence_points"])
         bbox_js = json.dumps(c.get("bbox"))
+        winning_cell_bbox_js = json.dumps(c.get("winning_cell_bbox"))
         species_js.append(
             "{num:%d,name:'%s',sci:'%s',color:'%s',count:%d,"
             "avgLat:%r,avgLon:%r,clusterLat:%r,clusterLon:%r,"
-            "distanceM:%r,fallback:%s,bbox:%s,points:%s}"
+            "distanceM:%r,fallback:%s,bbox:%s,winningCellBbox:%s,points:%s}"
             % (i + 1, name, sci, color, sp["count"],
                sp["avg_lat"], sp["avg_lon"], sp["hotspot_lat"], sp["hotspot_lon"],
-               c["distance_m"], json.dumps(bool(c["fallback_reason"])), bbox_js, raw_points_js)
+               c["distance_m"], json.dumps(bool(c["fallback_reason"])), bbox_js,
+               winning_cell_bbox_js, raw_points_js)
         )
     species_array_js = "[\n  " + ",\n  ".join(species_js) + "\n]"
     query_js = json.dumps(user_query)
@@ -554,7 +590,8 @@ def generate_cluster_comparison_map(ordered_species, user_query, grid_n):
 <div id="legend">
   <div><span class="swatch" style="background:#999;border:2px solid #555"></span> old: plain average</div>
   <div><span class="swatch" style="background:#111"></span> new: density cluster</div>
-  <div>small dots: raw occurrences · dashed box: winning grid cell</div>
+  <div>click a species marker to show its raw occurrences</div>
+  <div>dashed box: full occurrence extent · solid filled box: winning grid cell</div>
 </div>
 <script>
 const SPECIES = {species_array_js};
@@ -568,24 +605,43 @@ L.tileLayer('https://{{s}}.tile.opentopomap.org/{{z}}/{{x}}/{{y}}.png', {{
 }}).addTo(map);
 L.polyline(ROUTE_COORDS, {{ color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }}).addTo(map);
 
-SPECIES.forEach(s => {{
-  // Raw occurrence points
-  s.points.forEach(p => {{
-    L.circleMarker(p, {{ radius: 3, color: s.color, weight: 1, fillOpacity: 0.5 }}).addTo(map);
-  }});
+let openDetail = null;
 
-  // Winning grid cell bounds (if clustering ran, not a fallback)
+SPECIES.forEach(s => {{
+  // Raw occurrence points + winning grid cell — built but not added to the
+  // map until this species' marker is clicked (toggleDetail below).
+  const detailLayer = L.layerGroup();
+  s.points.forEach(p => {{
+    L.circleMarker(p, {{ radius: 3, color: s.color, weight: 1, fillColor: s.color, fillOpacity: 0.7 }}).addTo(detailLayer);
+  }});
   if (s.bbox && !s.fallback) {{
     const [minLat, minLon, maxLat, maxLon] = s.bbox;
     L.rectangle([[minLat, minLon], [maxLat, maxLon]], {{
       color: s.color, weight: 1, dashArray: '4,4', fillOpacity: 0
-    }}).addTo(map);
+    }}).addTo(detailLayer);
+  }}
+  if (s.winningCellBbox && !s.fallback) {{
+    const [minLat, minLon, maxLat, maxLon] = s.winningCellBbox;
+    L.rectangle([[minLat, minLon], [maxLat, maxLon]], {{
+      color: s.color, weight: 3, fillColor: s.color, fillOpacity: 0.15
+    }}).addTo(detailLayer);
+  }}
+
+  function toggleDetail() {{
+    if (openDetail === detailLayer) {{
+      map.removeLayer(detailLayer);
+      openDetail = null;
+    }} else {{
+      if (openDetail) map.removeLayer(openDetail);
+      detailLayer.addTo(map);
+      openDetail = detailLayer;
+    }}
   }}
 
   // Old marker: plain average
   L.circleMarker([s.avgLat, s.avgLon], {{
     radius: 8, color: '#555', weight: 2, fillColor: '#999', fillOpacity: 0.9
-  }}).addTo(map).bindPopup(
+  }}).addTo(map).on('click', toggleDetail).bindPopup(
     `<b>${{s.name}}</b> (${{s.sci}})<br>OLD: plain average<br>${{s.count}} total observations`
   );
 
@@ -596,7 +652,7 @@ SPECIES.forEach(s => {{
           `border:2px solid #111;box-shadow:0 2px 6px rgba(0,0,0,.4)">${{s.num}}</div>`,
     iconSize: [28, 28], iconAnchor: [14, 14], className: ''
   }});
-  L.marker([s.clusterLat, s.clusterLon], {{ icon }}).addTo(map).bindPopup(
+  L.marker([s.clusterLat, s.clusterLon], {{ icon }}).addTo(map).on('click', toggleDetail).bindPopup(
     `<b>${{s.name}}</b> (${{s.sci}})<br>NEW: density cluster` +
     (s.fallback ? ' (fallback: too few points, same as average)' : `<br>moved ${{s.distanceM.toFixed(0)}}m from average`) +
     `<br>${{s.count}} total observations`
@@ -606,7 +662,8 @@ SPECIES.forEach(s => {{
 </body>
 </html>"""
 
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "artifacts", "clustering_comparison_map.html")
+    filename = f"clustering_comparison_map_{time.strftime('%Y%m%d_%H%M%S')}.html"
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "artifacts", filename)
     with open(out, "w") as f:
         f.write(html)
     print(f"  Written: {out}")
@@ -648,7 +705,7 @@ def run_pipeline(user_query, intent_model, polygon_wkt, center_lat, center_lon, 
             group_results = [f.result() for f in futures]
     else:
         extra_params = {"q": q} if q else {}
-        occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params)
+        occurrences = fetch_gbif_occurrences(polygon_wkt, extra_params, label="(default, no filter)")
         species_list = rank_species(occurrences, sort, grid_n)
         print(f"  {'(default, no filter)':<30} {len(occurrences):>5} occurrences -> {len(species_list)} species")
         group_results = [("(default, no filter)", species_list)]
