@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — prototypes/web/index_full_validation.html
+Fork of index_polygon.html (untouched — see this codebase's "copy, don't
+edit a validated checkpoint" convention). Backed by server_full_validation.py
+instead of server_polygon.py. Adds ONE new state to the flow — the
+"needs_clarification" card — and a notes banner inside the map view.
+Throwaway. Do not promote to production.
+
+Six JS-swapped states in one page (no navigation/reload); states -1, 0, 1
+unchanged from index_polygon.html:
+  -1. (intro card) — welcome/onboarding.
+  0. #view-draw     — full-screen map with a polygon draw tool.
+  1. #view-form     — landing form: drawn-area summary, NL query textarea.
+  2. #view-loading  — generic spinner + rotating quest-flavoured status text.
+  3. #view-clarify  — NEW. Shown only for case 1/4 (no taxonomic signal, or a
+                      resolved filter that found nothing here). Message +
+                      two buttons: "Try a different query" (client-side only,
+                      back to the form) and "Show most-observed instead"
+                      (re-calls /gbif-species-query with override:true).
+                      Pipeline never reaches /run-walk from here without one
+                      of these two explicit clicks.
+  4. #view-map      — the adventure-style "Quest Log" map/journal UI, now
+                      also rendering a notes banner (case 2/3 — fewer than 5
+                      species found, or overlapping waypoints) passed
+                      through from whichever call actually resolved the walk.
+
+Sequence per query submission:
+  1. POST /gbif-species-query (STEPS 1-5 only, cheap).
+  2. status "ok" (with or without notes) -> proceed straight to /run-walk
+     automatically — the search that ran is exactly what was asked for.
+  3. status "needs_clarification" -> STOP. Show view-clarify. Only an
+     explicit button click continues the flow (see above) — never silent.
+
+Duplication vs generate_quest_log_map() is a deliberate, session-agreed
+choice — matches this codebase's established "prototypes stay standalone"
+convention rather than extracting a shared asset for a still-throwaway UI.
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — Nature Walker (full query validation)</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: Georgia, serif; }
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: #1b1f18; }
+  .map-fill { position: absolute; inset: 0; }
+
+  /* ── State 0: draw-your-area ── */
+  #view-draw { position: absolute; inset: 0; }
+  #qw-draw-map { position: absolute; inset: 0; }
+  #qw-draw-banner {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(42,32,21,.92); color: #f3e6c8; border: 2px solid #8a7346; border-radius: 10px;
+    padding: 12px 20px; font-family: Georgia, serif; text-align: center; max-width: 90vw;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5);
+  }
+  #qw-draw-banner h2 { margin: 0 0 4px; font-size: 16px; }
+  #qw-draw-banner p { margin: 0; font-size: 12px; color: #c9b98f; }
+  #qw-draw-actions {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    display: flex; gap: 10px;
+  }
+  #qw-draw-actions button {
+    font-family: Georgia, serif; font-size: 13px; padding: 9px 18px; border-radius: 999px;
+    border: 2px solid #8a7346; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+  }
+  #qw-draw-clear { background: rgba(42,32,21,.92); color: #f3e6c8; }
+  #qw-draw-confirm { background: #4a3a26; color: #f3e6c8; }
+  #qw-draw-confirm:disabled { background: #5a5245; color: #a89878; cursor: not-allowed; }
+
+  /* ── Shared parchment-card look for form/loading/clarify states ── */
+  .qw-center-stage {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at center, #2a2f24 0%, #14170f 100%);
+  }
+  .qw-card {
+    width: 420px; max-width: 90vw; background: #f3e6c8
+      url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
+    border: 4px double #7a5a2d; border-radius: 6px; padding: 28px 26px;
+    color: #3a2f1f; box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  }
+  .qw-card h1 {
+    margin: 0 0 4px; font-size: 22px; letter-spacing: .5px; text-align: center;
+  }
+  .qw-card .qw-subtitle {
+    text-align: center; font-size: 12.5px; color: #7a5a2d; margin-bottom: 22px; font-style: italic;
+  }
+  .qw-field { margin-bottom: 16px; }
+  .qw-field label {
+    display: block; font-size: 12px; letter-spacing: .5px; text-transform: uppercase;
+    color: #5a4326; margin-bottom: 6px; font-weight: bold;
+  }
+  .qw-field select, .qw-field textarea {
+    width: 100%; font-family: Georgia, serif; font-size: 14px; color: #3a2f1f;
+    background: rgba(255,255,255,.55); border: 2px solid #8a7346; border-radius: 4px;
+    padding: 9px 10px; resize: vertical;
+  }
+  .qw-field textarea { min-height: 74px; }
+  .qw-field .qw-hint { font-size: 11px; color: #8a7346; margin-top: 4px; }
+  .qw-examples { font-size: 11.5px; color: #7a5a2d; margin: -8px 0 16px; line-height: 1.5; }
+  .qw-intro-steps { font-size: 13px; line-height: 1.6; padding-left: 22px; margin: 0 0 20px; }
+  .qw-intro-steps li { margin-bottom: 8px; }
+  .qw-examples button {
+    background: none; border: none; color: #5a4326; text-decoration: underline;
+    cursor: pointer; font-family: Georgia, serif; font-size: 11.5px; padding: 0;
+  }
+  button.qw-submit {
+    width: 100%; padding: 11px; background: #4a3a26; color: #f3e6c8; border: none;
+    border-radius: 4px; cursor: pointer; font-family: Georgia, serif; font-size: 15px;
+    letter-spacing: .5px; box-shadow: 0 3px 8px rgba(0,0,0,.3);
+  }
+  button.qw-submit:hover { background: #5a4830; }
+  button.qw-submit:disabled { background: #8a7346; cursor: not-allowed; }
+  button.qw-secondary {
+    width: 100%; padding: 11px; background: transparent; color: #4a3a26; border: 2px solid #8a7346;
+    border-radius: 4px; cursor: pointer; font-family: Georgia, serif; font-size: 14px;
+    letter-spacing: .5px; margin-top: 10px;
+  }
+  button.qw-secondary:hover { background: rgba(122,90,45,.1); }
+  .qw-error {
+    margin-top: 14px; background: rgba(139,0,0,.12); border: 1px solid #8b0000;
+    color: #6b0000; font-size: 12.5px; padding: 8px 10px; border-radius: 4px;
+  }
+
+  /* ── Loading state ── */
+  .qw-spinner {
+    width: 44px; height: 44px; margin: 0 auto 18px; border-radius: 50%;
+    border: 4px solid rgba(122,90,45,.25); border-top-color: #7a5a2d;
+    animation: qw-spin 1s linear infinite;
+  }
+  @keyframes qw-spin { to { transform: rotate(360deg); } }
+  .qw-loading-text { text-align: center; font-size: 14px; font-style: italic; color: #5a4326; min-height: 20px; }
+
+  /* ── State 3 (NEW): needs_clarification card ── */
+  .qw-clarify-icon { text-align: center; font-size: 30px; margin-bottom: 10px; }
+  .qw-clarify-message { font-size: 14px; line-height: 1.6; margin-bottom: 18px; text-align: center; }
+
+  /* ═══════════════ Quest Log map view (ported from e2e_walk_spike.py Variant A) ═══════════════ */
+  .qa-root { position: absolute; inset: 0; background: #1b1f18; }
+  .qa-titlebar {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: linear-gradient(#3a2f22, #2a2118); color: #e8d9b5; padding: 8px 24px;
+    border: 2px solid #8a7346; border-radius: 6px; font-family: Georgia, serif;
+    font-size: 16px; letter-spacing: 1px; box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  .qa-notes {
+    position: absolute; top: 70px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(139, 94, 24, .95); color: #fff3d6; padding: 10px 18px; border-radius: 8px;
+    font-family: Georgia, serif; font-size: 12.5px; max-width: 70vw; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4); line-height: 1.5;
+  }
+  .qa-notes div { margin-bottom: 4px; }
+  .qa-notes div:last-child { margin-bottom: 0; }
+  .qa-journal-tab {
+    position: absolute; top: 90px; left: 0; z-index: 1000; background: #4a3a26;
+    color: #e8d9b5; padding: 14px 8px; border-radius: 0 8px 8px 0; cursor: pointer;
+    font-family: Georgia, serif; writing-mode: vertical-rl; border: 2px solid #8a7346;
+    border-left: none; box-shadow: 3px 3px 10px rgba(0,0,0,.4); font-size: 13px;
+    transition: left .35s ease;
+  }
+  .qa-root:has(.qa-journal.open) .qa-journal-tab { left: 380px; }
+  .qa-journal {
+    position: absolute; top: 0; left: -380px; width: 380px; height: 100%; z-index: 999;
+    background: #f3e6c8 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="%23f3e6c8"/><circle cx="1" cy="1" r=".4" fill="%23e3d3ab"/></svg>');
+    border-right: 4px solid #4a3a26; box-shadow: 4px 0 24px rgba(0,0,0,.5);
+    transition: left .35s ease; overflow-y: auto; padding: 70px 20px 20px;
+    font-family: Georgia, serif; color: #3a2f1f;
+  }
+  .qa-journal.open { left: 0; }
+  .qa-journal h2 { font-size: 20px; border-bottom: 2px solid #8a7346; padding-bottom: 8px; }
+  .qa-entry { border: 1px solid #b8a06e; border-radius: 6px; margin-bottom: 10px; background: rgba(255,255,255,.35); }
+  .qa-entry summary {
+    padding: 10px 12px; cursor: pointer; font-weight: bold; display: flex;
+    align-items: center; gap: 8px; list-style: none;
+  }
+  .qa-entry summary::-webkit-details-marker { display: none; }
+  .qa-entry .qa-num {
+    width: 22px; height: 22px; border-radius: 50%; background: #4a3a26; color: #f3e6c8;
+    display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0;
+  }
+  .qa-entry-body { padding: 0 12px 12px 42px; font-size: 13.5px; line-height: 1.6; }
+  .qa-map-wrap {
+    position: absolute; inset: 14px; border-radius: 4px; overflow: hidden;
+    box-shadow: 0 0 0 6px #2a2018, 0 0 0 10px #8a7346, 0 0 0 12px #3a2a15,
+                inset 0 0 90px rgba(20,12,4,.75), 0 20px 50px rgba(0,0,0,.6);
+  }
+  .qa-map-wrap .leaflet-tile-pane {
+    filter: sepia(.6) saturate(1.5) contrast(1.15) brightness(.82) hue-rotate(-8deg);
+  }
+  .qa-marker-medallion {
+    background: radial-gradient(circle at 35% 30%, #d9c28a, #7a5a2d 70%); color: #2a1f10;
+    border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center;
+    justify-content: center; font-weight: bold; font-size: 15px; font-family: Georgia, serif;
+    border: 2px solid #3a2a15; box-shadow: 0 3px 8px rgba(0,0,0,.5);
+  }
+  .qa-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 2000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .qa-modal {
+    width: 320px; background: #f3e6c8; border: 4px double #7a5a2d; border-radius: 4px;
+    padding: 18px; font-family: Georgia, serif; color: #3a2f1f; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.6);
+  }
+  .qa-modal img { width: 100%; border-radius: 4px; border: 2px solid #7a5a2d; margin: 8px 0; }
+  .qa-modal .qa-close { position: absolute; top: 8px; right: 10px; cursor: pointer; font-weight: bold; color: #7a5a2d; }
+
+  /* ── Persistent regenerate bar on the map view ── */
+  #qa-regen-bar {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    display: flex; gap: 8px; align-items: center; background: rgba(42,32,21,.92);
+    border: 2px solid #8a7346; border-radius: 999px; padding: 8px 10px 8px 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.5); max-width: 90vw;
+  }
+  #qa-regen-bar input {
+    width: 320px; max-width: 40vw; font-family: Georgia, serif; font-size: 13px;
+    border: none; background: transparent; color: #f3e6c8; outline: none;
+  }
+  #qa-regen-bar input::placeholder { color: #c9b98f; }
+  #qa-regen-bar button {
+    background: #7a5a2d; color: #f3e6c8; border: none; border-radius: 999px;
+    padding: 7px 16px; font-family: Georgia, serif; font-size: 12.5px; cursor: pointer;
+    white-space: nowrap;
+  }
+  #qa-regen-bar button:hover { background: #8a6a3d; }
+  #qa-regen-bar button:disabled { background: #5a5245; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const LOADING_MESSAGES = [
+  "Consulting the biodiversity records...",
+  "Scouting your drawn area for waypoints...",
+  "Charting the route between sightings...",
+  "Writing your quest log...",
+  "Sketching the map...",
+];
+
+let leafletMap = null;
+let lastQuery = "";
+let drawnPolygon = null; // array of [lat, lon] vertices, or null until confirmed
+
+const SPECIES_COLORS = ["#e41a1c", "#377eb8", "#4daf4a", "#ff7f00", "#984ea3"];
+
+function destroyMap() {
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; }
+}
+
+// ═══════════════════════ Query flow: /gbif-species-query -> /run-walk ═══════════════════════
+async function submitQuery(query) {
+  showLoading();
+  lastQuery = query;
+  await queryAndProceed(query, false);
+}
+
+async function queryAndProceed(query, override) {
+  try {
+    const resp = await fetch('/gbif-species-query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, polygon: drawnPolygon, override }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status === 'error') {
+      showForm(data.message || 'Something went wrong checking this query.');
+      return;
+    }
+    if (data.status === 'needs_clarification') {
+      showClarify(query, data.message);
+      return;
+    }
+    // status "ok" — this IS the search the user asked for (whether clean or
+    // via override), so proceed straight to /run-walk with no further click.
+    await runWalk(query, data.species, data.notes);
+  } catch (err) {
+    showForm('Could not reach the server: ' + err.message);
+  }
+}
+
+async function runWalk(query, species, notes) {
+  showLoading();
+  try {
+    const resp = await fetch('/run-walk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, species, notes }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      showForm(data.message || 'Something went wrong generating this walk.');
+      return;
+    }
+    renderMapView(data);
+  } catch (err) {
+    showForm('Could not reach the server: ' + err.message);
+  }
+}
+
+// ═══════════════════════ STATE -1 — Welcome / onboarding ═══════════════════════
+function showIntro() {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card">
+        <h1>⚔ A Nature Quest</h1>
+        <div class="qw-subtitle">Discover the wild life of any area you choose</div>
+        <ol class="qw-intro-steps">
+          <li>Draw a shape on the map around the area you want to explore.</li>
+          <li>Tell us what you'd like to discover there (e.g. "show me some birds").</li>
+          <li>Get a guided walk through that area's real, recorded sightings.</li>
+        </ol>
+        <button id="qw-start-drawing" class="qw-submit">Start Drawing</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('qw-start-drawing').onclick = () => showDraw();
+}
+
+// ═══════════════════════ STATE 0 — Draw your own area ═══════════════════════
+function showDraw() {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div id="view-draw">
+      <div id="qw-draw-map"></div>
+      <div id="qw-draw-banner">
+        <h2>⚔ Draw Your Quest Area</h2>
+        <p>Use the polygon tool (top-left corner of the map) to click out the edges of your area, then click the first point again to close the shape. When you're happy with it, press Confirm Area below.</p>
+      </div>
+      <div id="qw-draw-actions">
+        <button id="qw-draw-clear" type="button">Clear</button>
+        <button id="qw-draw-confirm" type="button" disabled>Confirm Area</button>
+      </div>
+    </div>
+  `;
+
+  leafletMap = L.map('qw-draw-map').setView([40.4153, -3.6844], 14);
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+    maxZoom: 17,
+  }).addTo(leafletMap);
+
+  const drawnItems = new L.FeatureGroup();
+  leafletMap.addLayer(drawnItems);
+  const drawControl = new L.Control.Draw({
+    draw: { polygon: true, marker: false, circle: false, circlemarker: false, rectangle: false, polyline: false },
+    edit: { featureGroup: drawnItems, remove: false },
+  });
+  leafletMap.addControl(drawControl);
+
+  const confirmBtn = document.getElementById('qw-draw-confirm');
+  function updateConfirmState() {
+    confirmBtn.disabled = drawnItems.getLayers().length === 0;
+  }
+
+  leafletMap.on(L.Draw.Event.CREATED, (e) => {
+    drawnItems.clearLayers();
+    drawnItems.addLayer(e.layer);
+    updateConfirmState();
+  });
+  leafletMap.on(L.Draw.Event.EDITED, updateConfirmState);
+  leafletMap.on(L.Draw.Event.DELETED, updateConfirmState);
+
+  document.getElementById('qw-draw-clear').onclick = () => {
+    drawnItems.clearLayers();
+    updateConfirmState();
+  };
+  confirmBtn.onclick = () => {
+    const layers = drawnItems.getLayers();
+    if (!layers.length) return;
+    drawnPolygon = layers[0].getLatLngs()[0].map(ll => [ll.lat, ll.lng]);
+    showForm();
+  };
+}
+
+// ═══════════════════════ STATE 1 — Landing form ═══════════════════════
+function showForm(errorMessage) {
+  destroyMap();
+  const app = document.getElementById('app');
+  const areaSummary = drawnPolygon
+    ? `Custom area selected (${drawnPolygon.length} points) — <a href="#" id="qw-redraw">redraw</a>`
+    : `No area drawn yet — <a href="#" id="qw-redraw">draw one</a>`;
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card">
+        <h1>⚔ A Nature Quest</h1>
+        <div class="qw-subtitle">Discover the wild life of the area you drew</div>
+        <form id="qw-form">
+          <div class="qw-field">
+            <label for="qw-custom-area">Quest area</label>
+            <div class="qw-hint">${areaSummary}</div>
+          </div>
+          <div class="qw-field">
+            <label for="qw-query">What do you want to discover?</label>
+            <textarea id="qw-query" placeholder="e.g. Today I want to learn about plants">${lastQuery ? lastQuery.replace(/"/g, '&quot;') : ''}</textarea>
+          </div>
+          <div class="qw-examples">
+            Try: ${['Today I want to learn about plants', 'Show me something colourful', 'Show me a mix of birds, plants and mammals']
+              .map(ex => `<button type="button" data-ex="${ex.replace(/"/g, '&quot;')}">${ex}</button>`).join(' &middot; ')}
+          </div>
+          <button type="submit" class="qw-submit" ${drawnPolygon ? '' : 'disabled'}>Begin Your Quest</button>
+        </form>
+        ${errorMessage ? `<div class="qw-error">${errorMessage}</div>` : ''}
+      </div>
+    </div>
+  `;
+  document.getElementById('qw-redraw').onclick = (e) => { e.preventDefault(); showDraw(); };
+  document.querySelectorAll('.qw-examples button').forEach(btn => {
+    btn.onclick = () => { document.getElementById('qw-query').value = btn.dataset.ex; };
+  });
+  document.getElementById('qw-form').onsubmit = (e) => {
+    e.preventDefault();
+    const query = document.getElementById('qw-query').value.trim();
+    if (!query || !drawnPolygon) return;
+    submitQuery(query);
+  };
+}
+
+// ═══════════════════════ STATE 2 — Loading ═══════════════════════
+function showLoading() {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card" style="text-align:center">
+        <div class="qw-spinner"></div>
+        <h1 style="font-size:17px">Preparing your quest...</h1>
+        <div class="qw-loading-text" id="qw-loading-text">${LOADING_MESSAGES[0]}</div>
+      </div>
+    </div>
+  `;
+  let i = 0;
+  const el = document.getElementById('qw-loading-text');
+  const interval = setInterval(() => {
+    if (!el || !document.body.contains(el)) { clearInterval(interval); return; }
+    i = (i + 1) % LOADING_MESSAGES.length;
+    el.textContent = LOADING_MESSAGES[i];
+  }, 2200);
+}
+
+// ═══════════════════════ STATE 3 (NEW) — needs_clarification ═══════════════════════
+function showClarify(query, message) {
+  destroyMap();
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="qw-center-stage">
+      <div class="qw-card">
+        <div class="qw-clarify-icon">🔍</div>
+        <h1 style="font-size:18px">Before we build your walk...</h1>
+        <div class="qw-clarify-message">${message}</div>
+        <button id="qw-try-again" class="qw-submit">Try a different query</button>
+        <button id="qw-proceed-default" class="qw-secondary">Show most-observed instead</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('qw-try-again').onclick = () => showForm();
+  document.getElementById('qw-proceed-default').onclick = async () => {
+    showLoading();
+    await queryAndProceed(query, true); // override:true — user's explicit click authorizes this
+  };
+}
+
+// ═══════════════════════ STATE 4 — Quest Log map ═══════════════════════
+function openQuestModal(species, i) {
+  const s = species[i];
+  const backdrop = document.createElement('div');
+  backdrop.className = 'qa-modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="qa-modal">
+      <span class="qa-close">✕</span>
+      <div style="font-size:11px;letter-spacing:1px;color:#7a5a2d">QUEST ENTRY ${i + 1}/${species.length}</div>
+      <h3 style="margin:4px 0 0">${s.name}</h3>
+      <div style="font-style:italic;color:#7a5a2d;font-size:12px">${s.sci}</div>
+      ${s.img ? `<img src="${s.img}"/>` : ''}
+      <p style="font-size:13px;line-height:1.5">${s.desc}</p>
+      <p style="font-size:11px;color:#7a5a2d;margin-top:10px">${(s.points || []).length} recorded observations — see the small dots on the map for the full spread.</p>
+    </div>
+  `;
+  backdrop.querySelector('.qa-close').onclick = () => backdrop.remove();
+  backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+  document.body.appendChild(backdrop);
+}
+
+function renderMapView(data) {
+  destroyMap();
+  const species = data.species;
+  const intro = data.intro;
+  const waypoints = data.waypoints;
+  const notes = data.notes || [];
+
+  const lats = species.map(s => s.lat);
+  const lons = species.map(s => s.lon);
+  const center = [lats.reduce((a, b) => a + b, 0) / lats.length, lons.reduce((a, b) => a + b, 0) / lons.length];
+  const routeCoords = species.map(s => [s.lat, s.lon]);
+
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="qa-root">
+      <div class="qa-titlebar">⚔ A Nature Quest</div>
+      ${notes.length ? `<div class="qa-notes">${notes.map(n => `<div>${n}</div>`).join('')}</div>` : ''}
+      <div class="qa-journal-tab" id="qa-tab">QUEST LOG</div>
+      <div class="qa-journal" id="qa-journal">
+        <h2>Quest Log</h2>
+        <p style="font-size:13px;line-height:1.6;margin-bottom:16px">${intro}</p>
+        ${species.map((s, i) => `
+          <details class="qa-entry" data-idx="${i}">
+            <summary><span class="qa-num">${i + 1}</span> ${s.name}</summary>
+            <div class="qa-entry-body">${waypoints[i]}</div>
+          </details>
+        `).join('')}
+      </div>
+      <div class="qa-map-wrap">
+        <div id="qa-map" class="map-fill"></div>
+      </div>
+      <div id="qa-regen-bar">
+        <input id="qa-regen-input" type="text" placeholder="Ask for a new walk, e.g. 'show me insects'"/>
+        <button id="qa-regen-btn">New Walk</button>
+        <button id="qa-new-area-btn" title="Draw a different area">New Area</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('qa-tab').onclick = () => document.getElementById('qa-journal').classList.toggle('open');
+
+  leafletMap = L.map('qa-map').setView(center, 15);
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap (CC-BY-SA)',
+    maxZoom: 17,
+  }).addTo(leafletMap);
+  L.polyline(routeCoords, { color: '#333', weight: 2.5, opacity: 0.55, dashArray: '8,7' }).addTo(leafletMap);
+
+  let openDetail = null;
+  species.forEach((s, i) => {
+    // Raw occurrence points for this species — built but not added to the
+    // map until this species' marker is clicked (shows the full recorded
+    // spread behind the single hotspot marker, not just the cluster itself).
+    const color = SPECIES_COLORS[i % SPECIES_COLORS.length];
+    const detailLayer = L.layerGroup();
+    (s.points || []).forEach(p => {
+      L.circleMarker(p, { radius: 5, color: '#111', weight: 1.5, fillColor: color, fillOpacity: 0.95 }).addTo(detailLayer);
+    });
+
+    const icon = L.divIcon({ html: `<div class="qa-marker-medallion">${i + 1}</div>`, iconSize: [36, 36], iconAnchor: [18, 18], className: '' });
+    L.marker([s.lat, s.lon], { icon }).addTo(leafletMap).on('click', () => {
+      if (openDetail === detailLayer) {
+        leafletMap.removeLayer(detailLayer);
+        openDetail = null;
+      } else {
+        if (openDetail) leafletMap.removeLayer(openDetail);
+        detailLayer.addTo(leafletMap);
+        openDetail = detailLayer;
+      }
+      openQuestModal(species, i);
+    });
+  });
+
+  const regenBtn = document.getElementById('qa-regen-btn');
+  const regenInput = document.getElementById('qa-regen-input');
+  const doRegen = () => {
+    const q = regenInput.value.trim();
+    if (!q) return;
+    regenBtn.disabled = true;
+    submitQuery(q);
+  };
+  regenBtn.onclick = doRegen;
+  regenInput.onkeydown = (e) => { if (e.key === 'Enter') doRegen(); };
+  document.getElementById('qa-new-area-btn').onclick = () => {
+    drawnPolygon = null;
+    showDraw();
+  };
+}
+
+showIntro();
+</script>
+</body>
+</html>
