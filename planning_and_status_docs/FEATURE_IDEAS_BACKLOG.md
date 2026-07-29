@@ -31,3 +31,7 @@ On click/selection of a species in the final map, show all of that species' raw 
 ## Explore GBIF's AWS-hosted cache/snapshot for large queries
 
 Live `occurrence/search` pagination (300 records/request) doesn't scale for common taxa in dense areas — a single "birds in Retiro Park" query returned 55,756 matching occurrences, requiring ~186 sequential paginated requests. GBIF publishes a bulk-access snapshot on AWS (their public dataset / Open Data on AWS listing) that may allow querying large result sets far more efficiently than paginating the live REST API one page at a time. Worth investigating as the production-scale answer to the fetch-scaling issue found in `WORK_SUMMARY_250726.md`, instead of ad-hoc mitigations like the prototype's count-then-fallback-year guard.
+
+## Shareable walk link
+
+Let a user share a link to a generated walk (species, waypoints, narrative) so someone else can open it directly, rather than every visitor having to submit their own NL query first. Surfaced during the invalid-query-handling design session (280726) while weighing stateless vs. server-side-cached designs for the new `/gbif-species-query` validation endpoint — a stateless, client-round-tripped design was chosen for that endpoint because this codebase has no server-side session state yet, but a shareable-link feature would be a legitimate future reason to introduce it. Appeal: a link is a low-friction way for one user's good walk to reach other people, potentially driving wider shared usage/virality rather than the product staying single-player only.
