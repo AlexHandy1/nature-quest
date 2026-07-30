@@ -1,6 +1,6 @@
 # prototypes/
 
-Throwaway spikes and experiments validating each piece of the nature-walker pipeline before any of it becomes production code. Nothing in this directory should be imported by production code later — it exists to answer specific questions, cheaply, and each script's docstring states the question it was built to answer.
+Throwaway spikes and experiments validating each piece of the Nature Quest pipeline before any of it becomes production code. Nothing in this directory should be imported by production code later — it exists to answer specific questions, cheaply, and each script's docstring states the question it was built to answer.
 
 **Read this file before adding a new prototype or extending an existing one** — it tells you what's already been tried, what won, and the conventions to follow.
 

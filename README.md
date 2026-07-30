@@ -1,8 +1,8 @@
-# nature-walker
+# Nature Quest
 
 Turn public biodiversity data into navigable nature walks.
 
-Given a location and a natural-language request (e.g. "show me some birds", "something rare"), nature-walker dynamically selects the species currently present that match, designs a guided walk route through their recorded sighting hotspots, and generates a narrated field guide grounded in real observation data.
+Given a location and a natural-language request (e.g. "show me some birds", "something rare"), Nature Quest dynamically selects the species currently present that match, designs a guided walk route through their recorded sighting hotspots, and generates a narrated field guide grounded in real observation data.
 
 ## Current approach (prototype stage)
 
