@@ -10,7 +10,7 @@ Read planning and work summary documents in the current project and produce a co
 
 ## Step 1: Find the documents
 
-Search for markdown files matching these patterns in the working directory and any `planning_and_status_docs/` subdirectory:
+Search for markdown files matching these patterns in `docs/status_docs/` (this project's convention for planning and work-summary docs):
 
 - `PLANNING*.md` — architecture and design decisions
 - `WORK_SUMMARY*.md` — what was built, current state, next steps
@@ -21,7 +21,13 @@ Files carry a DDMMYY date marker (e.g. `WORK_SUMMARY_050626.md` = 5 June 2026). 
 Run a find to locate all matching files:
 
 ```bash
-find . -maxdepth 2 \( -name "PLANNING*.md" -o -name "WORK_SUMMARY*.md" \) | sort
+find docs/status_docs -name "PLANNING*.md" -o -name "WORK_SUMMARY*.md" | sort
+```
+
+If `docs/status_docs/` doesn't exist yet, fall back to a broader search of the project root:
+
+```bash
+find . -maxdepth 3 \( -name "PLANNING*.md" -o -name "WORK_SUMMARY*.md" \) | sort
 ```
 
 ## Step 2: Read the most recent files

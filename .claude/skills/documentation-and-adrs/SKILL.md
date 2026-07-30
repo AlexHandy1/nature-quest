@@ -29,6 +29,8 @@ The `expectations` skill covers *when* to document and the format for capturing 
 
 **When NOT to use:** Don't document obvious code. Don't add comments that restate what the code already says. Don't write docs for throwaway prototypes.
 
+**Security-sensitive content:** Do not record specific, exploitable detail about security or anti-abuse mechanisms — exact rate-limit thresholds, the specific detection technique used, or an explicit statement that a given input is unvalidated/unenforced. Record the category or posture instead (e.g. "rate limiting applied to public endpoints," not the mechanism or number). If unsure whether a detail is safe to write down, ask the user rather than including it.
+
 ## Architecture Decision Records (ADRs)
 
 ADRs capture the reasoning behind significant technical decisions. They're the highest-value documentation you can write — a 10-minute ADR prevents a 2-hour debate about the same decision six months later.

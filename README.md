@@ -19,4 +19,10 @@ All of the above has been proven end-to-end (NL query → species → route → 
 
 ## Planning docs
 
-See `planning_and_status_docs/` for the initial plan and session-by-session notes (`PLANNING_*.md` for design decisions, `WORK_SUMMARY_*.md` for what happened each session, in `DDMMYY` date order).
+See `docs/` for the initial plan and session-by-session notes (`PLANNING_*.md` for design decisions, `WORK_SUMMARY_*.md` for what happened each session, in `DDMMYY` date order), architecture decision records (`docs/decisions/`), PRDs (`docs/prds/`), and technical specs (`docs/specs/`).
+
+## Open source
+
+Nature Quest is built in the open from its first commit — code and documentation are public from the outset, so other developers can contribute or fork and rebuild. See `docs/decisions/ADR-008-open-source-from-day-one.md` for what that implies for security posture and CI/CD design.
+
+A LICENSE has not been chosen yet — until it is, the terms under which this code may be used, forked, or contributed to are undefined.

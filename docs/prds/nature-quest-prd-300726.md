@@ -4,7 +4,7 @@
 **Date**: 2026-07-30
 **Status**: Draft
 
-This is the first PRD written for this project. It covers the full product vision — not just the MVP slice — synthesised from ten rounds of prototyping (`prototypes/README.md`), the session-by-session planning docs (`planning_and_status_docs/status_docs/`), and open ideas in `FEATURE_IDEAS_BACKLOG.md`.
+This is the first PRD written for this project. It covers the full product vision — not just the MVP slice — synthesised from ten rounds of prototyping (`prototypes/README.md`), the session-by-session planning docs (`docs/status_docs/`), and open ideas in `FEATURE_IDEAS_BACKLOG.md`.
 
 **Canonical prototype reference:** the most complete, current prototype implementation is `prototypes/scripts/e2e_walk_spike_full_validation.py`, `prototypes/scripts/server_full_validation.py`, and `prototypes/web/index_full_validation.html` — this is where the latest thinking and functionality (query validation gate, density-cluster hotspots, raw-occurrence points, polygon-draw support) all live together. Start here for what's already been built and validated. Earlier prototype scripts and session `WORK_SUMMARY_*.md` notes are useful for tracing back *why* a decision was made or resolving ambiguity, but should not be treated as the current state of the system.
 
@@ -17,6 +17,8 @@ Nature Quest turns public biodiversity data into a personalised, narrated nature
 The core differentiator, and the reason this needs AI rather than a static app, is that the same park can produce a near-infinite number of distinct walks depending on stated intent — an AI-backed system can hear "I want to learn about fungi" and construct a coherent, accurate walk from GBIF's full species catalogue in seconds; a static app can only ever show the ten most common birds.
 
 Ten prototype rounds (`prototypes/README.md` §1-10) have proven the full pipeline works end-to-end — NL query → species selection → route → narrative → interactive map — on `claude-haiku-4-5-20251001`, for a fixed test park and for an arbitrary user-drawn area, for a few cents per run. Nothing in the codebase today is production code. This PRD's job is to turn that validated prototype surface into a coherent product shape and a slice breakdown that `/create-technical-spec` can work through, starting with the production foundation (deployment, testing, CI/CD, observability) rather than any further feature prototyping.
+
+Nature Quest is being built **open source from its first commit** — code and documentation are public from the outset, not made public later once mature, so that other developers can contribute or fork and rebuild (see `docs/decisions/ADR-008-open-source-from-day-one.md`). This shapes several decisions throughout this PRD, most notably around security posture and CI/CD design (Slice 1/2, Technical Constraints, and Risk Assessment below).
 
 ---
 
@@ -145,8 +147,8 @@ This breakdown goes finer than the prototype-round boundaries and sequences work
 
 | Slice | Status | Spec |
 |---|---|---|
-| **1. Production foundation** — hosting, testing framework, CI/CD, observability/monitoring, web analytics | Not started, explicitly flagged as next priority | — |
-| **2. Security & abuse guardrails** — protecting LLM API keys, rate limiting/misuse protection on the public NL query textbox and any API routes, and resolving the analytics/cookie-consent approach for PostHog | Not started, new slice (no prototype coverage). Must be in place before public deployment | — |
+| **1. Production foundation** — hosting, testing framework, CI/CD (including safe handling of pull requests from forks), remote Terraform state, observability/monitoring, web analytics | Not started, explicitly flagged as next priority | — |
+| **2. Security & abuse guardrails** — protecting LLM API keys, rate limiting/misuse protection on the public NL query textbox and any API routes, and resolving the analytics/cookie-consent approach for PostHog. Given the codebase is open source (ADR-008), protections must not depend on an attacker being unable to read how they work | Not started, new slice (no prototype coverage). Must be in place before public deployment | — |
 | **3. NL query → intent parsing** — structured-output query parsing, taxon resolution, validation guardrails, basic misuse-guardrail exploration | Prototyped, verified (canonical: `e2e_walk_spike_full_validation.py`) | — |
 | **4. Species selection, hotspot clustering & route ordering** | Prototyped, verified | — |
 | **5. Query validation gate** — `needs_clarification` / auto-proceed-with-note UX | Prototyped, verified | — |
@@ -168,6 +170,7 @@ This breakdown goes finer than the prototype-round boundaries and sequences work
 - **AI provider**: Currently hardcoded to Claude across all LLM calls (plain Messages API, not the Agent SDK). Slice 11 exists specifically to remove this constraint, once the MVP has proven the product concept.
 - **Data source**: Entirely dependent on GBIF's public API and data completeness/quality — occurrence data has known artifacts (e.g. shared-recording-location duplicate coordinates) that the product must handle gracefully rather than assume away.
 - **Security/compliance**: The NL query textbox (and any API routes built for it) will be exposed on the public internet, creating direct LLM API cost and misuse exposure. Protecting LLM API keys and building clear rate-limiting/misuse guardrails (e.g. against attempts to produce inappropriate content, or to run up API costs via abuse of the textbox or API routes) is required before public deployment — scoped as its own slice (Slice 2), completed before further feature or provider-abstraction work. Separately, plan to collect user analytics (queries submitted, click behaviour) via a tool such as PostHog — this likely requires cookie consent. [NEEDS INPUT: legal/consent approach not yet decided.] No other user data is stored at this stage (no accounts, no PII), so guardrails to protect *users'* data are intentionally lighter for now — the primary compliance concern at this stage is protecting the application host from cost/misuse exposure on the LLM API surface, not user data protection.
+- **Open source**: the codebase and documentation are public from day one (`docs/decisions/ADR-008-open-source-from-day-one.md`), which changes the bar for the constraint above — no protective mechanism may rely on an attacker not being able to read its implementation, since the implementation itself will be publicly readable. It also means CI/CD (Slice 1) must be designed from the start to run safely against pull requests from forks, and that a LICENSE plus basic contribution scaffolding (`CONTRIBUTING.md`) are required setup items, not optional polish. [NEEDS INPUT: specific license choice not yet decided.]
 
 ---
 
@@ -176,8 +179,9 @@ This breakdown goes finer than the prototype-round boundaries and sequences work
 Per direction, this PRD is not MVP-only — it covers the full product vision, including slices pushing beyond what's been prototyped so far. Phasing below reflects sequencing, not an exclusion boundary.
 
 ### Phase 1: Production foundation
-- Deployment architecture, testing, CI/CD, observability/monitoring, web analytics (Slice 1).
-- Security & abuse guardrails for the public LLM surface — protecting API keys, rate limiting/misuse protection on the NL query textbox and any API routes, and resolving the analytics/cookie-consent approach for PostHog (Slice 2). Must be in place before the app is exposed publicly, and ahead of any later provider-abstraction work.
+- Deployment architecture, testing, CI/CD, observability/monitoring, web analytics (Slice 1). Given the repo is open source from day one, this includes a remote Terraform state backend (never committed) and CI/CD designed from the start to run safely against pull requests from forks — not retrofitted once external contributions arrive.
+- A LICENSE and basic contribution scaffolding (`CONTRIBUTING.md`), since the explicit intent is for others to fork/contribute. [NEEDS INPUT: license choice.]
+- Security & abuse guardrails for the public LLM surface — protecting API keys, rate limiting/misuse protection on the NL query textbox and any API routes, and resolving the analytics/cookie-consent approach for PostHog (Slice 2). Must be in place before the app is exposed publicly, and ahead of any later provider-abstraction work. Because the codebase is public, guardrails must remain effective when fully readable, not rely on an attacker being unable to inspect them.
 
 ### Phase 2: MVP
 Everything currently captured in the canonical full-validation prototype (`e2e_walk_spike_full_validation.py`, `server_full_validation.py`, `web/index_full_validation.html`), productionised: NL query → intent parsing, including at least some basic misuse-guardrail exploration (Slice 3); species selection, clustering & route ordering (Slice 4); query validation gate (Slice 5); overlapping-waypoint merge (Slice 6); enrichment & narrative generation (Slice 7); fixed-location flow as the cached default (Slice 8); draw-your-own-area flow (Slice 9); quest-log map UI (Slice 10).
@@ -203,6 +207,9 @@ Driven by ongoing user and developer feedback rather than fixed upfront. Candida
 | Tight coupling to a single LLM provider limits cost/quality flexibility and creates a single point of failure | Medium | Low-Medium (acceptable for MVP) | Slice 11: LLM/AI provider abstraction, scoped after MVP |
 | No systematic evaluation of species-selection/route/narrative quality — regressions could ship unnoticed | Medium | Medium | Slice 12: evaluation harness, scoped after MVP |
 | No deeper success metrics beyond the initial MVP validation goal | Medium | Low-Medium | Revisit once the MVP goal (20+ users, ≥90% valid-walk rate) is met |
+| Security controls that would only work if their implementation stayed hidden are ineffective, since the codebase is public from day one | Medium (a design-discipline risk, not yet realized) | High if it occurs | Slice 2 scoped explicitly around this constraint (ADR-007/ADR-008); no protection is considered complete if it depends on obscurity |
+| CI/CD misconfiguration exposes deploy credentials to untrusted code via a pull request from a fork | Low if designed correctly from the start, High if retrofitted later | High — credential compromise | Slice 1's CI/CD design accounts for fork PRs from the outset (ADR-005/ADR-008), not as a later fix |
+| No license yet in place — terms under which others may legally use, fork, or contribute are undefined | High (currently true) | Medium — blocks legitimate external contribution/forking, the explicit goal of going open source | License decision tracked as a Phase 1 setup item; flagged `[NEEDS INPUT]` |
 
 ---
 
@@ -217,6 +224,7 @@ Driven by ongoing user and developer feedback rather than fixed upfront. Candida
 **Known blockers**:
 - No production hosting/deployment target chosen yet (Slice 1 not started).
 - Security & abuse guardrails not yet designed (Slice 2 not started) — blocks public deployment.
+- No license chosen yet — blocks legitimate external forking/contribution, the explicit reason the project is open source. [NEEDS INPUT]
 
 ---
 
@@ -232,7 +240,8 @@ Driven by ongoing user and developer feedback rather than fixed upfront. Candida
 - `README.md` — project overview.
 - `prototypes/README.md` — authoritative map of what's been built, validated, and left open (§1-10).
 - Canonical prototype implementation: `prototypes/scripts/e2e_walk_spike_full_validation.py`, `prototypes/scripts/server_full_validation.py`, `prototypes/web/index_full_validation.html`.
-- `planning_and_status_docs/status_docs/WORK_SUMMARY_290726.md` — most recent session, query validation gate, and the explicit next-steps this PRD builds on.
-- `planning_and_status_docs/status_docs/WORK_SUMMARY_250726.md` — density-clustering findings, GBIF data artifacts.
-- `planning_and_status_docs/status_docs/PLANNING_INTENT_QUERY_210726.md` — NL query → GBIF species selection design.
-- `planning_and_status_docs/FEATURE_IDEAS_BACKLOG.md` — unprioritised future ideas referenced throughout this PRD.
+- `docs/status_docs/WORK_SUMMARY_290726.md` — most recent session, query validation gate, and the explicit next-steps this PRD builds on.
+- `docs/status_docs/WORK_SUMMARY_250726.md` — density-clustering findings, GBIF data artifacts.
+- `docs/status_docs/PLANNING_INTENT_QUERY_210726.md` — NL query → GBIF species selection design.
+- `docs/FEATURE_IDEAS_BACKLOG.md` — unprioritised future ideas referenced throughout this PRD.
+- `docs/decisions/` — architecture decision records, including ADR-008 (open-source-from-day-one posture) and its consequences for Slices 1 and 2.

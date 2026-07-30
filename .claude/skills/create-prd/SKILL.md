@@ -15,8 +15,8 @@ Before asking the user anything, read what already exists:
 
 1. Root `README.md` and any `ARCHITECTURE*.md` — what the project is, current approach.
 2. `prototypes/` (or wherever the project's throwaway prototype code lives) and its own `README.md` — the authoritative map of what's actually been built and proven, as opposed to what was only planned.
-3. `planning_and_status_docs/` — every `WORK_SUMMARY_*.md` and `PLANNING_*.md`, not just the most recent (see `/plan-recap` for how to find and order these). Each of these docs tends to mix prototype learnings and design decisions together rather than mapping cleanly to one technical slice — so read broadly and synthesize which distinct slices of work actually exist, rather than assuming any single doc corresponds to one slice.
-4. Any existing PRDs in `planning_and_status_docs/prds/`.
+3. `docs/status_docs/` — every `WORK_SUMMARY_*.md` and `PLANNING_*.md`, not just the most recent (see `/plan-recap` for how to find and order these). Each of these docs tends to mix prototype learnings and design decisions together rather than mapping cleanly to one technical slice — so read broadly and synthesize which distinct slices of work actually exist, rather than assuming any single doc corresponds to one slice.
+4. Any existing PRDs in `docs/prds/`.
 
 Present a short interpretation of the feature/product being scoped, grounded in what you found: "Here's what I understand this PRD needs to cover, based on X and Y — is that right?"
 
@@ -36,7 +36,7 @@ If the user has clearly already answered something in prior conversation or in t
 
 Write using the template below. Keep it tight — this is a working document for an AI-assisted team, not a stakeholder deck. Prefer citing real prototype findings and decisions (with file references, e.g. `WORK_SUMMARY_290726.md`) over generic placeholder language wherever the project already has evidence.
 
-Save to `planning_and_status_docs/prds/{feature-name}-prd-{DDMMYY}.md`, matching this project's existing `PLANNING_*`/`WORK_SUMMARY_*` date-marker convention. Create the `prds/` directory if it doesn't exist.
+Save to `docs/prds/{feature-name}-prd-{DDMMYY}.md`, matching this project's existing `PLANNING_*`/`WORK_SUMMARY_*` date-marker convention. Create the `prds/` directory if it doesn't exist.
 
 ## Step 4: Completeness checklist, not a score
 
@@ -52,6 +52,8 @@ Completeness check:
 ```
 
 Anything unchecked should also appear inline in the doc as `[NEEDS INPUT: ...]` rather than being silently left blank or invented. Don't gate saving the file on completeness — an honest partial PRD beats a fabricated complete one.
+
+**Security-sensitive content:** Do not record specific, exploitable detail about security or anti-abuse mechanisms — exact rate-limit thresholds, the specific detection technique used, or an explicit statement that a given input is unvalidated/unenforced. Record the category or posture instead (e.g. "rate limiting applied to public endpoints," not the mechanism or number). If unsure whether a detail is safe to write down, ask the user rather than including it.
 
 Close by suggesting next steps: run `/grill-me` on this PRD if the user wants the plan itself pressure-tested, or move to `/create-technical-spec` for a specific slice once the PRD is settled.
 
@@ -133,7 +135,7 @@ The pieces of work this PRD breaks into, each of which gets its own `/create-tec
 
 | Slice | Status | Spec |
 |---|---|---|
-| [e.g. NL query → GBIF species selection] | Prototyped, verified | `planning_and_status_docs/specs/spec-....md` |
+| [e.g. NL query → GBIF species selection] | Prototyped, verified | `docs/specs/spec-....md` |
 | [e.g. Web deployment & CI/CD] | Not started | — |
 
 ---

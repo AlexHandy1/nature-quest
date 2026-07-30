@@ -9,7 +9,7 @@ Produce one detailed, implementable technical specification for a single slice o
 
 ## Step 1: Confirm the slice
 
-If it isn't already obvious from the conversation, ask the user which slice this spec covers. If a PRD exists in `planning_and_status_docs/prds/`, check its "Technical Slices" table first and confirm against that rather than asking cold.
+If it isn't already obvious from the conversation, ask the user which slice this spec covers. If a PRD exists in `docs/prds/`, check its "Technical Slices" table first and confirm against that rather than asking cold.
 
 ## Step 2: Gather everything already known about this slice
 
@@ -17,9 +17,9 @@ Read broadly before writing anything — a spec that re-derives or contradicts s
 
 1. **Existing production code** for this slice, if any already exists — the real, current source of truth for anything already built. Don't assume the prototype layer reflects final behavior once production code exists for the same area; check for drift.
 2. `prototypes/` and its `README.md` — what's been built and verified there. These are especially load-bearing right now only because the project is early and most slices haven't been hardened into production code yet; as the project matures, weight production code over prototype code wherever both exist and disagree.
-3. Every `planning_and_status_docs/PLANNING_*.md` and `WORK_SUMMARY_*.md` that touches this slice — not just the most recent. These documents mix prototype narrative with verified facts and decisions; pull out anything with lasting technical truth (verified API behavior, chosen constants, rejected alternatives and why) and treat prose narrative as background only.
-4. The relevant PRD in `planning_and_status_docs/prds/`, if one exists, for the user stories and constraints this slice needs to satisfy.
-5. Any existing specs in `planning_and_status_docs/specs/` this one depends on or should stay consistent with.
+3. Every `docs/status_docs/PLANNING_*.md` and `WORK_SUMMARY_*.md` that touches this slice — not just the most recent. These documents mix prototype narrative with verified facts and decisions; pull out anything with lasting technical truth (verified API behavior, chosen constants, rejected alternatives and why) and treat prose narrative as background only.
+4. The relevant PRD in `docs/prds/`, if one exists, for the user stories and constraints this slice needs to satisfy.
+5. Any existing specs in `docs/specs/` this one depends on or should stay consistent with.
 
 Where this research already answered a question (a verified API fact, a tuned constant, a rejected approach, current production behavior), write it into the spec as settled — cite the source. Do not re-open questions the project has already resolved.
 
@@ -29,7 +29,9 @@ Use the template below. Every section should be filled in with real, specific co
 
 For the test strategy section specifically: this spec describes **production work**, so it must follow this project's normal TDD approach (see `/tdd` and `/testing`) — not the project's light/deterministic-logic-only testing convention, which applies only to throwaway `/prototype` code and does not carry over here.
 
-Save to `planning_and_status_docs/specs/spec-{type}-{purpose}-{DDMMYY}.md`, where `{type}` is one of `schema | tool | data | infrastructure | process | architecture | design` and `{purpose}` is a short slug for the slice (e.g. `spec-tool-gbif-species-query-290726.md`). Create the `specs/` directory if it doesn't exist.
+**Security-sensitive content:** Do not record specific, exploitable detail about security or anti-abuse mechanisms — exact rate-limit thresholds, the specific detection technique used, or an explicit statement that a given input is unvalidated/unenforced. Record the category or posture instead (e.g. "rate limiting applied to public endpoints," not the mechanism or number). If unsure whether a detail is safe to write down, ask the user rather than including it.
+
+Save to `docs/specs/spec-{type}-{purpose}-{DDMMYY}.md`, where `{type}` is one of `schema | tool | data | infrastructure | process | architecture | design` and `{purpose}` is a short slug for the slice (e.g. `spec-tool-gbif-species-query-290726.md`). Create the `specs/` directory if it doesn't exist.
 
 ## Spec Template
 
@@ -105,5 +107,5 @@ sources: [List the production code, prototype scripts, and planning/work-summary
 
 ## 13. Related Specs / Further Reading
 
-[Links to related specs in `planning_and_status_docs/specs/`, the parent PRD, and the production/prototype/planning source docs this spec was built from.]
+[Links to related specs in `docs/specs/`, the parent PRD, and the production/prototype/planning source docs this spec was built from.]
 ```

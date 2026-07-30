@@ -202,7 +202,7 @@ One uniform mechanism, applied per `taxonFilter`:
 3. Accept if `matchType == "EXACT"`, or `matchType == "FUZZY" and confidence >= 85`.
 4. Otherwise, treat the filter as unresolved → dropped, contributing to the empty-group/redistribution/surfacing behaviour in §4.
 
-`q` is not validated against GBIF (it's passed through as-is) — the guardrail here is entirely in the prompt (§3): instruct the LLM not to populate `q` with non-name-like terms. This is a known, accepted v1 limitation (soft prompt guardrail, not a hard code-level block) — do not over-engineer a content classifier for this.
+`q` handling relies on prompt-level instruction (§3) rather than GBIF-side validation. Hardening this further, if needed, is tracked separately rather than detailed here.
 
 ---
 
