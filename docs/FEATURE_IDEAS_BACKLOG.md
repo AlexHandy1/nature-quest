@@ -43,3 +43,19 @@ Once a route is generated, let the user "walk" it remotely first in an immersive
 ## Shareable walk link
 
 Let a user share a link to a generated walk (species, waypoints, narrative) so someone else can open it directly, rather than every visitor having to submit their own NL query first. Surfaced during the invalid-query-handling design session (280726) while weighing stateless vs. server-side-cached designs for the new `/gbif-species-query` validation endpoint — a stateless, client-round-tripped design was chosen for that endpoint because this codebase has no server-side session state yet, but a shareable-link feature would be a legitimate future reason to introduce it. Appeal: a link is a low-friction way for one user's good walk to reach other people, potentially driving wider shared usage/virality rather than the product staying single-player only.
+
+## GBIF MCP server for agentic data access
+
+Explore adopting (or forking/building) an MCP server for GBIF so the AI pipeline gets abstracted, agentic access to biodiversity data — species search, occurrence queries, taxonomy lookups — as MCP tools instead of hand-rolled API client code. Would let the AI-personalised walk intent pipeline (and any future agent-led interface, see [Agent-led CLI interface](#agent-led-cli-interface)) call GBIF through a standard tool-use interface rather than bespoke query/pagination logic, and could simplify or replace parts of the existing GBIF client work.
+
+Existing implementations to review before building anything new:
+- https://github.com/cyanheads/gbif-biodiversity-mcp-server
+- https://github.com/pipeworx-io/mcp-gbif
+- https://github.com/agentmorris/gbif-mcp-server
+- https://github.com/tyson-swetnam/gbif-mcp
+
+Open questions: how each handles the large-result-set pagination problem already noted in [Explore GBIF's AWS-hosted cache/snapshot for large queries](#explore-gbifs-aws-hosted-cachesnapshot-for-large-queries), how actively maintained/licensed each is, and whether integrating one is preferable to the current direct-API-client approach or worth forking for this project's specific needs.
+
+**Reservation — latency:** going through an MCP layer (extra process/tool-call hop, agent reasoning over which tool to call) could be slower than the current direct API-client calls, especially in a pipeline that already needs to feel responsive. This needs to be measured against the current approach before committing, not assumed either way.
+
+**Potential upside — query surface area:** an agentic layer may handle a broader range of query types more gracefully than the current hand-rolled client — e.g. rarity-based queries ("show me something rare"), recency-based queries (recent sightings only), or other compound filters that would otherwise need bespoke logic per query type. Worth weighing against the latency reservation above rather than treating as a clear win.
