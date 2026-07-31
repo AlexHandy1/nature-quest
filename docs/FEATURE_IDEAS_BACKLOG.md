@@ -32,6 +32,14 @@ On click/selection of a species in the final map, show all of that species' raw 
 
 Live `occurrence/search` pagination (300 records/request) doesn't scale for common taxa in dense areas — a single "birds in Retiro Park" query returned 55,756 matching occurrences, requiring ~186 sequential paginated requests. GBIF publishes a bulk-access snapshot on AWS (their public dataset / Open Data on AWS listing) that may allow querying large result sets far more efficiently than paginating the live REST API one page at a time. Worth investigating as the production-scale answer to the fetch-scaling issue found in `WORK_SUMMARY_250726.md`, instead of ad-hoc mitigations like the prototype's count-then-fallback-year guard.
 
+## Automated AI audio accompaniment (text-to-audio narration)
+
+Convert the AI-generated walk narrative into spoken audio automatically, so users can listen hands-free while actually walking rather than reading text on their phone. Feeds directly off the existing narrative generation step in the AI-personalised walk intent pipeline — the text is already produced per waypoint/species, so this would add a text-to-speech stage to turn that into an audio track (or per-waypoint clips) the user can play as they reach each point on the route.
+
+## Remote immersive walkthrough (WebGL / Google Earth-style) prior to walking
+
+Once a route is generated, let the user "walk" it remotely first in an immersive 3D environment (WebGL, or something like Google Earth's flyover/street-level view) before doing it in person — a preview experience to build familiarity and excitement with the actual route and waypoints ahead of time. Related to the existing [WebGL 3D map experience](#webgl-3d-map-experience) idea above, but focused specifically on previewing the *already-identified route* immersively rather than general 3D map exploration.
+
 ## Shareable walk link
 
 Let a user share a link to a generated walk (species, waypoints, narrative) so someone else can open it directly, rather than every visitor having to submit their own NL query first. Surfaced during the invalid-query-handling design session (280726) while weighing stateless vs. server-side-cached designs for the new `/gbif-species-query` validation endpoint — a stateless, client-round-tripped design was chosen for that endpoint because this codebase has no server-side session state yet, but a shareable-link feature would be a legitimate future reason to introduce it. Appeal: a link is a low-friction way for one user's good walk to reach other people, potentially driving wider shared usage/virality rather than the product staying single-player only.
