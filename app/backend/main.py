@@ -2,10 +2,9 @@ import json
 import logging
 import sys
 
-from fastapi import FastAPI, status
-from pydantic import BaseModel, Field
+from fastapi import FastAPI
 
-from services.logging_client import log_interest_submission
+from routers.interest import router as interest_router
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -28,18 +27,4 @@ handler.setFormatter(JsonLogFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 app = FastAPI()
-
-
-class InterestSubmission(BaseModel):
-    query: str = Field(min_length=1, max_length=2000)
-
-
-@app.get("/healthz")
-def healthz():
-    return {"status": "ok"}
-
-
-@app.post("/api/interest", status_code=status.HTTP_201_CREATED)
-def submit_interest(submission: InterestSubmission):
-    log_interest_submission(query=submission.query)
-    return {"status": "received"}
+app.include_router(interest_router)

@@ -36,7 +36,7 @@ def test_oversized_query_returns_422():
 
 
 def test_valid_submission_logs_the_query():
-    with patch("main.log_interest_submission") as mock_log:
+    with patch("routers.interest.log_interest_submission") as mock_log:
         client.post(
             "/api/interest",
             json={"query": "something rare"},
