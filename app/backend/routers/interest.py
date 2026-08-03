@@ -6,8 +6,8 @@ from services.logging_client import log_interest_submission
 router = APIRouter()
 
 
-@router.get("/healthz")
-def healthz():
+@router.get("/health")
+def health():
     return {"status": "ok"}
 
 
