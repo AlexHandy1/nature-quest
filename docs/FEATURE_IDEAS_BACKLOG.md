@@ -44,6 +44,14 @@ Once a route is generated, let the user "walk" it remotely first in an immersive
 
 Let a user share a link to a generated walk (species, waypoints, narrative) so someone else can open it directly, rather than every visitor having to submit their own NL query first. Surfaced during the invalid-query-handling design session (280726) while weighing stateless vs. server-side-cached designs for the new `/gbif-species-query` validation endpoint — a stateless, client-round-tripped design was chosen for that endpoint because this codebase has no server-side session state yet, but a shareable-link feature would be a legitimate future reason to introduce it. Appeal: a link is a low-friction way for one user's good walk to reach other people, potentially driving wider shared usage/virality rather than the product staying single-player only.
 
+## Path to a fully autonomous software factory (CI/CD)
+
+Longer-term direction: move toward AI agents writing, reviewing, testing, and deploying without human intervention. The current production-foundation spec (`docs/specs/spec-infrastructure-production-foundation-300726.md`) deliberately keeps a human in the loop for now; these are the specific things to revisit once the basics are working and the MVP is built, not before:
+
+- **Automatic rollback on post-deploy smoke test failure.** Today's pipeline order is build → deploy → smoke test, so a broken deploy is briefly live before anything notices, with no automated rollback wired up. Fine for now (human notices, rolls back manually); worth building once the basics + MVP are solid.
+- **Removing the human PR-merge gate.** Current decision: a human still merges the PR into `main`, which then triggers the full CI/CD pipeline — this is the deliberate human checkpoint for now. Moving beyond this toward full autonomy would need real automated PR-review checks (e.g. an AI review pass) as a substitute gate before auto-merge could be trusted, not just green CI.
+- Staging environment considered and explicitly rejected as part of this — the intent is for production itself to be the single, verified, confidence-worthy deployment target, not to add a parallel environment.
+
 ## GBIF MCP server for agentic data access
 
 Explore adopting (or forking/building) an MCP server for GBIF so the AI pipeline gets abstracted, agentic access to biodiversity data — species search, occurrence queries, taxonomy lookups — as MCP tools instead of hand-rolled API client code. Would let the AI-personalised walk intent pipeline (and any future agent-led interface, see [Agent-led CLI interface](#agent-led-cli-interface)) call GBIF through a standard tool-use interface rather than bespoke query/pagination logic, and could simplify or replace parts of the existing GBIF client work.
