@@ -16,6 +16,14 @@ function InterestForm() {
     setStatus(response.ok ? 'success' : 'error')
   }
 
+  if (status === 'success') {
+    return (
+      <p className="form-message form-message--success">
+        Thanks! Click refresh if you have more feedback!
+      </p>
+    )
+  }
+
   return (
     <form onSubmit={handleSubmit}>
       <label htmlFor="query">What would you want to see on a walk?</label>
@@ -27,8 +35,11 @@ function InterestForm() {
         onChange={(event) => setQuery(event.target.value)}
       />
       <button type="submit">Count me in</button>
-      {status === 'success' && <p>You're on the list!</p>}
-      {status === 'error' && <p>Something went wrong — please try again.</p>}
+      {status === 'error' && (
+        <p className="form-message form-message--error">
+          Something went wrong — please try again.
+        </p>
+      )}
     </form>
   )
 }
