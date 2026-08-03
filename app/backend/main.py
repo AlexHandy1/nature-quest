@@ -1,8 +1,10 @@
 import json
 import logging
 import sys
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from routers.interest import router as interest_router
 
@@ -26,5 +28,17 @@ handler = logging.StreamHandler(sys.stdout)
 handler.setFormatter(JsonLogFormatter())
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-app = FastAPI()
-app.include_router(interest_router)
+DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
+
+
+def create_app(static_dir: Path = DEFAULT_STATIC_DIR) -> FastAPI:
+    app = FastAPI()
+    app.include_router(interest_router)
+    # Any future router must be included above this line — the static mount
+    # matches every remaining path, so routes added after it are unreachable.
+    if static_dir.is_dir():
+        app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    return app
+
+
+app = create_app()
