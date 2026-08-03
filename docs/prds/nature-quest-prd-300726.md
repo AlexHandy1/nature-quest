@@ -147,8 +147,8 @@ This breakdown goes finer than the prototype-round boundaries and sequences work
 
 | Slice | Status | Spec |
 |---|---|---|
-| **1. Production foundation** — hosting, testing framework, CI/CD (including safe handling of pull requests from forks), remote Terraform state, observability/monitoring, web analytics | Not started, explicitly flagged as next priority | — |
-| **2. Security & abuse guardrails** — protecting LLM API keys, rate limiting/misuse protection on the public NL query textbox and any API routes, and resolving the analytics/cookie-consent approach for PostHog. Given the codebase is open source (ADR-008), protections must not depend on an attacker being unable to read how they work | Not started, new slice (no prototype coverage). Must be in place before public deployment | — |
+| **1. Production foundation** — hosting, testing framework, CI/CD (including safe handling of pull requests from forks), remote Terraform state, observability/monitoring, web analytics | Complete (2026-08-03) | `docs/specs/spec-infrastructure-production-foundation-300726.md` |
+| **2. Security & abuse guardrails** — protecting LLM API keys, rate limiting/misuse protection on the public NL query textbox and any API routes. Given the codebase is open source (ADR-008), protections must not depend on an attacker being unable to read how they work | Not started, next priority | — |
 | **3. NL query → intent parsing** — structured-output query parsing, taxon resolution, validation guardrails, basic misuse-guardrail exploration | Prototyped, verified (canonical: `e2e_walk_spike_full_validation.py`) | — |
 | **4. Species selection, hotspot clustering & route ordering** | Prototyped, verified | — |
 | **5. Query validation gate** — `needs_clarification` / auto-proceed-with-note UX | Prototyped, verified | — |
