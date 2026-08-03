@@ -1,0 +1,161 @@
+:root {
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --border: #e5e4e7;
+  --surface: #f7f6f2;
+  --accent: #aa3bff;
+  --accent-hover: #9022ea;
+  --success: #1a7f4e;
+  --success-bg: #e7f6ee;
+  --error: #b3261e;
+  --error-bg: #fbeaea;
+
+  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+
+  font: 18px/145% var(--sans);
+  color-scheme: light dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #9ca3af;
+    --text-h: #f3f4f6;
+    --bg: #16171d;
+    --border: #2e303a;
+    --surface: #1f2028;
+    --accent: #c084fc;
+    --accent-hover: #d4a6fd;
+    --success: #4ade80;
+    --success-bg: #0f2b1c;
+    --error: #f87171;
+    --error-bg: #2b1414;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 24px 120px;
+}
+
+h1 {
+  font-size: 40px;
+  letter-spacing: -0.8px;
+  margin: 0 0 16px;
+  color: var(--text-h);
+}
+
+p {
+  margin: 0 0 32px;
+  line-height: 150%;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+label {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+input {
+  font: inherit;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+button:hover {
+  background: var(--accent-hover);
+}
+
+.form-message {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 15px;
+}
+
+.form-message--success {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.form-message--error {
+  color: var(--error);
+  background: var(--error-bg);
+}
+
+.consent-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.consent-banner p {
+  flex: 1 1 320px;
+  margin: 0;
+  font-size: 15px;
+}
+
+.consent-banner div {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.consent-banner button {
+  padding: 8px 16px;
+}
+
+.consent-banner button[data-variant='reject'] {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}

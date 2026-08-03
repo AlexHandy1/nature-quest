@@ -1,6 +1,6 @@
 # prototypes/
 
-Throwaway spikes and experiments validating each piece of the nature-walker pipeline before any of it becomes production code. Nothing in this directory should be imported by production code later — it exists to answer specific questions, cheaply, and each script's docstring states the question it was built to answer.
+Throwaway spikes and experiments validating each piece of the Nature Quest pipeline before any of it becomes production code. Nothing in this directory should be imported by production code later — it exists to answer specific questions, cheaply, and each script's docstring states the question it was built to answer.
 
 **Read this file before adding a new prototype or extending an existing one** — it tells you what's already been tried, what won, and the conventions to follow.
 
@@ -24,7 +24,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 | `web/` | Single-page browser frontends: `index.html` (served by `scripts/server.py`, fixed to Retiro) and `index_polygon.html` (served by `scripts/server_polygon.py`, user-drawn area). |
 | `artifacts/` | Generated output — HTML maps written by the various scripts. Regenerated on each run; not hand-maintained. |
 | `ux/` | Standalone HTML UX mockups, not wired to any real data pipeline (hand-captured demo data instead). |
-| `logs/` | Captured stdout from real runs (`... \| tee prototypes/logs/...log`) — the actual evidence behind decisions recorded in `planning_and_status_docs/`. |
+| `logs/` | Captured stdout from real runs (`... \| tee prototypes/logs/...log`) — the actual evidence behind decisions recorded in `docs/`. |
 | `requirements.txt` | Python deps for the venv. |
 
 ## Scripts, in build order (what each answers, and what won)
@@ -43,7 +43,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 - **`species_narrative_cost_experiment2.py`** — **the winning shape.** Drops the Agent SDK entirely: Wikipedia lookup called directly in Python, both the batched descriptions and the narrative are single plain `messages.create()` calls. Decisively cheaper/faster than experiment1 — this is the pattern `e2e_walk_spike.py` carries forward (with one change: the narrative call there asks for structured per-waypoint JSON instead of one flowing blob, to drive the quest-log UI).
 
 ### 4. NL query → GBIF species selection — validated
-- **`intent_query_spike.py`** — the current, validated pattern: NL request → LLM structured-output call (forced tool-use) → per-filter taxon resolution (local cache first, then live `GET /species/match`) → parallel `GET /occurrence/search` per resolved filter → quota/round-robin merge across groups (handles mixed-taxa requests and empty-group redistribution). Full design rationale, verified GBIF API facts, and the process issue that led to re-verifying the API live (don't trust remembered API shapes) are in `planning_and_status_docs/PLANNING_INTENT_QUERY_210726.md`.
+- **`intent_query_spike.py`** — the current, validated pattern: NL request → LLM structured-output call (forced tool-use) → per-filter taxon resolution (local cache first, then live `GET /species/match`) → parallel `GET /occurrence/search` per resolved filter → quota/round-robin merge across groups (handles mixed-taxa requests and empty-group redistribution). Full design rationale, verified GBIF API facts, and the process issue that led to re-verifying the API live (don't trust remembered API shapes) are in `docs/status_docs/PLANNING_INTENT_QUERY_210726.md`.
 - **`test_intent_query_spike.py`** — unit tests for the deterministic pieces of the above (cache lookup, match validation, quota merge). Run with `pytest prototypes/scripts/test_intent_query_spike.py`.
 - **`reference/`** — the curated prompt material `intent_query_spike.py` (and everything downstream of it) depends on:
   - `gbif_docs_summary.md` — hand-written GBIF API summary injected into the system prompt (not a raw OpenAPI dump).
@@ -52,7 +52,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
   - `gbif_common_order_keys.json` — top-5-by-occurrence-count fish orders (a coverage holding solution, ~67% of fish observations, not exhaustive — open item).
 
 ### 5. UX exploration — Variant A ("adventure-style quest log") chosen
-- **`ux/map_narrative_layout_prototype.html`** — three switchable map/narrative UI variants (`?variant=A|B|C`) built against hand-captured demo data (not live): **A — Quest Log (adventure-style)**, B — PokéStop (Pokemon Go), C — Inventory (Minecraft). **Variant A was chosen** (see `planning_and_status_docs/WORK_SUMMARY_210726.md`) as the interim map style while a longer-term WebGL 3D map direction is explored separately (see `FEATURE_IDEAS_BACKLOG.md`).
+- **`ux/map_narrative_layout_prototype.html`** — three switchable map/narrative UI variants (`?variant=A|B|C`) built against hand-captured demo data (not live): **A — Quest Log (adventure-style)**, B — PokéStop (Pokemon Go), C — Inventory (Minecraft). **Variant A was chosen** (see `docs/status_docs/WORK_SUMMARY_210726.md`) as the interim map style while a longer-term WebGL 3D map direction is explored separately (see `FEATURE_IDEAS_BACKLOG.md`).
 - **`ux/map_narrative_layout_prototype_v2.html`** — a vector re-skin variant, not chosen.
 
 ### 6. End-to-end integration — validated
@@ -75,7 +75,7 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
   Requires `ANTHROPIC_API_KEY` in the environment. Logs the full pipeline output (same as the CLI scripts) to whatever terminal `server.py` is running in, plus a `[server] /run-walk ...` line per request. Errors are caught and returned as JSON (surfaced inline in the frontend's landing form), not left as an unhandled Flask crash.
 - **`web/index.html`** — single-page frontend, no build step, no framework. Three JS-swapped states in one page (no navigation/reload): landing form (location fixed to Retiro, a disabled "draw your own area" placeholder for future custom-polygon support, NL query textarea) → generic loading spinner with rotating quest-flavoured status text → the adventure-style quest-log map view (duplicated from `e2e_walk_spike.py`'s `generate_quest_log_map()`, fed with real data from the server response instead of pre-baked JS arrays), with a persistent query bar docked on the map view so a new walk can be requested without leaving the map.
 
-### 8. User-drawn polygon areas — prototyped, several open items remain (see `planning_and_status_docs/WORK_SUMMARY_230726.md`)
+### 8. User-drawn polygon areas — prototyped, several open items remain (see `docs/status_docs/WORK_SUMMARY_230726.md`)
 - **`e2e_walk_spike_polygon.py`** — fork of `e2e_walk_spike_server.py` (untouched). `run_pipeline()` takes `polygon_wkt` / `center_lat` / `center_lon` as parameters instead of reading hardcoded `GBIF_POLYGON`/`CENTER_LAT`/`CENTER_LON` globals, so an arbitrary user-drawn polygon can be searched instead of the fixed Retiro one. Also widens the GBIF `year` filter to a range (`YEAR_RANGE = "2023,2026"`, GBIF accepts a comma range) rather than the single `YEAR = 2026` the Retiro scripts use — user-drawn areas won't have Retiro's observation density, so a single year risks empty results. CLI-runnable standalone via `--polygon` / `--center-lat` / `--center-lon` flags, defaulting to the Retiro geometry.
 - **`server_polygon.py`** — fork of `server.py`, on port **5051** (so it can run alongside `server.py`'s 5050). `/run-walk` accepts `{query, polygon}` (a list of `[lat, lon]` vertices from the browser) instead of `{query, location}`; converts to GBIF WKT (`polygon_points_to_wkt` — flips to `lon lat` order, closes the ring) and a centroid (`polygon_centroid` — simple average of vertices) before calling `e2e_walk_spike_polygon.run_pipeline()`.
 - **`web/index_polygon.html`** — fork of `index.html`, adds a real Leaflet.draw (`leaflet-draw@1.0.4`) polygon tool. Five JS-swapped states: welcome/onboarding card → full-screen draw-your-area map → landing form (query + drawn-area summary) → loading → the adventure-style quest-log map (with both "New Walk" and "New Area" actions, the latter returning to the draw step).
@@ -85,9 +85,9 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
   # open http://localhost:5051
   ```
 - **Validated this round:** a user-drawn polygon survives the full trip — browser Leaflet coordinates → GBIF WKT geometry → real occurrence search → waypoint ordering from the drawn area's own centroid → rendered quest-log map.
-- **Known issues / open items** (see `planning_and_status_docs/WORK_SUMMARY_230726.md` for full detail): the "show me something rare" test intent hangs/fails and needs investigating across all test intents; behaviour for sparse/no-observation areas isn't defined; the drawn area's boundary isn't shown once you reach the map view; onboarding/UX still needs deeper design thought; no caching yet; Retiro isn't offered as a quick default alongside draw-your-own; centroid is a naive average-of-vertices (not weighted toward where observations actually cluster).
+- **Known issues / open items** (see `docs/status_docs/WORK_SUMMARY_230726.md` for full detail): the "show me something rare" test intent hangs/fails and needs investigating across all test intents; behaviour for sparse/no-observation areas isn't defined; the drawn area's boundary isn't shown once you reach the map view; onboarding/UX still needs deeper design thought; no caching yet; Retiro isn't offered as a quick default alongside draw-your-own; centroid is a naive average-of-vertices (not weighted toward where observations actually cluster).
 
-### 9. Density-cluster species markers — prototyped, real trade-offs surfaced (see `planning_and_status_docs/WORK_SUMMARY_250726.md`)
+### 9. Density-cluster species markers — prototyped, real trade-offs surfaced (see `docs/status_docs/WORK_SUMMARY_250726.md`)
 - **`e2e_walk_spike_clustering.py`** — fork of `e2e_walk_spike_polygon.py`. Tests whether an adaptive N×N density-grid cluster (`cluster_species_hotspot()`) is a better species-marker location than the plain average-of-all-occurrences centroid used elsewhere (`rank_species()`'s `hotspot_lat`/`hotspot_lon`). Strips the per-species description and narrative LLM calls (out of scope, costly to rerun); keeps NL-query species selection and polygon-area support. Renders a comparison map: old (average) vs. new (density-cluster) marker per species, click-to-reveal raw occurrence points and the winning grid cell's own bounds. Also adds a scale guard to `fetch_gbif_occurrences()` (probe count first, fall back from the full `YEAR_RANGE` to a single year above 1000 occurrences) and a retry wrapper for transient bad GBIF responses — not yet backported to the other scripts sharing this fetch logic.
   ```
   source venv/bin/activate
@@ -143,4 +143,4 @@ Throwaway spikes and experiments validating each piece of the nature-walker pipe
 - Sparse/no-observation area UX (§8's open item) now has a real answer for the two "would silently substitute a different search" cases (§10, case 1/4 — a `needs_clarification` gate) and the two "same search, just fewer/closer results" cases (§10, case 2/3 — an automatic note). Still open: the case-3 map-rendering fix itself (see above), and this validation gate hasn't yet been extended to the fixed-Retiro (`server.py`) or original polygon (`server_polygon.py`) flows — only `server_full_validation.py`.
 - A full technical plan for the production build (testing, CI/CD, observability/monitoring) — not started.
 
-See `planning_and_status_docs/` for the full session-by-session history behind these decisions.
+See `docs/` for the full session-by-session history behind these decisions.

@@ -1,0 +1,122 @@
+name: CI/CD
+
+on:
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/ci-cd.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/ci-cd.yml"
+
+env:
+  PROJECT_ID: nature-quest-504414
+  REGION: europe-west1
+  SERVICE: nature-quest-production
+  IMAGE: europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app
+
+jobs:
+  lint-typecheck-backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: mypy .
+
+  lint-typecheck-frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc -b
+
+  unit-tests-backend:
+    needs: lint-typecheck-backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest
+
+  unit-tests-frontend:
+    needs: lint-typecheck-frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/frontend/package-lock.json
+      - run: npm ci
+      - run: npx vitest run
+
+  build:
+    needs: [unit-tests-backend, unit-tests-frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f app/backend/Dockerfile -t "$IMAGE:${{ github.sha }}" .
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+
+      - run: |
+          docker build -f app/backend/Dockerfile -t "$IMAGE:${{ github.sha }}" .
+          docker push "$IMAGE:${{ github.sha }}"
+
+      - run: |
+          gcloud run deploy "$SERVICE" \
+            --image="$IMAGE:${{ github.sha }}" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet
+
+      - name: Post-deploy smoke test
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format="value(status.url)")
+          curl -sf "$URL/health" | grep -q '"status":"ok"'
+          curl -sf -X POST "$URL/api/interest" -H "Content-Type: application/json" -d '{"query":"ci smoke test"}' | grep -q '"status":"received"'

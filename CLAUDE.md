@@ -1,6 +1,6 @@
 Start each session by running the /plan-recap skill to understand the project goal and status.
 
-Always look for and read any ARCHITECTURE*.md files or README files across the project (including in subdirectories and modules) — make sure you review documentation and understand the codebase before you proceed.
+Always look for and read any ARCHITECTURE*.md files or README files across the project (including in subdirectories and modules), and review the `docs/` directory if one exists (`status_docs/` for planning and session notes, `prds/` for product requirements, `specs/` for technical specs, `decisions/` for ADRs) — make sure you review documentation and understand the codebase before you proceed.
 
 For any new feature or project planning, run /grill-me to stress-test the plan before building. Do not run this when operating autonomously.
 

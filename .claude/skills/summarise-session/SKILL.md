@@ -10,16 +10,16 @@ Review the current conversation and write a structured session summary to the ap
 
 ## Step 1: Locate or create the docs directory
 
-Look for a `planning_and_status_docs/` directory in the working directory:
+Look for a `docs/status_docs/` directory in the working directory (this project's convention for planning and work-summary docs):
 
 ```bash
-find . -maxdepth 2 -type d -name "planning_and_status_docs"
+find . -maxdepth 3 -type d -path "*/docs/status_docs"
 ```
 
 If it does not exist, create it:
 
 ```bash
-mkdir -p planning_and_status_docs
+mkdir -p docs/status_docs
 ```
 
 ## Step 2: Determine today's filename
@@ -66,3 +66,4 @@ Prioritised list drawn from the session, ready to pick up next time.
 - Preserve exact file paths, command flags, error messages, and URLs — these make the doc useful for future sessions.
 - If the file already exists and you are updating it, preserve any content from prior sessions unless it is directly superseded by today's work.
 - Keep the tone factual and terse. This is a reference document, not a narrative.
+- **Security-sensitive content:** Do not record specific, exploitable detail about security or anti-abuse mechanisms — exact rate-limit thresholds, the specific detection technique used, or an explicit statement that a given input is unvalidated/unenforced. Record the category or posture instead (e.g. "rate limiting applied to public endpoints," not the mechanism or number). If unsure whether a detail is safe to write down, ask the user rather than including it.
