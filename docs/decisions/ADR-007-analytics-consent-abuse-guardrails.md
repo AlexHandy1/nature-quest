@@ -29,3 +29,5 @@ The app collects product analytics (PostHog) and exposes a public-facing submiss
 - Any mechanism chosen must remain effective if fully read from the public source code — see ADR-008.
 
 **Implementation note (2026-08-03):** server-side capture was deferred during initial build of the production-foundation spec (`docs/specs/spec-infrastructure-production-foundation-300726.md`, REQ-013/016) — client-side capture only for now. See that spec for the reasoning and the `distinct_id`-passthrough design to use when server-side capture is added.
+
+**Implementation note (2026-08-03):** the Cloud Armor + load-balancer setup (REQ-017) was deferred during Terraform build — it requires a full external HTTPS Load Balancer (real, ~$25/month fixed infrastructure) disproportionate to current "coming soon" traffic. Cloud Run's `max_instance_count` (set to 2) is used instead as an interim, free guardrail against cost-creep/runaway scaling. This does not address the data-pollution/spam risk Cloud Armor's per-IP rate limiting would — that risk is knowingly accepted for now given the low-traffic stage. Revisit before any real public launch.
