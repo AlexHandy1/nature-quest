@@ -60,7 +60,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -r requirements-dev.txt
-      - run: pytest
+      - run: python -m pytest
 
   unit-tests-frontend:
     needs: lint-typecheck-frontend
