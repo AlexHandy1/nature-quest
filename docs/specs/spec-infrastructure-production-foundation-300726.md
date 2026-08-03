@@ -123,8 +123,8 @@ Everything below was decided in this project's architecture-review session and i
 
 ## 5. Interfaces & Data Contracts
 
-### `GET /healthz`
-Liveness/readiness check used by the post-deploy smoke test (REQ-021).
+### `GET /health`
+Liveness/readiness check used by the post-deploy smoke test (REQ-021). **Not `/healthz`**: that path is reserved by Google's front-end infrastructure on Cloud Run and is intercepted before reaching the container (confirmed 2026-08-03 during CI/CD build-out — see `docs/decisions/ADR-005`).
 
 **Response `200`**:
 ```json
@@ -176,7 +176,7 @@ No email or other directly identifying field is accepted here by design — see 
     backend/               # FastAPI app
       main.py
       routers/
-        interest.py        # POST /api/interest, GET /healthz
+        interest.py        # POST /api/interest, GET /health
       models/
         interest.py        # InterestSubmission Pydantic model
       services/
@@ -244,7 +244,7 @@ Cloud Armor's rate-limiting policy is applied to the load balancer in front of t
 - **AC-005 `[DEFERRED — depends on REQ-013]`**: Given a user who accepts the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **and** a PostHog `interest_form_submitted` event exists for that submission.
 - **AC-006 `[DEFERRED — depends on REQ-013]`**: Given a user who rejects the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **but no** PostHog event fires for that submission.
 - **AC-007 `[DEFERRED — depends on REQ-017]`**: Given a client sending requests to `POST /api/interest` above the configured Cloud Armor threshold, when the threshold is exceeded, then subsequent requests receive `429` before reaching application code.
-- **AC-008**: Given a request to `/healthz`, when called, then it returns `200 {"status": "ok"}` without requiring any secret or external dependency to be healthy.
+- **AC-008**: Given a request to `/health`, when called, then it returns `200 {"status": "ok"}` without requiring any secret or external dependency to be healthy.
 - **AC-009**: Given the repo at rest, when searched for Terraform state files or plaintext secret values, then none are found committed anywhere in git history for this slice.
 
 ---
@@ -265,7 +265,7 @@ Full TDD per `/tdd` and `/testing` — this is production code, so the project's
 - The PostHog client wrapper (`lib/posthog.ts`) is initialized with `opt_out_capturing_by_default: true` and does not fire any capture call before consent is granted (mock the underlying SDK, don't hit real PostHog in tests).
 
 **CI-level (not unit tests, but part of the pipeline — REQ-021)**:
-- Post-deploy smoke test: `GET /healthz` returns `200`; a real `POST /api/interest` against the live deployed URL returns `201` and is observable in Cloud Logging shortly after.
+- Post-deploy smoke test: `GET /health` returns `200`; a real `POST /api/interest` against the live deployed URL returns `201` and is observable in Cloud Logging shortly after.
 
 **Not tested here** (explicitly out of scope for this slice, consistent with §1): Cloud Armor's actual rate-limiting behavior under load is an infrastructure-level control, not something exercised by the application test suite — validate it manually per §12, not via CI.
 

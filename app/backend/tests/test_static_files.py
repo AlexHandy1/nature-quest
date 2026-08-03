@@ -21,6 +21,6 @@ def test_starts_without_static_dir_present(tmp_path):
     app = create_app(static_dir=missing_dir)
     client = TestClient(app)
 
-    response = client.get("/healthz")
+    response = client.get("/health")
 
     assert response.status_code == 200
