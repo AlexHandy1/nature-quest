@@ -39,3 +39,29 @@ how to reproduce the setup.
 
 All other infrastructure (Cloud Run, Artifact Registry, Secret Manager,
 IAM) is managed by Terraform in this directory — see the `.tf` files.
+
+## Manual deploy (before CI/CD exists)
+
+Until the GitHub Actions pipeline is built, deploying a new image is a
+manual, one-off process — this is what CI/CD will later automate.
+
+One-time local Docker auth (per machine, not per deploy):
+
+```bash
+gcloud auth configure-docker europe-west1-docker.pkg.dev --project=nature-quest-504414
+```
+
+Then, from the repo root, for each deploy:
+
+```bash
+docker build -f app/backend/Dockerfile \
+  -t europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual .
+docker push europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual
+gcloud run deploy nature-quest-production \
+  --image=europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual \
+  --region=europe-west1 --project=nature-quest-504414
+```
+
+Terraform's `lifecycle.ignore_changes` on the Cloud Run image (see
+`cloud_run.tf`) means a later `terraform apply` won't revert this back
+to the placeholder image.
