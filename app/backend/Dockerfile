@@ -1,4 +1,6 @@
 FROM node:22-slim AS frontend-build
+ARG VITE_POSTHOG_KEY
+ENV VITE_POSTHOG_KEY=$VITE_POSTHOG_KEY
 WORKDIR /app/frontend
 COPY app/frontend/package.json app/frontend/package-lock.json ./
 RUN npm ci
