@@ -10,7 +10,7 @@ client = TestClient(app)
 def test_valid_submission_returns_201_received():
     response = client.post(
         "/api/interest",
-        json={"query": "show me some birds near here", "analytics_consent": False},
+        json={"query": "show me some birds near here"},
     )
 
     assert response.status_code == 201
@@ -20,7 +20,7 @@ def test_valid_submission_returns_201_received():
 def test_empty_query_returns_422():
     response = client.post(
         "/api/interest",
-        json={"query": "", "analytics_consent": False},
+        json={"query": ""},
     )
 
     assert response.status_code == 422
@@ -29,17 +29,17 @@ def test_empty_query_returns_422():
 def test_oversized_query_returns_422():
     response = client.post(
         "/api/interest",
-        json={"query": "a" * 2001, "analytics_consent": False},
+        json={"query": "a" * 2001},
     )
 
     assert response.status_code == 422
 
 
-def test_valid_submission_logs_the_query_regardless_of_consent():
+def test_valid_submission_logs_the_query():
     with patch("main.log_interest_submission") as mock_log:
         client.post(
             "/api/interest",
-            json={"query": "something rare", "analytics_consent": False},
+            json={"query": "something rare"},
         )
 
     mock_log.assert_called_once_with(query="something rare")

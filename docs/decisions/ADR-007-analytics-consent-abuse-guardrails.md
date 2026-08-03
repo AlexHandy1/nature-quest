@@ -27,3 +27,5 @@ The app collects product analytics (PostHog) and exposes a public-facing submiss
 - The legal sufficiency of the consent flow's exact wording/scope is not resolved by this ADR and should be reviewed before any high-traffic launch.
 - Abuse protection appropriate to a purely public-facing, LLM-free endpoint has been applied. Protections specific to LLM-backed surfaces (cost/misuse guardrails) are a distinct, separately-scoped piece of work tied to when those surfaces go live, not covered here.
 - Any mechanism chosen must remain effective if fully read from the public source code — see ADR-008.
+
+**Implementation note (2026-08-03):** server-side capture was deferred during initial build of the production-foundation spec (`docs/specs/spec-infrastructure-production-foundation-300726.md`, REQ-013/016) — client-side capture only for now. See that spec for the reasoning and the `distinct_id`-passthrough design to use when server-side capture is added.

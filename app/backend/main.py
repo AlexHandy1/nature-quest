@@ -32,7 +32,6 @@ app = FastAPI()
 
 class InterestSubmission(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
-    analytics_consent: bool
 
 
 @app.get("/healthz")

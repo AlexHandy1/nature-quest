@@ -97,13 +97,13 @@ Everything below was decided in this project's architecture-review session and i
 
 **Interest-capture endpoint**
 - **REQ-012**: A `POST` endpoint accepts a free-text `query` (required, and the only submitted field — no email or other PII is collected by design) and writes a structured log entry (Cloud Logging) recording the submission — no database. — ADR-006
-- **REQ-013**: The same submission triggers a PostHog event, captured server-side, **only when the request indicates the user has already consented client-side** (see REQ-016) — the server must not unconditionally mirror an event that bypasses the user's consent choice. This is a specific design requirement of this spec, not something the ADRs decided explicitly — flagged here as the concrete mechanism chosen to keep consent enforcement consistent end-to-end.
+- **REQ-013 `[DEFERRED]`**: The same submission triggers a PostHog event, captured server-side, **only when the request indicates the user has already consented client-side** (see REQ-016) — the server must not unconditionally mirror an event that bypasses the user's consent choice. **Deferred during implementation (2026-08-03)**: server-side PostHog capture requires a `distinct_id`, and correctly pairing it with the client's own anonymous PostHog ID (so both events attribute to the same visitor) needs a new field on the request contract — judged excessive for getting the basics running; client-side capture alone is used for now. Revisit alongside REQ-016 once dual-channel capture is actually needed. Consent-gating itself (REQ-014/015) is unaffected by this deferral — it lives entirely in the client-side SDK and doesn't depend on a server-side call existing.
 - **GUD-001**: Treat writing the submission to Cloud Logging (the interest signal itself) as necessary processing for the feature the user explicitly requested (joining an interest list), distinct from the PostHog *behavioral tracking* consent gate. No email, name, or other directly identifying field is collected at any point in this flow — the working position on privacy scope for this project is deliberate caution based on own research rather than formal legal review, which isn't proportionate at this project's current scale.
 
 **Analytics & consent**
 - **REQ-014**: PostHog is initialized client-side with `opt_out_capturing_by_default: true`. No PostHog identifier/cookie is set and no event is sent until the user opts in via a visible consent banner. — ADR-007
 - **REQ-015**: The consent banner is custom-built (not a third-party consent-management platform), presenting an accept/reject choice that calls PostHog's own `opt_in_capturing()` / `opt_out_capturing()`. — ADR-007
-- **REQ-016**: The frontend includes an explicit consent flag in its `POST` request to the interest-capture endpoint, reflecting the current PostHog opt-in state at submission time, so the backend can honor REQ-013 without needing its own separate consent store.
+- **REQ-016 `[DEFERRED]`**: The frontend includes an explicit consent flag in its `POST` request to the interest-capture endpoint, reflecting the current PostHog opt-in state at submission time, so the backend can honor REQ-013 without needing its own separate consent store. **Deferred alongside REQ-013** — not sent or accepted in the current build; `InterestSubmission` currently has only `query`. When server-side capture is built, the payload should carry the client's PostHog `distinct_id` (already anonymous, no new PII) rather than reinventing one server-side, so the client and server events attribute to the same visitor.
 - **REQ-016b**: The consent banner includes a short, plain-language disclosure (1-2 lines, no legal jargon) of what is and isn't collected — see the proposed copy in §11. This is a deliberately simple, self-drafted disclosure appropriate to this project's current scale, not formally reviewed legal copy.
 
 **Abuse protection**
@@ -115,7 +115,7 @@ Everything below was decided in this project's architecture-review session and i
 - **CON-004**: A LICENSE file is a known, tracked gap, not resolved by this spec — `[NEEDS INPUT: license choice, PRD Dependencies & Blockers]`. Do not guess a license; leave this as an explicit open task.
 
 **Testing (production code — full TDD applies, not the prototype-only light convention)**
-- **REQ-019**: Backend test coverage (via `pytest`) includes: request validation for the interest-capture endpoint (valid/invalid `query`), the consent-gated server-side PostHog call (fires only when the consent flag is present), and the structured-log write path.
+- **REQ-019**: Backend test coverage (via `pytest`) includes: request validation for the interest-capture endpoint (valid/invalid `query`), and the structured-log write path. The consent-gated server-side PostHog call is deferred along with REQ-013/REQ-016 — not currently tested or implemented.
 - **REQ-020**: Frontend test coverage (via Vitest + React Testing Library) includes: the landing page renders the form and copy correctly, form submission calls the backend endpoint with the right payload shape, success/error states render correctly, and the consent banner correctly gates PostHog initialization and persists the user's choice.
 - **REQ-021**: A post-deploy smoke test (run by CI after every deploy, against the live Cloud Run URL) confirms: a health-check endpoint returns 200, and a real form submission against the live deployed service succeeds end-to-end. — ADR-005
 
@@ -132,18 +132,17 @@ Liveness/readiness check used by the post-deploy smoke test (REQ-021).
 ```
 
 ### `POST /api/interest`
-The interest-capture submission endpoint (REQ-012, REQ-013, REQ-016).
+The interest-capture submission endpoint (REQ-012; REQ-013/REQ-016 deferred — see below).
 
 **Request body** (Pydantic model, validated per ADR-004's FastAPI/Pydantic integration):
 ```python
 class InterestSubmission(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
-    analytics_consent: bool
 ```
 
 No email or other directly identifying field is accepted here by design — see §1/REQ-012.
 
-`analytics_consent` reflects the frontend's current PostHog opt-in state at the moment of submission (REQ-016) — this is not a cookie/tracking identifier itself, just a boolean the backend uses to decide whether to fire its own server-side PostHog event (REQ-013).
+`analytics_consent` (REQ-016) is deferred along with server-side PostHog capture (REQ-013) — not part of the current request contract. When reintroduced, the payload should carry the client's PostHog `distinct_id` instead of a plain boolean, so the deferred server-side event attributes to the same anonymous visitor as the client-side event.
 
 **Response `201`**:
 ```json
@@ -159,7 +158,7 @@ No email or other directly identifying field is accepted here by design — see 
 | Event | Trigger | Fired from |
 |---|---|---|
 | `landing_page_viewed` | Page load, only after consent | Client-side |
-| `interest_form_submitted` | Successful `POST /api/interest`, only when `analytics_consent: true` was sent | Server-side (REQ-013) |
+| `interest_form_submitted` `[DEFERRED]` | Successful `POST /api/interest`, only when `analytics_consent: true` was sent | Server-side (REQ-013, deferred) |
 
 ---
 
@@ -242,8 +241,8 @@ Cloud Armor's rate-limiting policy is applied to the load balancer in front of t
 - **AC-002**: Given a push to the trunk branch, when the GitHub Actions pipeline runs, then it executes lint/type-check, unit tests, build, deploy, and a post-deploy smoke test in that order, and a failure at any stage prevents the next stage from running.
 - **AC-003**: Given a pull request opened from a fork, when its CI workflow runs, then it has no access to any repository secret or deploy credential, and cannot trigger a deploy.
 - **AC-004**: Given the deployed app with no user interaction yet, when Cloud Logging or PostHog is inspected, then no interest-capture events exist for that visitor (nothing fires on page load before consent).
-- **AC-005**: Given a user who accepts the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **and** a PostHog `interest_form_submitted` event exists for that submission.
-- **AC-006**: Given a user who rejects the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **but no** PostHog event fires for that submission.
+- **AC-005 `[DEFERRED — depends on REQ-013]`**: Given a user who accepts the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **and** a PostHog `interest_form_submitted` event exists for that submission.
+- **AC-006 `[DEFERRED — depends on REQ-013]`**: Given a user who rejects the consent banner and submits the form, when the submission completes, then a structured log entry exists (REQ-012) **but no** PostHog event fires for that submission.
 - **AC-007**: Given a client sending requests to `POST /api/interest` above the configured Cloud Armor threshold, when the threshold is exceeded, then subsequent requests receive `429` before reaching application code.
 - **AC-008**: Given a request to `/healthz`, when called, then it returns `200 {"status": "ok"}` without requiring any secret or external dependency to be healthy.
 - **AC-009**: Given the repo at rest, when searched for Terraform state files or plaintext secret values, then none are found committed anywhere in git history for this slice.
@@ -256,9 +255,9 @@ Full TDD per `/tdd` and `/testing` — this is production code, so the project's
 
 **Backend (`pytest`)**:
 - Unit: `InterestSubmission` validation (empty `query` rejected, oversized `query` rejected, valid payload accepted).
-- Unit: the server-side PostHog capture call fires if and only if `analytics_consent: true` is present in the validated request (REQ-013) — assert via a mocked PostHog client, not a real network call.
-- Unit: the structured-log writer is called with the expected fields on every valid submission, regardless of consent.
+- Unit: the structured-log writer is called with the expected fields on every valid submission.
 - Integration: `POST /api/interest` via FastAPI's `TestClient`, covering the `201`/`422` response shapes end-to-end through the real routing/validation layer.
+- `[DEFERRED]` Unit: the server-side PostHog capture call fires if and only if `analytics_consent: true` is present in the validated request (REQ-013) — assert via a mocked PostHog client, not a real network call. Add this back once REQ-013/016 are built.
 
 **Frontend (Vitest + React Testing Library)**:
 - `InterestForm` renders the landing copy and form fields; submitting calls the expected endpoint with the expected payload shape; success and error states render correctly.
