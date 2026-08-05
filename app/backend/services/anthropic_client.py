@@ -1,3 +1,7 @@
+import os
+
+from anthropic import Anthropic
+
 MODEL = "claude-haiku-4-5-20251001"
 
 TAXON_GUIDANCE = """You turn a nature-walk request into a single GBIF taxon
@@ -42,6 +46,23 @@ QUERY_SCHEMA_TOOL = {
         "required": ["taxonFilter"],
     },
 }
+
+
+def build_client() -> Anthropic:
+    """Picks the key source by environment: Secret Manager when deployed on
+    Cloud Run (REQ-005; K_SERVICE is set automatically there, never locally —
+    tech debt: relies on a Cloud-Run-specific platform var rather than an
+    explicit config flag we control), the local ANTHROPIC_API_KEY env var
+    (.env) otherwise. If REQ-005 hasn't been built yet, deploying triggers a
+    loud NotImplementedError rather than silently falling back to an env var
+    in production."""
+    if os.environ.get("K_SERVICE"):
+        return Anthropic(api_key=_fetch_api_key_from_secret_manager())
+    return Anthropic()
+
+
+def _fetch_api_key_from_secret_manager() -> str:
+    raise NotImplementedError("REQ-005: Secret Manager fetch not yet built")
 
 
 def resolve_taxon_filter(query: str, client) -> dict | None:

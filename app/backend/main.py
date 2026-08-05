@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 from typing import ClassVar
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
@@ -11,6 +12,8 @@ from slowapi.errors import RateLimitExceeded
 from routers.interest import router as interest_router
 from routers.query import router as query_router
 from services.rate_limiter import handle_rate_limit_exceeded, limiter
+
+load_dotenv()
 
 
 class JsonLogFormatter(logging.Formatter):
