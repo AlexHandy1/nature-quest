@@ -12,7 +12,7 @@ For any production coding work:
 - Prefer the simplest change that moves things forward. Avoid large refactors or multiple concerns in one go.
 - After each logical change:
 	1. Check what's staged: `git status`
-	2. Commit with a descriptive message: `git commit -m "your message"`
+	2. Commit with a short, descriptive message: `git commit -m "your message"`. Keep it to a one-line summary (~72 chars); add a short body only if genuinely needed, a few lines max — not a rationale essay.
 	3. Commit often. Each commit should represent one coherent, working change — not a batch of unrelated edits.
 - For Python projects, always use a virtual environment: `python -m venv venv` if one doesn't exist, then `source venv/bin/activate` before running any `pip install`.
 - Follow /documentation-and-adrs when making significant architectural decisions or choosing between competing approaches. If a README.md does not exist at the project root, create one before closing the session.
