@@ -57,18 +57,21 @@ function QueryForm() {
 
   if (result) {
     return (
-      <p className={`form-message form-message--${VARIANT_BY_OUTCOME[result.outcome]}`}>
-        {result.message}
-        {result.species && (
-          <ul>
-            {result.species.map((item) => (
-              <li key={item.species}>
-                {item.species} ({item.count})
-              </li>
-            ))}
-          </ul>
-        )}
-      </p>
+      <>
+        <p className={`form-message form-message--${VARIANT_BY_OUTCOME[result.outcome]}`}>
+          {result.message}
+          {result.species && (
+            <ul>
+              {result.species.map((item) => (
+                <li key={item.species}>
+                  {item.species} ({item.count})
+                </li>
+              ))}
+            </ul>
+          )}
+        </p>
+        <p className="form-message">Refresh the page to search again.</p>
+      </>
     )
   }
 
@@ -78,14 +81,20 @@ function QueryForm() {
       <input
         id="query"
         name="query"
-        placeholder='e.g. "show me some birds near here" or "something rare"'
+        placeholder='e.g. "show me some birds" or "show me some plants"'
         value={query}
+        disabled={loading}
         onChange={(event) => setQuery(event.target.value)}
       />
       <button type="submit" disabled={loading}>
         {loading ? 'Searching…' : 'Show me'}
       </button>
-      {loading && <p className="form-message">Searching Retiro Park for you…</p>}
+      {loading && (
+        <p className="form-message">
+          Searching Retiro Park for you — this can take a few seconds. The
+          form can't be edited until this finishes.
+        </p>
+      )}
     </form>
   )
 }

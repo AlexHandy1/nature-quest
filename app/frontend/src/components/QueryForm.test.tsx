@@ -66,7 +66,9 @@ test('disables the submit button and shows a loading message while in flight', a
   await submit('birds')
 
   expect(screen.getByRole('button', { name: /searching/i })).toBeDisabled()
+  expect(screen.getByLabelText('What would you want to see on a walk?')).toBeDisabled()
   expect(screen.getByText(/searching retiro park/i)).toBeInTheDocument()
+  expect(screen.getByText(/can't be edited until this finishes/i)).toBeInTheDocument()
 
   resolveFetch(jsonResponse(200, { status: 'unresolved', message: 'no match' }))
 })
@@ -174,6 +176,20 @@ test('shows distinct copy for a daily_limit_reached (429) outcome', async () => 
   await submit('birds')
 
   expect(await screen.findByText("today's limit reached, try tomorrow")).toBeInTheDocument()
+})
+
+test('tells the user to refresh the page to search again', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, { status: 'unresolved', message: 'no match' })
+    )
+  )
+
+  render(<QueryForm />)
+  await submit('birds')
+
+  expect(await screen.findByText(/refresh the page to search again/i)).toBeInTheDocument()
 })
 
 test('replaces the form with the result so it cannot be resubmitted', async () => {
