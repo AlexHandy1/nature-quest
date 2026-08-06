@@ -6,6 +6,7 @@ MAX_QUERY_LENGTH = 300
 class QueryRequest(BaseModel):
     query: str = Field(min_length=1, max_length=MAX_QUERY_LENGTH)
     distinctId: str
+    consent: bool = False
 
     @field_validator("query")
     @classmethod
