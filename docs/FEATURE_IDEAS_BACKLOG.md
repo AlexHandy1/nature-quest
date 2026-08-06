@@ -67,3 +67,15 @@ Open questions: how each handles the large-result-set pagination problem already
 **Reservation — latency:** going through an MCP layer (extra process/tool-call hop, agent reasoning over which tool to call) could be slower than the current direct API-client calls, especially in a pipeline that already needs to feel responsive. This needs to be measured against the current approach before committing, not assumed either way.
 
 **Potential upside — query surface area:** an agentic layer may handle a broader range of query types more gracefully than the current hand-rolled client — e.g. rarity-based queries ("show me something rare"), recency-based queries (recent sightings only), or other compound filters that would otherwise need bespoke logic per query type. Worth weighing against the latency reservation above rather than treating as a clear win.
+
+## Daily email activity digest (internal tool)
+
+An internal tool (not user-facing) that sends the maintainer a daily email summarising website activity — sourced from PostHog (client-side product events, and once built, server-side AI Observability `$ai_generation` traces) and Cloud Run/Cloud Logging (structured request/outcome logs). Would give a single daily digest of things like query volume, resolved/unresolved/no_results/gbif_unavailable outcome breakdown, guardrail triggers (rate-limited, daily-cap-reached), and LLM cost/token usage — rather than having to check PostHog and GCP Cloud Logging separately.
+
+Surfaced while scoping `spec-tool-llm-guardrails-gbif-query-040826.md`, which adds the first structured logging (`REQ-017`) and both PostHog observability channels (`REQ-018`/`REQ-019`) this digest would draw on — worth revisiting once that slice is live and there's real traffic/log data to summarise. Complementary to, not a replacement for, the basic uptime/5xx alerting (`REQ-025`-`REQ-027`) in the same spec, which is real-time/threshold-based rather than a daily rollup.
+
+## Internal capability: agent-browser-driven end-to-end smoke tests
+
+An internal tool/skill that runs a scripted manual smoke test fully end-to-end against the live (or local dev) app via `agent-browser`, rather than a human clicking through it each time — e.g. confirming the consent banner's accept/reject workflow persists correctly, submitting a real query through `QueryForm` and confirming the right outcome renders (resolved species list, unresolved/no_results/gbif_unavailable/429 copy), and checking PostHog/Cloud Logging for the resulting events.
+
+Surfaced during Slice 2's UX build (060826) after manually validating `QueryForm`/`ConsentBanner` with `agent-browser` this session — that validation was ad hoc (one-off commands run interactively); worth turning into a repeatable, scripted smoke-test flow that can be re-run after future frontend changes without a human re-deriving the steps each time. Complementary to the Vitest/RTL component tests (which exercise components in isolation with mocked `fetch`) — this would be the one layer that exercises the real browser + real backend + real third-party dashboards together.

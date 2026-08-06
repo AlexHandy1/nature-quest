@@ -24,6 +24,11 @@ resource "google_cloud_run_v2_service" "app" {
       # Placeholder image - CI/CD's deploy step replaces this with the
       # real built image on every deploy (see lifecycle block below).
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest"
+
+      env {
+        name  = "POSTHOG_PROJECT_TOKEN"
+        value = var.posthog_project_token
+      }
     }
   }
 

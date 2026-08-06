@@ -7,6 +7,10 @@ vi.mock('./lib/posthog', () => ({
   initPostHog: vi.fn(),
   optIn: vi.fn(),
   optOut: vi.fn(),
+  getDistinctId: vi.fn(() => 'anon-test'),
+  hasConsent: vi.fn(() => false),
+  trackEvent: vi.fn(),
+  CONSENT_KEY: 'analytics-consent',
 }))
 
 beforeEach(() => {
@@ -20,7 +24,7 @@ test('renders the Nature Quest heading', () => {
   expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
 })
 
-test('renders the interest form and the consent banner', () => {
+test('renders the query form and the consent banner', () => {
   render(<App />)
 
   expect(

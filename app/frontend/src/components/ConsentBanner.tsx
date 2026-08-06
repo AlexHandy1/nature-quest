@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { optIn, optOut } from '../lib/posthog'
-
-const CONSENT_KEY = 'analytics-consent'
+import { optIn, optOut, CONSENT_KEY } from '../lib/posthog'
 
 function ConsentBanner() {
   const [choice, setChoice] = useState(() => window.localStorage.getItem(CONSENT_KEY))
@@ -25,8 +23,10 @@ function ConsentBanner() {
   return (
     <div className="consent-banner" role="region" aria-label="Cookie consent">
       <p>
-        We use privacy-friendly analytics to see how people use this page. We
-        never ask for or store your name or email.
+        We use privacy-friendly analytics to see how people use this page,
+        including the nature walk queries you search for — this helps us
+        understand what people are looking for and improve the experience.
+        We never ask for or store your name or email.
       </p>
       <div>
         <button type="button" onClick={accept}>

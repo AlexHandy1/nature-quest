@@ -39,6 +39,25 @@ how to reproduce the setup.
 
 All other infrastructure (Cloud Run, Artifact Registry, Secret Manager,
 IAM) is managed by Terraform in this directory — see the `.tf` files.
+Applying changes is a manual step (no `terraform apply` in CI/CD):
+
+```bash
+cd infra
+TF_VAR_posthog_project_token=$(gh variable get POSTHOG_PROJECT_TOKEN) terraform apply
+```
+
+`posthog_project_token` is sourced from the same GitHub Actions
+repository variable the frontend build already uses (`vars.
+POSTHOG_PROJECT_TOKEN` — see `.github/workflows/ci-cd.yml`'s `VITE_
+POSTHOG_KEY` build arg), not a local `.tfvars` file — one source of
+truth for a value that's already non-sensitive (PostHog project tokens
+are designed for client-side/public use; it's already baked into the
+public frontend JS bundle). `gh variable get` requires the caller to be
+authenticated as a GitHub user with write access to this repo — GitHub
+does not expose repository variables/secrets to arbitrary public-repo
+readers or fork-originated PRs, only to explicit collaborators, so this
+scales safely to future contributors without a manual out-of-band
+credential hand-off.
 
 ## Manual deploy (before CI/CD exists)
 

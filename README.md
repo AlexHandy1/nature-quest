@@ -8,9 +8,13 @@ Given a location and a natural-language request (e.g. "show me some birds", "som
 
 ## Current state
 
-The real NL-query pipeline (species → route → narrative → map) is not built yet — it was validated end-to-end as a throwaway prototype (see below) and is Phase 2 of the plan. What's live now is Phase 1: the **production foundation** — a "coming soon" landing page with a consent-gated interest-capture form, deployed on real infrastructure with a full CI/CD pipeline, per `docs/specs/spec-infrastructure-production-foundation-300726.md`.
+What's **live and deployed** is Phase 1: the **production foundation** — a "coming soon" landing page with a consent-gated interest-capture form, deployed on real infrastructure with a full CI/CD pipeline, per `docs/specs/spec-infrastructure-production-foundation-300726.md`.
 
-- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/interest` (validates and structured-logs a free-text interest signal, no PII), serves the built frontend as static files.
+Slice 2 (LLM guardrails + a first real GBIF query) is **built and passing real end-to-end tests locally, but not yet deployed** — `POST /api/query` takes free text, resolves it to a GBIF taxon via a real Anthropic call, and returns a real species list, behind per-IP rate limiting and a daily LLM-call budget. Still needed before deploy: the production Secret Manager key fetch, infra provisioning, operational logging/observability, and the frontend swap to a query box. See `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` and `ARCHITECTURE.md` for detail.
+
+The fuller NL-query pipeline beyond Slice 2 (waypoint ordering, route, narrative, map) is not built yet — it was validated end-to-end as a throwaway prototype (see below) and is later PRD slices.
+
+- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/interest` (validates and structured-logs a free-text interest signal, no PII), `POST /api/query` (Slice 2, not yet deployed — see above), serves the built frontend as static files.
 - **`app/frontend/`** — Vite + React + TypeScript: landing page, interest form, a custom consent banner gating client-side PostHog analytics.
 - **`infra/`** — Terraform-provisioned GCP infrastructure (Cloud Run, Artifact Registry, Secret Manager scaffold, Workload Identity Federation for CI/CD). See `infra/README.md` for one-time bootstrap/manual-deploy steps.
 - **`.github/workflows/ci-cd.yml`** — lint/type-check → unit tests → build → deploy → post-deploy smoke test, on every push to `main`; PRs get lint/test/build only, no deploy credentials.
@@ -20,7 +24,7 @@ The real NL-query pipeline (species → route → narrative → map) is not buil
 Two servers, in separate terminals:
 
 ```bash
-# backend
+# backend — POST /api/query needs ANTHROPIC_API_KEY in a repo-root .env (gitignored)
 cd app/backend
 python -m venv venv && source venv/bin/activate   # first time only
 pip install -r requirements-dev.txt                # first time only
