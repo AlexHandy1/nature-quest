@@ -1,8 +1,11 @@
 import os
 
+import google.auth
 from anthropic import Anthropic
+from google.cloud import secretmanager
 
 MODEL = "claude-haiku-4-5-20251001"
+SECRET_ID = "anthropic-api-key"
 
 TAXON_GUIDANCE = """You turn a nature-walk request into a single GBIF taxon
 filter by calling produce_gbif_query.
@@ -54,9 +57,7 @@ def build_client() -> Anthropic:
     Cloud Run (REQ-005; K_SERVICE is set automatically there, never locally —
     tech debt: relies on a Cloud-Run-specific platform var rather than an
     explicit config flag we control), the local ANTHROPIC_API_KEY env var
-    (.env) otherwise. If REQ-005 hasn't been built yet, deploying triggers a
-    loud NotImplementedError rather than silently falling back to an env var
-    in production."""
+    (.env) otherwise."""
     return Anthropic(api_key=resolve_api_key())
 
 
@@ -67,7 +68,11 @@ def resolve_api_key() -> str | None:
 
 
 def _fetch_api_key_from_secret_manager() -> str:
-    raise NotImplementedError("REQ-005: Secret Manager fetch not yet built")
+    _, project_id = google.auth.default()
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_id}/secrets/{SECRET_ID}/versions/latest"
+    response = client.access_secret_version(request={"name": name})
+    return response.payload.data.decode("UTF-8")
 
 
 def resolve_taxon_filter(query: str, client, on_response=None, **extra_kwargs) -> dict | None:

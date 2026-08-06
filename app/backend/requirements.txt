@@ -1,5 +1,6 @@
 anthropic==0.120.2
 fastapi==0.141.1
+google-cloud-secret-manager==2.24.0
 httpx==0.28.1
 posthog==6.9.3
 pytest==9.1.1

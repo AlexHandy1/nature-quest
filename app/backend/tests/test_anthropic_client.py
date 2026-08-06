@@ -48,10 +48,28 @@ def test_resolve_api_key_returns_none_locally():
         assert resolve_api_key() is None
 
 
-def test_resolve_api_key_raises_on_cloud_run_until_req_005_is_built():
-    with patch.dict("os.environ", {"K_SERVICE": "nature-quest-backend"}):
-        with pytest.raises(NotImplementedError):
-            resolve_api_key()
+def test_resolve_api_key_fetches_from_secret_manager_on_cloud_run():
+    mock_client = MagicMock()
+    mock_client.access_secret_version.return_value = SimpleNamespace(
+        payload=SimpleNamespace(data=b"sk-ant-test-key")
+    )
+    with (
+        patch.dict("os.environ", {"K_SERVICE": "nature-quest-backend"}),
+        patch(
+            "services.anthropic_client.google.auth.default",
+            return_value=(MagicMock(), "my-project"),
+        ),
+        patch(
+            "services.anthropic_client.secretmanager.SecretManagerServiceClient",
+            return_value=mock_client,
+        ),
+    ):
+        key = resolve_api_key()
+
+    assert key == "sk-ant-test-key"
+    mock_client.access_secret_version.assert_called_once_with(
+        request={"name": "projects/my-project/secrets/anthropic-api-key/versions/latest"}
+    )
 
 
 def test_invokes_on_response_with_the_raw_response():
