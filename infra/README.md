@@ -59,27 +59,24 @@ readers or fork-originated PRs, only to explicit collaborators, so this
 scales safely to future contributors without a manual out-of-band
 credential hand-off.
 
-## Manual deploy (before CI/CD exists)
+## Manual deploy (CI/CD unavailable)
 
-Until the GitHub Actions pipeline is built, deploying a new image is a
-manual, one-off process — this is what CI/CD will later automate.
-
-One-time local Docker auth (per machine, not per deploy):
-
-```bash
-gcloud auth configure-docker europe-west1-docker.pkg.dev --project=nature-quest-504414
-```
-
-Then, from the repo root, for each deploy:
+The normal path is merging to `main`, which deploys automatically via
+GitHub Actions. If Actions itself is unavailable (e.g. a GitHub platform
+incident — check githubstatus.com), `infra/manual_deploy.sh` reproduces
+CI's build+deploy jobs from the local machine instead:
 
 ```bash
-docker build -f app/backend/Dockerfile \
-  -t europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual .
-docker push europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual
-gcloud run deploy nature-quest-production \
-  --image=europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app:manual \
-  --region=europe-west1 --project=nature-quest-504414
+./infra/manual_deploy.sh
 ```
+
+Requires local `gcloud`/`docker`/`gh` auth already configured. Builds
+and deploys the current git `HEAD`, tagged by its commit SHA (same
+tagging scheme CI uses, so it composes cleanly with normal CI deploys
+and doesn't collide with or overwrite them) — includes the
+`VITE_POSTHOG_KEY` build arg (sourced from the same GitHub Actions
+repository variable CI uses) that a bare `docker build` would silently
+omit, and runs the same post-deploy smoke test CI does.
 
 Terraform's `lifecycle.ignore_changes` on the Cloud Run image (see
 `cloud_run.tf`) means a later `terraform apply` won't revert this back
