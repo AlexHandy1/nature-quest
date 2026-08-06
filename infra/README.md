@@ -43,7 +43,9 @@ Applying changes is a manual step (no `terraform apply` in CI/CD):
 
 ```bash
 cd infra
-TF_VAR_posthog_project_token=$(gh variable get POSTHOG_PROJECT_TOKEN) terraform apply
+TF_VAR_posthog_project_token=$(gh variable get POSTHOG_PROJECT_TOKEN) \
+TF_VAR_alert_email="you@example.com" \
+  terraform apply
 ```
 
 `posthog_project_token` is sourced from the same GitHub Actions
@@ -58,6 +60,19 @@ does not expose repository variables/secrets to arbitrary public-repo
 readers or fork-originated PRs, only to explicit collaborators, so this
 scales safely to future contributors without a manual out-of-band
 credential hand-off.
+
+`alert_email` (`CON-003`) has no equivalent existing GitHub variable —
+supply it directly at apply time (as above) or via a local `.tfvars`
+file (gitignored, never committed).
+
+**Cloud Monitoring gotchas** (see `ADR-010` for full detail): a
+Terraform-created email notification channel needs its verification
+manually triggered (`notificationChannels:sendVerificationCode` then
+`:verify` — the Console UI's own flow does this automatically, the API
+doesn't); a freshly-created log-based metric can 404 in an alert
+policy for a couple of minutes before it propagates; and the Console's
+project selector can silently disagree with a page's `?project=` URL,
+showing the wrong project's (empty) data.
 
 ## Manual deploy (CI/CD unavailable)
 

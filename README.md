@@ -10,7 +10,7 @@ Given a location and a natural-language request (e.g. "show me some birds", "som
 
 Phase 1 (production foundation) and Slice 2 (LLM guardrails + a first real GBIF query) are both **built and deployed**. The landing page's primary interaction is `POST /api/query`: free text → a real Anthropic call resolves it to a GBIF taxon → a real GBIF species list comes back — behind per-IP rate limiting, a daily LLM-call budget, structured operational logging, and consent-gated PostHog observability (client- and server-side). The Anthropic API key is fetched explicitly from Secret Manager at container startup, never a plain env var in production. See `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` and `ARCHITECTURE.md` for full detail.
 
-Still outstanding from Slice 2's scope: basic GCP uptime/error-rate alerting (REQ-025-027).
+Still outstanding from Slice 2's scope: basic GCP uptime/error-rate alerting (REQ-025-027). A real-time email alert on every query submission was built first instead — a deliberate short-term trade-off, not a scalable monitoring posture; see `docs/decisions/ADR-010-realtime-per-query-alerting.md`.
 
 The fuller NL-query pipeline beyond Slice 2 (waypoint ordering, route, narrative, map) is not built yet — it was validated end-to-end as a throwaway prototype (see below) and is later PRD slices.
 

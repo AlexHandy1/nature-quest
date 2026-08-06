@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-08-04
 last_updated: 2026-08-06
 tags: [tool, infrastructure]
-status: Built and deployed. REQ-019 and REQ-024 were implemented differently from the design below — see docs/decisions/ADR-009 and the "Implementation note" callouts inline. REQ-025-027 (alerting) not yet built.
+status: Built and deployed. REQ-019 and REQ-024 were implemented differently from the design below — see docs/decisions/ADR-009 and the "Implementation note" callouts inline. REQ-025-027 (uptime/5xx alerting) not yet built; a different real-time per-query alert was built first instead — see ADR-010.
 sources:
   - production: app/backend/main.py, routers/interest.py, routers/query.py, models/interest.py, models/query.py, services/logging_client.py, services/anthropic_client.py, services/ai_observability.py, Dockerfile, infra/cloud_run.tf, infra/secret_manager.tf, app/frontend/src/App.tsx, QueryForm.tsx, ConsentBanner.tsx, lib/posthog.ts
   - prototype: prototypes/scripts/intent_query_spike.py, prototypes/scripts/e2e_walk_spike_clustering.py, prototypes/scripts/e2e_walk_spike_full_validation.py, prototypes/reference/gbif_docs_summary.md, gbif_kingdom_keys.json, gbif_common_class_keys.json, gbif_common_order_keys.json
   - docs/status_docs/PLANNING_INTENT_QUERY_210726.md, PLANNING_LLM_GUARDRAILS_040826.md, WORK_SUMMARY_030826.md, WORK_SUMMARY_250726.md, WORK_SUMMARY_050826.md, WORK_SUMMARY_060826.md
   - docs/prds/nature-quest-prd-300726.md
-  - docs/decisions/ADR-005, ADR-006, ADR-007, ADR-008, ADR-009
+  - docs/decisions/ADR-005, ADR-006, ADR-007, ADR-008, ADR-009, ADR-010
   - docs/specs/spec-infrastructure-production-foundation-300726.md
 ---
 
@@ -132,6 +132,7 @@ This document is meant to be implementable by an agent with no other context fro
 - **REQ-027**: A second, separate alerting policy watches Cloud Run's own request-count metric filtered to 5xx responses, firing on an elevated error rate over a short window, notifying the same email channel. This is explicitly the first, narrowest instance of "broader error-pattern alerting" — a foundation to extend later (e.g. alerting on sustained `daily_limit_reached`/`rate_limited` rates, or an LLM-cost anomaly), not a comprehensive alerting system built in this slice.
 - **CON-003**: The email address behind REQ-026/027's notification channel is supplied via a Terraform variable with **no committed default** (set via a local `.tfvars` file kept out of version control, or a CI-provided variable) — not hardcoded into `monitoring.tf`. The repo is public from day one (`ADR-008`); a personal email address is exactly the kind of detail that shouldn't be committed just because it isn't formally a secret.
 - **GUD-003**: Keep this first pass at alerting deliberately narrow — uptime + error-rate only, one email channel, no paging/escalation policy, no Slack/PagerDuty integration. This is a starting foundation per its own stated purpose ("so I can see something going wrong and act"), appropriate to a solo, pre-launch project; broader/more granular alerting is future work, not this slice's scope.
+  **Implementation note (2026-08-06):** REQ-025/026/027 (uptime check, uptime-failure alert, 5xx-rate alert) are **not yet built**. A different alert — a real-time, per-`/api/query`-request email, deliberately violating this guideline's "narrow" intent — was built first instead, as an explicit short-term trade-off. See `docs/decisions/ADR-010-realtime-per-query-alerting.md`.
 
 # 5. Interfaces & Data Contracts
 
@@ -358,5 +359,5 @@ Per `/tdd`/`/testing` — vertical-slice TDD (one behavior, one test, minimal co
 - Prior slice: `docs/specs/spec-infrastructure-production-foundation-300726.md` (production foundation this slice builds on; REQ-013/016/017 and their `[DEFERRED]` notes are the direct precursors to REQ-005/REQ-019/REQ-020 here).
 - Fuller future design this slice deliberately narrows: `docs/status_docs/PLANNING_INTENT_QUERY_210726.md`.
 - Design-session checkpoint (point-in-time, superseded by this document): `docs/status_docs/PLANNING_LLM_GUARDRAILS_040826.md`.
-- `docs/decisions/ADR-005` (CI/CD, WIF), `ADR-006` (secrets/environments/region), `ADR-007` (analytics/consent/abuse posture), `ADR-008` (open-source-from-day-one and its consequences for every security decision in this spec), `ADR-009` (REQ-019's implementation deviation from this document — PostHog wrapper client, not OpenTelemetry; also covers why DeepEval was dropped from REQ-024).
+- `docs/decisions/ADR-005` (CI/CD, WIF), `ADR-006` (secrets/environments/region), `ADR-007` (analytics/consent/abuse posture), `ADR-008` (open-source-from-day-one and its consequences for every security decision in this spec), `ADR-009` (REQ-019's implementation deviation from this document — PostHog wrapper client, not OpenTelemetry; also covers why DeepEval was dropped from REQ-024), `ADR-010` (a real-time per-query alert built ahead of, and in deviation from, REQ-025-027/GUD-003).
 - Session detail on how REQ-005/017/019/020/024 and the frontend swap were actually built: `docs/status_docs/WORK_SUMMARY_050826.md`, `WORK_SUMMARY_060826.md`.
