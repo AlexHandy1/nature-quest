@@ -4,7 +4,8 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from models.query import QueryRequest
-from services.anthropic_client import build_client, resolve_taxon_filter
+from services import ai_observability
+from services.anthropic_client import resolve_api_key, resolve_taxon_filter
 from services.gbif_client import GbifUnavailableError, fetch_top_species
 from services.query_budget import try_consume_daily_budget
 from services.rate_limiter import limiter
@@ -19,8 +20,12 @@ DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please t
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 
 
-def _resolve_taxon_filter(query: str) -> dict | None:
-    return resolve_taxon_filter(query, build_client())
+def _resolve_taxon_filter(query: str, distinct_id: str, consent: bool) -> dict | None:
+    client = ai_observability.build_client(
+        consent=consent, distinct_id=distinct_id, api_key=resolve_api_key()
+    )
+    extra_kwargs = {"posthog_distinct_id": distinct_id} if consent else {}
+    return resolve_taxon_filter(query, client, **extra_kwargs)
 
 
 @router.post("/api/query")
@@ -32,7 +37,7 @@ def submit_query(request: Request, body: QueryRequest):
             content={"error": "daily_limit_reached", "message": DAILY_LIMIT_MESSAGE},
         )
 
-    taxon_filter = _resolve_taxon_filter(body.query)
+    taxon_filter = _resolve_taxon_filter(body.query, body.distinctId, body.consent)
     if taxon_filter is None:
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
 

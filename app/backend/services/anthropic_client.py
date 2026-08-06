@@ -56,16 +56,20 @@ def build_client() -> Anthropic:
     (.env) otherwise. If REQ-005 hasn't been built yet, deploying triggers a
     loud NotImplementedError rather than silently falling back to an env var
     in production."""
+    return Anthropic(api_key=resolve_api_key())
+
+
+def resolve_api_key() -> str | None:
     if os.environ.get("K_SERVICE"):
-        return Anthropic(api_key=_fetch_api_key_from_secret_manager())
-    return Anthropic()
+        return _fetch_api_key_from_secret_manager()
+    return None
 
 
 def _fetch_api_key_from_secret_manager() -> str:
     raise NotImplementedError("REQ-005: Secret Manager fetch not yet built")
 
 
-def resolve_taxon_filter(query: str, client) -> dict | None:
+def resolve_taxon_filter(query: str, client, **extra_kwargs) -> dict | None:
     response = client.messages.create(
         model=MODEL,
         max_tokens=1024,
@@ -73,6 +77,7 @@ def resolve_taxon_filter(query: str, client) -> dict | None:
         tools=[QUERY_SCHEMA_TOOL],
         tool_choice={"type": "tool", "name": "produce_gbif_query"},
         messages=[{"role": "user", "content": query}],
+        **extra_kwargs,
     )
     tool_use = next(block for block in response.content if block.type == "tool_use")
     return tool_use.input["taxonFilter"]
