@@ -2,11 +2,12 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { vi, test, expect, beforeEach } from 'vitest'
 import QueryForm from './QueryForm'
-import { getDistinctId, hasConsent } from '../lib/posthog'
+import { getDistinctId, hasConsent, trackEvent } from '../lib/posthog'
 
 vi.mock('../lib/posthog', () => ({
   getDistinctId: vi.fn(() => 'anon-123'),
   hasConsent: vi.fn(() => false),
+  trackEvent: vi.fn(),
 }))
 
 beforeEach(() => {
@@ -190,6 +191,37 @@ test('replaces the form with the result so it cannot be resubmitted', async () =
   expect(
     screen.queryByLabelText('What would you want to see on a walk?')
   ).not.toBeInTheDocument()
+})
+
+test('tracks query_submitted on submit and query_outcome with the resolved status on response', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, { status: 'resolved', species: [], message: 'ok' })
+    )
+  )
+
+  render(<QueryForm />)
+  await submit('birds')
+  await screen.findByText('ok')
+
+  expect(trackEvent).toHaveBeenCalledWith('query_submitted')
+  expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'resolved' })
+})
+
+test('tracks query_outcome with the error value for a 429 response', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(429, { error: 'rate_limited', message: 'slow down' })
+    )
+  )
+
+  render(<QueryForm />)
+  await submit('birds')
+  await screen.findByText('slow down')
+
+  expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'rate_limited' })
 })
 
 test('submits successfully when consent has not been granted', async () => {

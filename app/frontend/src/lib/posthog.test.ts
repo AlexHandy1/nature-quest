@@ -1,6 +1,14 @@
 import { vi, test, expect, beforeEach } from 'vitest'
 import posthog from 'posthog-js'
-import { initPostHog, optIn, optOut, getDistinctId, hasConsent, CONSENT_KEY } from './posthog'
+import {
+  initPostHog,
+  optIn,
+  optOut,
+  getDistinctId,
+  hasConsent,
+  trackEvent,
+  CONSENT_KEY,
+} from './posthog'
 
 vi.mock('posthog-js', () => ({
   default: {
@@ -8,6 +16,7 @@ vi.mock('posthog-js', () => ({
     opt_in_capturing: vi.fn(),
     opt_out_capturing: vi.fn(),
     get_distinct_id: vi.fn(),
+    capture: vi.fn(),
   },
 }))
 
@@ -61,4 +70,16 @@ test('hasConsent returns false when consent was rejected', () => {
   window.localStorage.setItem(CONSENT_KEY, 'rejected')
 
   expect(hasConsent()).toBe(false)
+})
+
+test('trackEvent calls the SDK capture method with the event name and properties', () => {
+  trackEvent('query_outcome', { status: 'resolved' })
+
+  expect(posthog.capture).toHaveBeenCalledWith('query_outcome', { status: 'resolved' })
+})
+
+test('trackEvent works with no properties', () => {
+  trackEvent('query_submitted')
+
+  expect(posthog.capture).toHaveBeenCalledWith('query_submitted', undefined)
 })

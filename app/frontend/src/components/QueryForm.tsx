@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { getDistinctId, hasConsent } from '../lib/posthog'
+import { getDistinctId, hasConsent, trackEvent } from '../lib/posthog'
 
 type Species = { species: string; count: number }
 
@@ -34,6 +34,7 @@ function QueryForm() {
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
+    trackEvent('query_submitted')
     const response = await fetch('/api/query', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,9 +45,11 @@ function QueryForm() {
       }),
     })
     const body = await response.json()
+    const outcome: Outcome = body.status ?? body.error
     setLoading(false)
+    trackEvent('query_outcome', { status: outcome })
     setResult({
-      outcome: body.status ?? body.error,
+      outcome,
       message: body.message,
       species: body.species,
     })

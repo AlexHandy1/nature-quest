@@ -24,3 +24,7 @@ export function getDistinctId(): string {
 export function hasConsent(): boolean {
   return window.localStorage.getItem(CONSENT_KEY) === 'accepted'
 }
+
+export function trackEvent(event: string, properties?: Record<string, unknown>) {
+  posthog.capture(event, properties)
+}
