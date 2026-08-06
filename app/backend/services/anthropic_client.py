@@ -69,7 +69,7 @@ def _fetch_api_key_from_secret_manager() -> str:
     raise NotImplementedError("REQ-005: Secret Manager fetch not yet built")
 
 
-def resolve_taxon_filter(query: str, client, **extra_kwargs) -> dict | None:
+def resolve_taxon_filter(query: str, client, on_response=None, **extra_kwargs) -> dict | None:
     response = client.messages.create(
         model=MODEL,
         max_tokens=1024,
@@ -79,5 +79,7 @@ def resolve_taxon_filter(query: str, client, **extra_kwargs) -> dict | None:
         messages=[{"role": "user", "content": query}],
         **extra_kwargs,
     )
+    if on_response is not None:
+        on_response(response)
     tool_use = next(block for block in response.content if block.type == "tool_use")
     return tool_use.input["taxonFilter"]

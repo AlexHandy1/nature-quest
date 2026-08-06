@@ -54,6 +54,15 @@ def test_resolve_api_key_raises_on_cloud_run_until_req_005_is_built():
             resolve_api_key()
 
 
+def test_invokes_on_response_with_the_raw_response():
+    client = _mock_client({"taxonFilter": None})
+    seen = []
+
+    resolve_taxon_filter("I want to see birds", client, on_response=seen.append)
+
+    assert seen == [client.messages.create.return_value]
+
+
 def test_passes_extra_kwargs_through_to_the_create_call():
     client = _mock_client({"taxonFilter": None})
 
