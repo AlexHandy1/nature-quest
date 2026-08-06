@@ -6,3 +6,4 @@ prototypes/logs/*
 !prototypes/logs/.gitkeep
 prototypes/osm_sample*.json
 .env
+*.tfvars

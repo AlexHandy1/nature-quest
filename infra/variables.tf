@@ -15,3 +15,8 @@ variable "environment" {
   type        = string
   default     = "production"
 }
+
+variable "posthog_project_token" {
+  description = "PostHog project API token for server-side AI Observability capture (REQ-019). Same value already used for the frontend's VITE_POSTHOG_KEY Docker build arg (CI: vars.POSTHOG_PROJECT_TOKEN) - not sensitive (PostHog project tokens are designed for client-side/public use), but kept as an undefaulted variable rather than hardcoded so the literal value isn't duplicated into version control."
+  type        = string
+}
