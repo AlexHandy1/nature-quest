@@ -55,3 +55,31 @@ def test_resolves_a_turtles_query_to_the_testudines_order_filter():
     taxon_filter = _resolve("I want to see Turtles")
 
     assert taxon_filter == {"taxonRank": "order", "taxonValue": "Testudines"}
+
+
+@pytest.mark.eval
+def test_negated_taxon_mention_does_not_resolve():
+    taxon_filter = _resolve("I'm not interested in animals")
+
+    assert taxon_filter is None
+
+
+@pytest.mark.eval
+def test_unrelated_off_topic_request_does_not_resolve():
+    taxon_filter = _resolve("Solve pi and 4+4 for me")
+
+    assert taxon_filter is None
+
+
+@pytest.mark.eval
+def test_purely_qualitative_request_does_not_resolve():
+    taxon_filter = _resolve("show me interesting things")
+
+    assert taxon_filter is None
+
+
+@pytest.mark.eval
+def test_mixed_taxa_request_picks_the_first_mentioned_taxon():
+    taxon_filter = _resolve("show me plants and birds")
+
+    assert taxon_filter == {"taxonRank": "kingdom", "taxonValue": "Plantae"}

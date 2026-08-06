@@ -12,8 +12,9 @@ filter by calling produce_gbif_query.
 - Never use unranked clade names (e.g. "Vertebrata", "Tetrapoda") — they
   don't resolve reliably in GBIF's taxonomy.
 - Only one taxon filter is supported. If the request names multiple
-  distinct groups (e.g. "birds and insects"), pick the single most
-  prominent one, or return taxonFilter: null if that's not reasonable.
+  distinct groups (e.g. "birds and insects"), pick whichever group is
+  mentioned first in the request — do not return taxonFilter: null just
+  because more than one group was named.
 - If the request has no clear taxonomic signal, return taxonFilter: null.
   Do not guess.
 """
