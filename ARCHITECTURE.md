@@ -4,15 +4,16 @@ A current, whole-system map. For the detailed "why" behind any decision here, fo
 
 ## What's live vs. what's not
 
-**Phase 1 (production foundation)** is built and deployed: a "coming soon" landing page with a consent-gated interest-capture form.
+**Phase 1 (production foundation)** and **Slice 2 (LLM guardrails + first GBIF query)** are both built and **deployed**. The landing page's primary interaction is now `QueryForm`: free text → LLM taxon resolution (real Anthropic call) → GBIF species list, behind per-IP rate limiting and a daily LLM-call budget guardrail, with the Anthropic API key fetched explicitly from Secret Manager at container startup (REQ-005) — never a plain env var in production. Structured operational logging (REQ-017) and consent-gated PostHog observability (REQ-018/019, client- and server-side) are both live. Full detail: `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md`.
 
-**Slice 2 (LLM guardrails + first GBIF query)** is built and locally tested, but **not deployed**: `POST /api/query` (free-text → LLM taxon resolution → GBIF species list) works end-to-end against the real Anthropic API and real GBIF, with per-IP rate limiting and a daily LLM-call budget guardrail. Still outstanding before this can deploy: the Anthropic API key currently reads from a local `.env` (`services/anthropic_client.py`'s `build_client()`) — the Secret Manager explicit-fetch branch (REQ-005) is a `NotImplementedError` placeholder, gated behind `K_SERVICE` so it can't silently run half-built in production. Also outstanding: `infra/secret_manager.tf` provisioning, structured operational logging (REQ-017), PostHog server/client observability (REQ-018/019), basic GCP alerting (REQ-025-027), and the frontend swap from `InterestForm` to a query box (`CON-001`). Full detail: `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md`.
+**Still outstanding from Slice 2's original scope**: basic GCP uptime/error-rate alerting (REQ-025-027) — not yet built. `POST /api/interest`, `InterestSubmission`, and `InterestForm.tsx` are kept in place, dormant/unreferenced, pending a future cleanup slice (`CON-001`) — do not assume they're still the primary interaction.
+
+**REQ-019's implementation deviates from the spec's original design**: the spec specifies OpenTelemetry (`AnthropicInstrumentor` + `PostHogSpanProcessor`); the actual build uses `posthog.ai.anthropic.Anthropic`, a wrapper client — see `docs/decisions/ADR-009-posthog-ai-observability-wrapper-client.md` for why.
 
 The fuller NL-query pipeline beyond Slice 2's scope (waypoint ordering, route generation, narrative, map rendering) is **not built** — it was validated as a throwaway prototype (`prototypes/`, untouched, never deployed) and is later PRD slices, not yet started. Don't assume anything under `app/` implements the full prototype pipeline — Slice 2 only goes as far as a species list.
 
 Within Phase 1 itself, two requirements from the original spec are **deliberately deferred**, not missing by oversight:
-- **Server-side PostHog capture** (client-side only for now) — see `docs/decisions/ADR-007-analytics-consent-abuse-guardrails.md`.
-- **Cloud Armor + load balancer** (Cloud Run `max_instance_count=2` used as an interim cost-creep guardrail instead) — see the same ADR-007 implementation notes.
+- **Cloud Armor + load balancer** (Cloud Run `max_instance_count=2` used as an interim cost-creep guardrail instead) — see `docs/decisions/ADR-007-analytics-consent-abuse-guardrails.md`'s implementation notes.
 
 Full requirement-level detail and status: `docs/specs/spec-infrastructure-production-foundation-300726.md` (search for `[DEFERRED]`).
 
@@ -20,8 +21,8 @@ Full requirement-level detail and status: `docs/specs/spec-infrastructure-produc
 
 ```
 app/backend/    FastAPI — API + serves the built frontend as static files
-app/frontend/   Vite + React + TypeScript — landing page, interest form, consent banner
-infra/          Terraform — GCP infrastructure (Cloud Run, Artifact Registry, IAM, WIF)
+app/frontend/   Vite + React + TypeScript — landing page, query box, consent banner
+infra/          Terraform — GCP infrastructure (Cloud Run, Artifact Registry, Secret Manager, IAM, WIF)
 .github/        GitHub Actions CI/CD
 prototypes/     Throwaway validation code — untouched, never deployed, not part of this architecture
 ```
@@ -33,38 +34,54 @@ main.py                    create_app(): FastAPI instance, JSON stdout logging c
                              slowapi rate-limiter wiring, .env loading (load_dotenv), static-file mount
 routers/interest.py        GET /health, POST /api/interest (Phase 1, still reachable, unused by frontend)
 routers/query.py           POST /api/query (Slice 2) — rate-limited; validate → daily budget →
-                             LLM resolve → taxon key resolve → GBIF fetch → 4-outcome response
+                             LLM resolve (+ token usage capture) → taxon key resolve → GBIF fetch
+                             → 4-outcome response, structured log line on every branch (REQ-017)
 models/interest.py         InterestSubmission (Pydantic) — query only, no PII
-models/query.py            QueryRequest (Pydantic) — query + distinctId, max-length/whitespace validation
+models/query.py            QueryRequest (Pydantic) — query, distinctId, consent (default False)
 services/
-  logging_client.py        Structured Cloud Logging write (every valid interest submission)
-  anthropic_client.py      TAXON_GUIDANCE + QUERY_SCHEMA_TOOL, resolve_taxon_filter(), build_client()
-                             (env-based key source split — see "What's live" above)
+  logging_client.py        log_interest_submission(), log_query_outcome() — structured Cloud Logging
+                             writes (JsonLogFormatter, main.py)
+  anthropic_client.py      TAXON_GUIDANCE + QUERY_SCHEMA_TOOL, resolve_taxon_filter() (accepts an
+                             optional on_response callback + **extra_kwargs passthrough), build_client(),
+                             resolve_api_key() (Secret Manager on Cloud Run via K_SERVICE check, local
+                             ANTHROPIC_API_KEY env var otherwise), _fetch_api_key_from_secret_manager()
+  ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
+                             anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
+                             wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
+                             capture) when consent=True. Lazily builds/reuses a singleton PostHog client
+                             from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. See ADR-009.
   taxon_resolution.py      resolve_taxon_key() — live GBIF species/match only, no local cache (see spec §9)
   gbif_client.py            fetch_top_species() — fixed Retiro polygon/year, scale-guard, retry, ranking
-  rate_limiter.py           slowapi Limiter instance + custom 429 handler (shared across routers)
+  rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
+                             from the still-unconsumed request body for REQ-017's log line, since
+                             slowapi intercepts before FastAPI's own body parsing)
   query_budget.py           Global daily LLM-call counter, threading.Lock-guarded, date-based reset
 static/                    Built frontend assets, copied in at Docker build time — not in git
 ```
 
 One structural rule: any future router must be registered in `create_app()` **before** the static-file mount — the mount matches every remaining path, so a route added after it would be unreachable. Noted inline in `main.py`.
 
-Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` for `POST /api/query` to make real LLM calls — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter reset fixtures needed because both are process-global state). A separate `@pytest.mark.eval` tier (`tests/test_smoke_llm.py`, `pytest.ini`) makes real Anthropic calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`.
+Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls) and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative, mixed-taxa), a real end-to-end GBIF pipeline case, and an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`.
 
 ### Frontend (`app/frontend/`)
 
 ```
-src/App.tsx                       Landing page, mounts InterestForm + ConsentBanner
-src/components/InterestForm.tsx   Submits {query} to POST /api/interest, success/error states
+src/App.tsx                       Landing page, mounts QueryForm + ConsentBanner
+src/components/QueryForm.tsx      One-shot: idle (input+button) → loading (both disabled) → terminal
+                                     result. POSTs {query, distinctId, consent} to /api/query. Renders
+                                     all 4 outcomes + both 429 variants distinctly; species list is
+                                     name+count only (no map yet). Fires query_submitted/query_outcome.
+src/components/InterestForm.tsx   Dormant, unreferenced by App.tsx — kept per CON-001, not deleted
 src/components/ConsentBanner.tsx  Accept/reject, persists choice in localStorage, gates PostHog
-src/lib/posthog.ts                Thin wrapper: init (opt-out-by-default), optIn/optOut
+src/lib/posthog.ts                init (opt-out-by-default), optIn/optOut, getDistinctId(), hasConsent(),
+                                     trackEvent(), exported CONSENT_KEY
 ```
 
 The dev server (`npm run dev`) proxies `/api` and `/health` to `localhost:8000` (`vite.config.ts`) so the two servers behave as one app locally. In production there's no proxy — the backend serves the built frontend from the same origin, so this is dev-only config.
 
 ### Infrastructure (`infra/`)
 
-Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account, an empty Secret Manager scaffold (no secret exists yet), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step and for manual-deploy commands used before CI/CD existed.
+Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN` env var), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account, a Secret Manager secret (`anthropic-api-key`, IAM-bound to that service account — value set out-of-band, never in Terraform), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
 
 ### CI/CD (`.github/workflows/ci-cd.yml`)
 
@@ -73,11 +90,13 @@ Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public,
 ```
 Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     ├─ GET /health, POST /api/interest → routers/interest.py
-                                                    ├─ POST /api/query (local dev only — not yet deployed,
-                                                    │    see "What's live" above) → routers/query.py
-                                                    │    → services/anthropic_client.py (Anthropic API)
+                                                    ├─ POST /api/query → routers/query.py
+                                                    │    → services/ai_observability.py (consent-gated
+                                                    │      client selection) → services/anthropic_client.py
+                                                    │      (Anthropic API, real key from Secret Manager)
                                                     │    → services/taxon_resolution.py (GBIF species/match)
                                                     │    → services/gbif_client.py (GBIF occurrence/search)
+                                                    │    → services/logging_client.py (structured log line)
                                                     └─ everything else → static/ (built frontend)
 ```
 
@@ -94,6 +113,8 @@ Merge to main → same checks again, then:
 ```
 
 Authentication uses Workload Identity Federation — no static GCP keys anywhere. The trust is scoped twice, not just once: the GitHub Actions workflow only runs the deploy job `if: push to main`, **and** GCP's own WIF provider independently rejects any token whose claims aren't `repository == AlexHandy1/nature-quest && ref == refs/heads/main` (`infra/wif.tf`) — so even a modified workflow file on a fork PR couldn't obtain deploy credentials.
+
+`terraform apply` (Secret Manager, Cloud Run config) is a separate manual step, not part of CI/CD — see `infra/README.md`. If GitHub Actions itself is unavailable (a GitHub platform incident, not a repo config issue), `infra/manual_deploy.sh` reproduces the build+deploy jobs from a local machine, tagged by git SHA the same way CI tags images, so it composes cleanly with normal CI deploys rather than colliding with them.
 
 ## Where to go deeper
 

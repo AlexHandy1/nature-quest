@@ -4,27 +4,28 @@ Turn public biodiversity data into navigable nature walks.
 
 Given a location and a natural-language request (e.g. "show me some birds", "something rare"), Nature Quest dynamically selects the species currently present that match, designs a guided walk route through their recorded sighting hotspots, and generates a narrated field guide grounded in real observation data.
 
-**Live (coming-soon landing page + interest capture)**: https://nature-quest-production-465dsuxpnq-ew.a.run.app
+**Live**: https://nature-quest-production-465dsuxpnq-ew.a.run.app — submit a free-text request (e.g. "show me some birds") and get back a real species list for Retiro Park, Madrid.
 
 ## Current state
 
-What's **live and deployed** is Phase 1: the **production foundation** — a "coming soon" landing page with a consent-gated interest-capture form, deployed on real infrastructure with a full CI/CD pipeline, per `docs/specs/spec-infrastructure-production-foundation-300726.md`.
+Phase 1 (production foundation) and Slice 2 (LLM guardrails + a first real GBIF query) are both **built and deployed**. The landing page's primary interaction is `POST /api/query`: free text → a real Anthropic call resolves it to a GBIF taxon → a real GBIF species list comes back — behind per-IP rate limiting, a daily LLM-call budget, structured operational logging, and consent-gated PostHog observability (client- and server-side). The Anthropic API key is fetched explicitly from Secret Manager at container startup, never a plain env var in production. See `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` and `ARCHITECTURE.md` for full detail.
 
-Slice 2 (LLM guardrails + a first real GBIF query) is **built and passing real end-to-end tests locally, but not yet deployed** — `POST /api/query` takes free text, resolves it to a GBIF taxon via a real Anthropic call, and returns a real species list, behind per-IP rate limiting and a daily LLM-call budget. Still needed before deploy: the production Secret Manager key fetch, infra provisioning, operational logging/observability, and the frontend swap to a query box. See `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` and `ARCHITECTURE.md` for detail.
+Still outstanding from Slice 2's scope: basic GCP uptime/error-rate alerting (REQ-025-027).
 
 The fuller NL-query pipeline beyond Slice 2 (waypoint ordering, route, narrative, map) is not built yet — it was validated end-to-end as a throwaway prototype (see below) and is later PRD slices.
 
-- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/interest` (validates and structured-logs a free-text interest signal, no PII), `POST /api/query` (Slice 2, not yet deployed — see above), serves the built frontend as static files.
-- **`app/frontend/`** — Vite + React + TypeScript: landing page, interest form, a custom consent banner gating client-side PostHog analytics.
-- **`infra/`** — Terraform-provisioned GCP infrastructure (Cloud Run, Artifact Registry, Secret Manager scaffold, Workload Identity Federation for CI/CD). See `infra/README.md` for one-time bootstrap/manual-deploy steps.
-- **`.github/workflows/ci-cd.yml`** — lint/type-check → unit tests → build → deploy → post-deploy smoke test, on every push to `main`; PRs get lint/test/build only, no deploy credentials.
+- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/interest` (Phase 1, dormant/unreferenced by the frontend, kept pending a cleanup slice), `POST /api/query` (Slice 2, live), serves the built frontend as static files.
+- **`app/frontend/`** — Vite + React + TypeScript: landing page, the query box (`QueryForm`), a custom consent banner gating client-side PostHog analytics.
+- **`infra/`** — Terraform-provisioned GCP infrastructure (Cloud Run, Artifact Registry, Secret Manager, Workload Identity Federation for CI/CD). See `infra/README.md` for one-time bootstrap/`terraform apply`/manual-deploy steps.
+- **`.github/workflows/ci-cd.yml`** — lint/type-check → unit tests → build → deploy → post-deploy smoke test, on every push to `main`; PRs get lint/test/build only, no deploy credentials. `infra/manual_deploy.sh` reproduces this locally if GitHub Actions itself is unavailable.
 
 ### Running it locally
 
 Two servers, in separate terminals:
 
 ```bash
-# backend — POST /api/query needs ANTHROPIC_API_KEY in a repo-root .env (gitignored)
+# backend — POST /api/query needs ANTHROPIC_API_KEY in a repo-root .env (gitignored);
+# add POSTHOG_PROJECT_TOKEN too if testing server-side PostHog capture (consent=True)
 cd app/backend
 python -m venv venv && source venv/bin/activate   # first time only
 pip install -r requirements-dev.txt                # first time only
