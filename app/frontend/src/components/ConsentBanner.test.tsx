@@ -7,6 +7,7 @@ import { optIn, optOut } from '../lib/posthog'
 vi.mock('../lib/posthog', () => ({
   optIn: vi.fn(),
   optOut: vi.fn(),
+  CONSENT_KEY: 'analytics-consent',
 }))
 
 beforeEach(() => {

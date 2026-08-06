@@ -7,6 +7,9 @@ vi.mock('./lib/posthog', () => ({
   initPostHog: vi.fn(),
   optIn: vi.fn(),
   optOut: vi.fn(),
+  getDistinctId: vi.fn(() => 'anon-test'),
+  hasConsent: vi.fn(() => false),
+  CONSENT_KEY: 'analytics-consent',
 }))
 
 beforeEach(() => {

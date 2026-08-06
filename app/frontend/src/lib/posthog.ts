@@ -1,5 +1,7 @@
 import posthog from 'posthog-js'
 
+export const CONSENT_KEY = 'analytics-consent'
+
 export function initPostHog() {
   posthog.init(import.meta.env.VITE_POSTHOG_KEY, {
     api_host: 'https://eu.i.posthog.com',
@@ -13,4 +15,12 @@ export function optIn() {
 
 export function optOut() {
   posthog.opt_out_capturing()
+}
+
+export function getDistinctId(): string {
+  return posthog.get_distinct_id()
+}
+
+export function hasConsent(): boolean {
+  return window.localStorage.getItem(CONSENT_KEY) === 'accepted'
 }

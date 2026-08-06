@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { optIn, optOut } from '../lib/posthog'
-
-const CONSENT_KEY = 'analytics-consent'
+import { optIn, optOut, CONSENT_KEY } from '../lib/posthog'
 
 function ConsentBanner() {
   const [choice, setChoice] = useState(() => window.localStorage.getItem(CONSENT_KEY))
