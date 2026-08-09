@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from models.query import QueryRequest
 from services import ai_observability
-from services.anthropic_client import resolve_api_key, resolve_taxon_filter
+from services.anthropic_client import resolve_api_key, resolve_taxon_filters
 from services.gbif_client import GbifUnavailableError, fetch_top_species
 from services.logging_client import log_query_outcome
 from services.query_budget import try_consume_daily_budget
@@ -21,7 +21,7 @@ DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please t
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 
 
-def _resolve_taxon_filter(query: str, distinct_id: str, consent: bool) -> tuple[dict | None, dict]:
+def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
     client = ai_observability.build_client(
         consent=consent, distinct_id=distinct_id, api_key=resolve_api_key()
     )
@@ -32,10 +32,10 @@ def _resolve_taxon_filter(query: str, distinct_id: str, consent: bool) -> tuple[
         usage["input_tokens"] = response.usage.input_tokens
         usage["output_tokens"] = response.usage.output_tokens
 
-    taxon_filter = resolve_taxon_filter(
+    taxon_filters = resolve_taxon_filters(
         query, client, on_response=_capture_usage, **extra_kwargs
     )
-    return taxon_filter, usage
+    return taxon_filters, usage
 
 
 @router.post("/api/query")
@@ -48,19 +48,19 @@ def submit_query(request: Request, body: QueryRequest):
             content={"error": "daily_limit_reached", "message": DAILY_LIMIT_MESSAGE},
         )
 
-    taxon_filter, usage = _resolve_taxon_filter(body.query, body.distinctId, body.consent)
-    if taxon_filter is None:
+    taxon_filters, usage = _resolve_taxon_filters(body.query, body.distinctId, body.consent)
+    if not taxon_filters:
         log_query_outcome(body.query, "unresolved", **usage)
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
 
-    taxon_key = resolve_taxon_key(taxon_filter["taxonRank"], taxon_filter["taxonValue"])
-    if taxon_key is None:
+    resolved, unresolved_groups = _resolve_taxon_keys(taxon_filters)
+    if not resolved:
         log_query_outcome(body.query, "unresolved", **usage)
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
 
     try:
         species = fetch_top_species(
-            [{"taxon_rank": taxon_filter["taxonRank"], "taxon_key": taxon_key}]
+            [{"taxon_rank": r["taxonRank"], "taxon_key": r["taxon_key"]} for r in resolved]
         )
     except GbifUnavailableError:
         log_query_outcome(body.query, "gbif_unavailable", **usage)
@@ -69,20 +69,36 @@ def submit_query(request: Request, body: QueryRequest):
             content={"status": "gbif_unavailable", "message": GBIF_UNAVAILABLE_MESSAGE},
         )
 
+    resolved_filters = [
+        {"taxonRank": r["taxonRank"], "taxonValue": r["taxonValue"]} for r in resolved
+    ]
+
     if not species:
         log_query_outcome(body.query, "no_results", gbif_result_count=0, **usage)
         return {
             "status": "no_results",
-            "taxonRank": taxon_filter["taxonRank"],
-            "taxonValue": taxon_filter["taxonValue"],
+            "taxonFilters": resolved_filters,
+            "unresolvedGroups": unresolved_groups,
             "message": NO_RESULTS_MESSAGE,
         }
 
     log_query_outcome(body.query, "resolved", gbif_result_count=len(species), **usage)
     return {
         "status": "resolved",
-        "taxonRank": taxon_filter["taxonRank"],
-        "taxonValue": taxon_filter["taxonValue"],
+        "taxonFilters": resolved_filters,
+        "unresolvedGroups": unresolved_groups,
         "species": species,
         "message": RESOLVED_MESSAGE,
     }
+
+
+def _resolve_taxon_keys(taxon_filters: list[dict]) -> tuple[list[dict], list[str]]:
+    resolved = []
+    unresolved_groups = []
+    for taxon_filter in taxon_filters:
+        taxon_key = resolve_taxon_key(taxon_filter["taxonRank"], taxon_filter["taxonValue"])
+        if taxon_key is None:
+            unresolved_groups.append(taxon_filter["taxonValue"])
+        else:
+            resolved.append({**taxon_filter, "taxon_key": taxon_key})
+    return resolved, unresolved_groups

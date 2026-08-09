@@ -1,13 +1,13 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from routers.query import _resolve_taxon_filter
+from routers.query import _resolve_taxon_filters
 
 
 def _mock_client() -> MagicMock:
     client = MagicMock()
     client.messages.create.return_value = SimpleNamespace(
-        content=[SimpleNamespace(type="tool_use", input={"taxonFilter": None})],
+        content=[SimpleNamespace(type="tool_use", input={"taxonFilters": []})],
         usage=SimpleNamespace(input_tokens=120, output_tokens=15),
     )
     return client
@@ -16,7 +16,7 @@ def _mock_client() -> MagicMock:
 def test_consent_false_builds_a_non_observed_client_with_no_extra_kwargs():
     client = _mock_client()
     with patch("routers.query.ai_observability.build_client", return_value=client) as mock_build:
-        _resolve_taxon_filter("birds", distinct_id="anon-1", consent=False)
+        _resolve_taxon_filters("birds", distinct_id="anon-1", consent=False)
 
     mock_build.assert_called_once_with(consent=False, distinct_id="anon-1", api_key=None)
     _, kwargs = client.messages.create.call_args
@@ -26,7 +26,7 @@ def test_consent_false_builds_a_non_observed_client_with_no_extra_kwargs():
 def test_consent_true_builds_an_observed_client_and_passes_distinct_id():
     client = _mock_client()
     with patch("routers.query.ai_observability.build_client", return_value=client) as mock_build:
-        _resolve_taxon_filter("birds", distinct_id="anon-1", consent=True)
+        _resolve_taxon_filters("birds", distinct_id="anon-1", consent=True)
 
     mock_build.assert_called_once_with(consent=True, distinct_id="anon-1", api_key=None)
     _, kwargs = client.messages.create.call_args
@@ -36,7 +36,7 @@ def test_consent_true_builds_an_observed_client_and_passes_distinct_id():
 def test_returns_the_taxon_filter_and_token_usage():
     client = _mock_client()
     with patch("routers.query.ai_observability.build_client", return_value=client):
-        taxon_filter, usage = _resolve_taxon_filter("birds", distinct_id="anon-1", consent=False)
+        taxon_filters, usage = _resolve_taxon_filters("birds", distinct_id="anon-1", consent=False)
 
-    assert taxon_filter is None
+    assert taxon_filters == []
     assert usage == {"input_tokens": 120, "output_tokens": 15}

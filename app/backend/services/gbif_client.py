@@ -29,10 +29,10 @@ class GbifUnavailableError(Exception):
     """Raised when GBIF occurrence/search fails after all retries."""
 
 
-def fetch_top_species(taxon_filters: list[dict]) -> list[dict]:
+def fetch_top_species(taxon_filters: list[dict], polygon: str = GBIF_POLYGON) -> list[dict]:
     groups = [
         _rank_top_species(
-            _fetch_occurrences({KEY_PARAM_BY_RANK[f["taxon_rank"]]: f["taxon_key"]})
+            _fetch_occurrences({KEY_PARAM_BY_RANK[f["taxon_rank"]]: f["taxon_key"]}, polygon)
         )
         for f in taxon_filters
     ]
@@ -66,15 +66,15 @@ def _select_species_across_groups(groups: list[list[dict]], target_total: int) -
     return selected
 
 
-def _fetch_occurrences(extra_params: dict) -> list[dict]:
-    probe = _gbif_search({**_base_params(YEAR_RANGE), "limit": 0, **extra_params})
+def _fetch_occurrences(extra_params: dict, polygon: str) -> list[dict]:
+    probe = _gbif_search({**_base_params(YEAR_RANGE, polygon), "limit": 0, **extra_params})
     year = FALLBACK_YEAR if probe.get("count", 0) > SCALE_GUARD_THRESHOLD else YEAR_RANGE
 
     results = []
     offset = 0
     while True:
         data = _gbif_search(
-            {**_base_params(year), "limit": 300, "offset": offset, **extra_params}
+            {**_base_params(year, polygon), "limit": 300, "offset": offset, **extra_params}
         )
         page = data.get("results", [])
         results.extend(page)
@@ -84,9 +84,9 @@ def _fetch_occurrences(extra_params: dict) -> list[dict]:
     return results
 
 
-def _base_params(year: str) -> dict:
+def _base_params(year: str, polygon: str) -> dict:
     return {
-        "geometry": GBIF_POLYGON,
+        "geometry": polygon,
         "year": year,
         "hasCoordinate": "true",
         "occurrenceStatus": "PRESENT",

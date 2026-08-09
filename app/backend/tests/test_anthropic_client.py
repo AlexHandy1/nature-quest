@@ -8,7 +8,7 @@ from services.anthropic_client import (
     QUERY_SCHEMA_TOOL,
     TAXON_GUIDANCE,
     resolve_api_key,
-    resolve_taxon_filter,
+    resolve_taxon_filters,
 )
 
 
@@ -21,17 +21,35 @@ def _mock_client(tool_input: dict) -> MagicMock:
 
 
 def test_returns_the_resolved_taxon_filter():
-    client = _mock_client({"taxonFilter": {"taxonRank": "class", "taxonValue": "Aves"}})
+    client = _mock_client({"taxonFilters": [{"taxonRank": "class", "taxonValue": "Aves"}]})
 
-    taxon_filter = resolve_taxon_filter("I want to see birds", client)
+    taxon_filters = resolve_taxon_filters("I want to see birds", client)
 
-    assert taxon_filter == {"taxonRank": "class", "taxonValue": "Aves"}
+    assert taxon_filters == [{"taxonRank": "class", "taxonValue": "Aves"}]
+
+
+def test_returns_multiple_taxon_filters_for_a_mixed_taxa_query():
+    client = _mock_client(
+        {
+            "taxonFilters": [
+                {"taxonRank": "class", "taxonValue": "Aves"},
+                {"taxonRank": "kingdom", "taxonValue": "Plantae"},
+            ]
+        }
+    )
+
+    taxon_filters = resolve_taxon_filters("birds and plants", client)
+
+    assert taxon_filters == [
+        {"taxonRank": "class", "taxonValue": "Aves"},
+        {"taxonRank": "kingdom", "taxonValue": "Plantae"},
+    ]
 
 
 def test_forces_structured_output_via_the_taxon_tool():
-    client = _mock_client({"taxonFilter": None})
+    client = _mock_client({"taxonFilters": []})
 
-    resolve_taxon_filter("I want to see birds", client)
+    resolve_taxon_filters("I want to see birds", client)
 
     client.messages.create.assert_called_once_with(
         model=MODEL,
@@ -73,18 +91,18 @@ def test_resolve_api_key_fetches_from_secret_manager_on_cloud_run():
 
 
 def test_invokes_on_response_with_the_raw_response():
-    client = _mock_client({"taxonFilter": None})
+    client = _mock_client({"taxonFilters": []})
     seen = []
 
-    resolve_taxon_filter("I want to see birds", client, on_response=seen.append)
+    resolve_taxon_filters("I want to see birds", client, on_response=seen.append)
 
     assert seen == [client.messages.create.return_value]
 
 
 def test_passes_extra_kwargs_through_to_the_create_call():
-    client = _mock_client({"taxonFilter": None})
+    client = _mock_client({"taxonFilters": []})
 
-    resolve_taxon_filter("I want to see birds", client, posthog_distinct_id="anon-1")
+    resolve_taxon_filters("I want to see birds", client, posthog_distinct_id="anon-1")
 
     client.messages.create.assert_called_once_with(
         model=MODEL,

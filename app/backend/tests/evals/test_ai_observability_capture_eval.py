@@ -3,7 +3,7 @@ import os
 import pytest
 
 from services import ai_observability
-from services.anthropic_client import resolve_api_key, resolve_taxon_filter
+from services.anthropic_client import resolve_api_key, resolve_taxon_filters
 
 REQUIRES_POSTHOG = pytest.mark.skipif(
     "POSTHOG_PROJECT_TOKEN" not in os.environ,
@@ -18,9 +18,9 @@ def test_consent_true_sends_a_real_ai_generation_event_to_posthog():
         consent=True, distinct_id="eval-suite", api_key=resolve_api_key()
     )
 
-    taxon_filter = resolve_taxon_filter(
+    taxon_filters = resolve_taxon_filters(
         "I want to see birds", client, posthog_distinct_id="eval-suite"
     )
     ai_observability._posthog_client.flush()
 
-    assert taxon_filter == {"taxonRank": "class", "taxonValue": "Aves"}
+    assert taxon_filters == [{"taxonRank": "class", "taxonValue": "Aves"}]

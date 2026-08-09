@@ -4,6 +4,7 @@ import pytest
 
 from services.gbif_client import (
     FALLBACK_YEAR,
+    GBIF_POLYGON,
     MAX_RETRIES,
     SCALE_GUARD_THRESHOLD,
     YEAR_RANGE,
@@ -59,6 +60,37 @@ def test_merges_species_across_multiple_taxon_filters_by_quota():
         "Quercus ilex",
         "Pinus pinea",
     ]
+
+
+def test_defaults_to_the_retiro_park_polygon():
+    seen_geometries = []
+
+    def fake_search(params):
+        seen_geometries.append(params.get("geometry"))
+        if params.get("limit") == 0:
+            return {"count": 0}
+        return {"results": [], "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    assert seen_geometries and all(g == GBIF_POLYGON for g in seen_geometries)
+
+
+def test_uses_a_provided_polygon_instead_of_the_default():
+    custom_polygon = "POLYGON((0 0,0 1,1 1,1 0,0 0))"
+    seen_geometries = []
+
+    def fake_search(params):
+        seen_geometries.append(params.get("geometry"))
+        if params.get("limit") == 0:
+            return {"count": 0}
+        return {"results": [], "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}], polygon=custom_polygon)
+
+    assert seen_geometries and all(g == custom_polygon for g in seen_geometries)
 
 
 def test_ranks_species_with_the_most_observed_first():
