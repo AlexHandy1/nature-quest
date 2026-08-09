@@ -29,10 +29,41 @@ class GbifUnavailableError(Exception):
     """Raised when GBIF occurrence/search fails after all retries."""
 
 
-def fetch_top_species(taxon_rank: str, taxon_key: int) -> list[dict]:
-    extra_params = {KEY_PARAM_BY_RANK[taxon_rank]: taxon_key}
-    occurrences = _fetch_occurrences(extra_params)
-    return _rank_top_species(occurrences)
+def fetch_top_species(taxon_filters: list[dict]) -> list[dict]:
+    groups = [
+        _rank_top_species(
+            _fetch_occurrences({KEY_PARAM_BY_RANK[f["taxon_rank"]]: f["taxon_key"]})
+        )
+        for f in taxon_filters
+    ]
+    return _select_species_across_groups(groups, TOP_SPECIES_COUNT)
+
+
+def _select_species_across_groups(groups: list[list[dict]], target_total: int) -> list[dict]:
+    num_groups = len(groups)
+    base_quota, remainder = divmod(target_total, num_groups)
+    quotas = [base_quota + (1 if i < remainder else 0) for i in range(num_groups)]
+
+    taken = [group[:quota] for group, quota in zip(groups, quotas)]
+    shortfall = target_total - sum(len(t) for t in taken)
+
+    while shortfall > 0:
+        gave_any = False
+        for i, group in enumerate(groups):
+            if shortfall == 0:
+                break
+            available_extra = group[len(taken[i]) : len(taken[i]) + 1]
+            if available_extra:
+                taken[i].extend(available_extra)
+                shortfall -= 1
+                gave_any = True
+        if not gave_any:
+            break
+
+    selected = []
+    for group_taken in taken:
+        selected.extend(group_taken)
+    return selected
 
 
 def _fetch_occurrences(extra_params: dict) -> list[dict]:
@@ -112,6 +143,4 @@ def _rank_top_species(occurrences: list[dict]) -> list[dict]:
                 "hotspot_lon": sum(p[1] for p in points) / len(points),
             }
         )
-        if len(species_list) == TOP_SPECIES_COUNT:
-            break
     return species_list

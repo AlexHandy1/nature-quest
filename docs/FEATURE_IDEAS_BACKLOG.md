@@ -74,6 +74,12 @@ An internal tool (not user-facing) that sends the maintainer a daily email summa
 
 Surfaced while scoping `spec-tool-llm-guardrails-gbif-query-040826.md`, which adds the first structured logging (`REQ-017`) and both PostHog observability channels (`REQ-018`/`REQ-019`) this digest would draw on — worth revisiting once that slice is live and there's real traffic/log data to summarise. Complementary to, not a replacement for, the basic uptime/5xx alerting (`REQ-025`-`REQ-027`) in the same spec, which is real-time/threshold-based rather than a daily rollup.
 
+## Full GBIF catalogue + vector DB semantic taxon search
+
+A more comprehensive alternative to the current lay-term → GBIF-rank resolution approach (LLM worked examples for common cases like birds/fish/reptiles, live `species/match` for everything else): download the full GBIF backbone taxonomy catalogue and build a vector DB (embeddings over scientific names, common names, and taxonomic metadata) to do semantic search over it directly. Would remove the need to hand-curate lay-term worked examples (fish's 7-order union, reptile's 4-class union, etc.) or rely on the LLM correctly recalling specific scientific names from a system prompt — instead, "fish" or any other lay/vague term could be resolved by nearest-neighbour semantic search against the real, complete taxonomy.
+
+Surfaced while deciding against a curated cache or deterministic lay-term expansion for Slice A's multi-taxon query support (see `slice3_enhanced_query_to_route_ordering_on_map` branch) — those decisions deliberately kept things flexible/simple for now (LLM-taught worked examples only), but this is the more complete, scalable answer if lay-term taxon resolution accuracy or coverage becomes a real problem worth prioritising.
+
 ## Internal capability: agent-browser-driven end-to-end smoke tests
 
 An internal tool/skill that runs a scripted manual smoke test fully end-to-end against the live (or local dev) app via `agent-browser`, rather than a human clicking through it each time — e.g. confirming the consent banner's accept/reject workflow persists correctly, submitting a real query through `QueryForm` and confirming the right outcome renders (resolved species list, unresolved/no_results/gbif_unavailable/429 copy), and checking PostHog/Cloud Logging for the resulting events.

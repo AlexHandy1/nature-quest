@@ -22,6 +22,45 @@ def _occurrence(species, lat, lon, kingdom="Animalia"):
     }
 
 
+def test_merges_species_across_multiple_taxon_filters_by_quota():
+    birds = [
+        _occurrence("Turdus merula", 40.41, -3.68),
+        _occurrence("Turdus merula", 40.41, -3.68),
+        _occurrence("Turdus merula", 40.41, -3.68),
+        _occurrence("Passer domesticus", 40.42, -3.69),
+        _occurrence("Passer domesticus", 40.42, -3.69),
+        _occurrence("Corvus monedula", 40.43, -3.70),
+    ]
+    plants = [
+        _occurrence("Quercus ilex", 40.41, -3.68, kingdom="Plantae"),
+        _occurrence("Quercus ilex", 40.41, -3.68, kingdom="Plantae"),
+        _occurrence("Pinus pinea", 40.42, -3.69, kingdom="Plantae"),
+    ]
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": 1}
+        if "classKey" in params:
+            return {"results": birds, "endOfRecords": True}
+        return {"results": plants, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species(
+            [
+                {"taxon_rank": "class", "taxon_key": 212},
+                {"taxon_rank": "kingdom", "taxon_key": 6},
+            ]
+        )
+
+    assert [s["species"] for s in species_list] == [
+        "Turdus merula",
+        "Passer domesticus",
+        "Corvus monedula",
+        "Quercus ilex",
+        "Pinus pinea",
+    ]
+
+
 def test_ranks_species_with_the_most_observed_first():
     occurrences = [_occurrence("Turdus merula", 40.41, -3.68)] * 3 + [
         _occurrence("Passer domesticus", 40.42, -3.69)
@@ -33,7 +72,7 @@ def test_ranks_species_with_the_most_observed_first():
         return {"results": occurrences, "endOfRecords": True}
 
     with patch("services.gbif_client._gbif_search", side_effect=fake_search):
-        species_list = fetch_top_species("class", 212)
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
     assert [s["species"] for s in species_list] == ["Passer domesticus", "Turdus merula"]
     assert species_list[0]["count"] == 5
@@ -50,7 +89,7 @@ def test_falls_back_to_a_single_year_when_the_scale_guard_threshold_is_exceeded(
         return {"results": [], "endOfRecords": True}
 
     with patch("services.gbif_client._gbif_search", side_effect=fake_search):
-        fetch_top_species("class", 212)
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
     assert fetch_years == [FALLBACK_YEAR]
 
@@ -65,7 +104,7 @@ def test_uses_the_full_year_range_when_under_the_scale_guard_threshold():
         return {"results": [], "endOfRecords": True}
 
     with patch("services.gbif_client._gbif_search", side_effect=fake_search):
-        fetch_top_species("class", 212)
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
     assert fetch_years == [YEAR_RANGE]
 
@@ -82,7 +121,7 @@ def test_combines_occurrences_across_multiple_pages():
         return {"results": page_two, "endOfRecords": True}
 
     with patch("services.gbif_client._gbif_search", side_effect=fake_search):
-        species_list = fetch_top_species("class", 212)
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
     assert species_list[0]["count"] == 2
 
@@ -94,7 +133,7 @@ def test_returns_no_species_when_gbif_has_zero_occurrences():
         return {"results": [], "endOfRecords": True}
 
     with patch("services.gbif_client._gbif_search", side_effect=fake_search):
-        species_list = fetch_top_species("class", 212)
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
     assert species_list == []
 
@@ -102,7 +141,7 @@ def test_returns_no_species_when_gbif_has_zero_occurrences():
 def test_raises_when_gbif_fails_after_all_retries():
     with patch("services.gbif_client._request_occurrence_page", return_value=None):
         with pytest.raises(GbifUnavailableError):
-            fetch_top_species("class", 212)
+            fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
 
 def test_retries_the_configured_number_of_times_before_giving_up():

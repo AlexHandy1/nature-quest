@@ -59,7 +59,9 @@ def submit_query(request: Request, body: QueryRequest):
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
 
     try:
-        species = fetch_top_species(taxon_filter["taxonRank"], taxon_key)
+        species = fetch_top_species(
+            [{"taxon_rank": taxon_filter["taxonRank"], "taxon_key": taxon_key}]
+        )
     except GbifUnavailableError:
         log_query_outcome(body.query, "gbif_unavailable", **usage)
         return JSONResponse(
