@@ -97,6 +97,29 @@ def test_resolved_query_with_multiple_taxon_filters_merges_species():
     mock_log.assert_called_once_with("birds and plants", "resolved", gbif_result_count=2)
 
 
+def test_more_than_ten_taxon_filters_caps_gbif_calls_and_marks_the_rest_unresolved():
+    taxon_filters = [
+        {"taxonRank": "class", "taxonValue": f"Group{i}"} for i in range(11)
+    ]
+
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters", return_value=(taxon_filters, {})
+        ),
+        patch("routers.query.resolve_taxon_key", side_effect=range(10)),
+        patch("routers.query.fetch_top_species", return_value=[]),
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post(
+            "/api/query", json={"query": "eleven groups", "distinctId": "anon-1"}
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert len(body["taxonFilters"]) == 10
+    assert body["unresolvedGroups"] == ["Group10"]
+
+
 def test_no_taxonomic_signal_returns_unresolved_with_no_gbif_call():
     with (
         patch("routers.query._resolve_taxon_filters", return_value=([], {})),

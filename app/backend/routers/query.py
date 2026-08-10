@@ -19,6 +19,7 @@ NO_RESULTS_MESSAGE = "We understood your request, but didn't find anything for i
 GBIF_UNAVAILABLE_MESSAGE = "We're having trouble reaching nature data right now — try again shortly."
 DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please try again tomorrow."
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
+MAX_TAXON_FILTERS = 10
 
 
 def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
@@ -53,7 +54,12 @@ def submit_query(request: Request, body: QueryRequest):
         log_query_outcome(body.query, "unresolved", **usage)
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
 
-    resolved, unresolved_groups = _resolve_taxon_keys(taxon_filters)
+    in_budget, over_budget = (
+        taxon_filters[:MAX_TAXON_FILTERS],
+        taxon_filters[MAX_TAXON_FILTERS:],
+    )
+    resolved, unresolved_groups = _resolve_taxon_keys(in_budget)
+    unresolved_groups += [f["taxonValue"] for f in over_budget]
     if not resolved:
         log_query_outcome(body.query, "unresolved", **usage)
         return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
