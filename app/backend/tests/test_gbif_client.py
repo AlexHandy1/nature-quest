@@ -25,7 +25,7 @@ def _occurrence(species, lat, lon, kingdom="Animalia"):
     }
 
 
-def test_merges_species_across_multiple_taxon_filters_by_quota():
+def test_merges_species_across_multiple_taxon_filters_by_quota_then_sorts_by_count():
     birds = [
         _occurrence("Turdus merula", 40.41, -3.68),
         _occurrence("Turdus merula", 40.41, -3.68),
@@ -55,13 +55,52 @@ def test_merges_species_across_multiple_taxon_filters_by_quota():
             ]
         )
 
+    # Quota selects Turdus/Passer/Corvus (birds) + Quercus/Pinus (plants) for
+    # fairness, but the final list is sorted by count descending, not by
+    # group. Passer and Quercus tie at count 2 — stable sort keeps Passer
+    # (which came first pre-sort) ahead of Quercus.
     assert [s["species"] for s in species_list] == [
         "Turdus merula",
         "Passer domesticus",
-        "Corvus monedula",
         "Quercus ilex",
+        "Corvus monedula",
         "Pinus pinea",
     ]
+    assert [s["count"] for s in species_list] == [3, 2, 2, 1, 1]
+
+
+def test_sorts_the_final_merged_selection_by_observation_count_descending():
+    # Reproduces the reported bug: a low-count species from the first-
+    # mentioned group (e.g. a lizard, quota-selected for fairness) was
+    # appearing ahead of a much-higher-count species from a later group
+    # (e.g. a turtle), because groups were concatenated in mention order
+    # without a final re-sort by count.
+    lizards = [_occurrence("Podarcis virescens", 40.41, -3.68)]
+    turtles = [_occurrence("Trachemys scripta", 40.42, -3.69)] * 121 + [
+        _occurrence("Graptemys pseudogeographica", 40.43, -3.70)
+    ] * 16
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": 1}
+        if "orderKey" in params and params["orderKey"] == 1:
+            return {"results": lizards, "endOfRecords": True}
+        return {"results": turtles, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species(
+            [
+                {"taxon_rank": "order", "taxon_key": 1},
+                {"taxon_rank": "order", "taxon_key": 2},
+            ]
+        )
+
+    assert [s["species"] for s in species_list] == [
+        "Trachemys scripta",
+        "Graptemys pseudogeographica",
+        "Podarcis virescens",
+    ]
+    assert [s["count"] for s in species_list] == [121, 16, 1]
 
 
 def test_fetches_multiple_taxon_filters_concurrently_not_sequentially():

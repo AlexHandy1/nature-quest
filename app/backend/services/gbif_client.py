@@ -67,7 +67,7 @@ def _select_species_across_groups(groups: list[list[dict]], target_total: int) -
     selected = []
     for group_taken in taken:
         selected.extend(group_taken)
-    return selected
+    return sorted(selected, key=lambda s: s["count"], reverse=True)
 
 
 def _fetch_occurrences(extra_params: dict, polygon: str) -> list[dict]:

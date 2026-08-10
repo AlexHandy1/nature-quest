@@ -94,6 +94,30 @@ def _species_is_a_curated_fish_group_member(scientific_name: str) -> bool:
     )
 
 
+# Mirrors the "reptiles" worked example in TAXON_GUIDANCE: no single GBIF
+# "Reptilia" class, so it's expanded into four class-rank entries.
+REPTILE_CLASSES = {"Crocodylia", "Squamata", "Testudines", "Sphenodontia"}
+
+
+def _species_is_a_curated_reptile_group_member(scientific_name: str) -> bool:
+    return any(
+        _species_belongs_to_class(scientific_name, reptile_class)
+        for reptile_class in REPTILE_CLASSES
+    )
+
+
+# Mirrors the "reptiles" worked example in TAXON_GUIDANCE: no single GBIF
+# "Reptilia" class, so it's expanded into four class-rank entries.
+REPTILE_CLASSES = {"Crocodylia", "Squamata", "Testudines", "Sphenodontia"}
+
+
+def _species_is_a_curated_reptile_group_member(scientific_name: str) -> bool:
+    return any(
+        _species_belongs_to_class(scientific_name, reptile_class)
+        for reptile_class in REPTILE_CLASSES
+    )
+
+
 @pytest.mark.eval
 def test_birds_query_returns_a_non_empty_list_of_genuinely_aves_species():
     species_list = _run_pipeline("I want to see birds")
@@ -119,21 +143,20 @@ def test_birds_and_plants_query_returns_a_genuine_mix_of_both_groups():
 
 
 @pytest.mark.eval
-def test_fish_birds_and_insects_query_places_the_first_mentioned_group_first():
-    # "Fish" is mentioned first, so its 7 curated groups are the first entries
-    # in taxon_filters, and ThreadPoolExecutor.map preserves that order into
-    # fetch_top_species's group list regardless of thread completion order —
-    # so the first species in the merged, quota-based result should come from
-    # the fish groups (Actinopterygii bony fish, or Elasmobranchii sharks/rays).
-    # It could still end up later than index 0 if the first fish group has no
-    # local observations and the round-robin shortfall logic gives its slot to
-    # a later group instead — that's expected, not a bug.
+def test_fish_birds_and_insects_query_sorts_the_merged_result_by_count_descending():
+    # "Fish" expands to 7 curated groups, mentioned before Birds/Insects, so
+    # taxon_filters (and therefore fetch_top_species's group list) puts fish
+    # groups first. Quota selection picks species per group for fairness
+    # across taxa, but the merged, displayed list must still come back sorted
+    # by observation count overall — a low-count species from an
+    # earlier-mentioned group must not outrank a high-count species from a
+    # later one just because of group order.
     species_list = _run_pipeline("Show me Fish, Birds and Insects")
 
     assert species_list
-    first = species_list[0]
-    assert _species_is_a_curated_fish_group_member(first["species"]), (
-        f"{first['species']} (first in list) did not verify as a curated fish group member"
+    counts = [s["count"] for s in species_list]
+    assert counts == sorted(counts, reverse=True), (
+        f"species list not sorted by count descending: {species_list!r}"
     )
 
     for species in species_list:
@@ -142,4 +165,28 @@ def test_fish_birds_and_insects_query_places_the_first_mentioned_group_first():
         is_insect = _species_belongs_to_class(species["species"], "Insecta")
         assert is_fish or is_bird or is_insect, (
             f"{species['species']} did not verify as fish, Aves, or Insecta"
+        )
+
+
+@pytest.mark.eval
+def test_reptiles_and_fish_query_sorts_the_merged_result_by_count_descending():
+    # Reproduces the exact bug report: "reptiles" expands to 4 curated
+    # groups and "fish" to 7, for 11 total groups (capped at
+    # routers.query.MAX_TAXON_FILTERS = 10, so one group is dropped as
+    # unresolved — expected, not asserted on here). Reported symptom was a
+    # count-1 lizard appearing ahead of a count-121 turtle because groups
+    # were concatenated by mention order without a final sort by count.
+    species_list = _run_pipeline("Show me reptiles and fish")
+
+    assert species_list
+    counts = [s["count"] for s in species_list]
+    assert counts == sorted(counts, reverse=True), (
+        f"species list not sorted by count descending: {species_list!r}"
+    )
+
+    for species in species_list:
+        is_reptile = _species_is_a_curated_reptile_group_member(species["species"])
+        is_fish = _species_is_a_curated_fish_group_member(species["species"])
+        assert is_reptile or is_fish, (
+            f"{species['species']} did not verify as a curated reptile or fish group member"
         )
