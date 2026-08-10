@@ -1,20 +1,10 @@
 from services.logging_client import (
-    log_interest_submission,
     log_llm_taxon_filters_resolved,
     log_query_outcome,
     log_query_submitted,
     log_species_selected,
     log_waypoints_ordered,
 )
-
-
-def test_log_interest_submission_logs_the_query(caplog):
-    with caplog.at_level("INFO"):
-        log_interest_submission(query="show me some birds near here")
-
-    record = caplog.records[0]
-    assert record.message == "interest_submission_received"
-    assert record.query == "show me some birds near here"
 
 
 def test_log_query_outcome_logs_the_resolved_outcome(caplog):

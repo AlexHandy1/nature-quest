@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
-from routers.interest import router as interest_router
+from routers.health import router as health_router
 from routers.query import router as query_router
 from services.rate_limiter import handle_rate_limit_exceeded, limiter
 
@@ -42,7 +42,7 @@ def create_app(static_dir: Path = DEFAULT_STATIC_DIR) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, handle_rate_limit_exceeded)
-    app.include_router(interest_router)
+    app.include_router(health_router)
     app.include_router(query_router)
     # Any future router must be included above this line — the static mount
     # matches every remaining path, so routes added after it are unreachable.

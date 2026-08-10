@@ -119,4 +119,3 @@ jobs:
         run: |
           URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format="value(status.url)")
           curl -sf "$URL/health" | grep -q '"status":"ok"'
-          curl -sf -X POST "$URL/api/interest" -H "Content-Type: application/json" -d '{"query":"ci smoke test"}' | grep -q '"status":"received"'

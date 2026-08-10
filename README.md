@@ -12,10 +12,10 @@ Phase 1 (production foundation) and Slice 2 (LLM guardrails + a first real GBIF 
 
 Still outstanding from Slice 2's scope: basic GCP uptime/error-rate alerting (REQ-025-027). A real-time email alert on every query submission was built first instead — a deliberate short-term trade-off, not a scalable monitoring posture; see `docs/decisions/ADR-010-realtime-per-query-alerting.md`.
 
-The fuller NL-query pipeline beyond Slice 2 (waypoint ordering, route, narrative, map) is not built yet — it was validated end-to-end as a throwaway prototype (see below) and is later PRD slices.
+Slice 3 adds density-cluster hotspots and nearest-neighbour route ordering, plus a map UI (`MapView`, react-leaflet, fixed to Retiro Park) with numbered markers and a route line — species enrichment (narrative, descriptions) is later PRD slices, not built yet. It was validated end-to-end as a throwaway prototype (see below) before being ported to production.
 
-- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/interest` (Phase 1, dormant/unreferenced by the frontend, kept pending a cleanup slice), `POST /api/query` (Slice 2, live), serves the built frontend as static files.
-- **`app/frontend/`** — Vite + React + TypeScript: landing page, the query box (`QueryForm`), a custom consent banner gating client-side PostHog analytics.
+- **`app/backend/`** — FastAPI backend: `GET /health`, `POST /api/query` (Slice 2, extended in Slice 3), serves the built frontend as static files.
+- **`app/frontend/`** — Vite + React + TypeScript: the map landing page (`MapView`), a floating query panel (`QueryPanel`), a results list (`ResultsPanel`), a custom consent banner gating client-side PostHog analytics.
 - **`infra/`** — Terraform-provisioned GCP infrastructure (Cloud Run, Artifact Registry, Secret Manager, Workload Identity Federation for CI/CD). See `infra/README.md` for one-time bootstrap/`terraform apply`/manual-deploy steps.
 - **`.github/workflows/ci-cd.yml`** — lint/type-check → unit tests → build → deploy → post-deploy smoke test, on every push to `main`; PRs get lint/test/build only, no deploy credentials. `infra/manual_deploy.sh` reproduces this locally if GitHub Actions itself is unavailable.
 
