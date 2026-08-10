@@ -16,6 +16,8 @@ MAX_RETRIES = 2
 REQUEST_TIMEOUT = 30.0
 TOP_SPECIES_COUNT = 5
 MAX_CONCURRENT_GBIF_REQUESTS = 3
+DEFAULT_GRID_N = 5
+MIN_POINTS_TO_CLUSTER = 3  # <=2 points: clustering is meaningless, fall back to plain average
 
 KEY_PARAM_BY_RANK = {
     "kingdom": "kingdomKey",
@@ -116,6 +118,32 @@ def _request_occurrence_page(params: dict) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _cluster_species_hotspot(points: list[tuple[float, float]], grid_n: int = DEFAULT_GRID_N) -> tuple[float, float]:
+    lats = [p[0] for p in points]
+    lons = [p[1] for p in points]
+    avg_lat, avg_lon = sum(lats) / len(lats), sum(lons) / len(lons)
+
+    if len(points) < MIN_POINTS_TO_CLUSTER:
+        return avg_lat, avg_lon
+
+    min_lat, max_lat = min(lats), max(lats)
+    min_lon, max_lon = min(lons), max(lons)
+    lat_step = (max_lat - min_lat) / grid_n if max_lat > min_lat else None
+    lon_step = (max_lon - min_lon) / grid_n if max_lon > min_lon else None
+
+    cells = defaultdict(list)
+    for lat, lon in points:
+        row = min(int((lat - min_lat) / lat_step), grid_n - 1) if lat_step else 0
+        col = min(int((lon - min_lon) / lon_step), grid_n - 1) if lon_step else 0
+        cells[(row, col)].append((lat, lon))
+
+    _, winning_points = max(cells.items(), key=lambda kv: len(kv[1]))
+    return (
+        sum(p[0] for p in winning_points) / len(winning_points),
+        sum(p[1] for p in winning_points) / len(winning_points),
+    )
+
+
 def _rank_top_species(occurrences: list[dict]) -> list[dict]:
     by_species = defaultdict(list)
     for occ in occurrences:
@@ -134,17 +162,15 @@ def _rank_top_species(occurrences: list[dict]) -> list[dict]:
         ]
         if not points:
             continue
-        # Plain centroid, not the adaptive N×N density-grid clustering built
-        # in prototypes/scripts/e2e_walk_spike_clustering.py — deliberately
-        # deferred to PRD Slice 4 (density-cluster hotspots), which this
-        # slice doesn't need since there's no waypoint/route yet (REQ-011).
+        hotspot_lat, hotspot_lon = _cluster_species_hotspot(points)
         species_list.append(
             {
                 "species": species,
+                "species_key": records[0].get("speciesKey"),
                 "count": len(records),
                 "kingdom": records[0].get("kingdom", "?"),
-                "hotspot_lat": sum(p[0] for p in points) / len(points),
-                "hotspot_lon": sum(p[1] for p in points) / len(points),
+                "hotspot_lat": hotspot_lat,
+                "hotspot_lon": hotspot_lon,
             }
         )
     return species_list

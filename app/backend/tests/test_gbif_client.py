@@ -16,12 +16,13 @@ from services.gbif_client import (
 )
 
 
-def _occurrence(species, lat, lon, kingdom="Animalia"):
+def _occurrence(species, lat, lon, kingdom="Animalia", species_key=None):
     return {
         "species": species,
         "decimalLatitude": lat,
         "decimalLongitude": lon,
         "kingdom": kingdom,
+        "speciesKey": species_key,
     }
 
 
@@ -183,6 +184,49 @@ def test_preserves_input_order_even_when_the_first_group_finishes_last():
         "Quercus ilex",
         "Perca fluviatilis",
     ]
+
+
+def test_includes_the_gbif_species_key_for_each_species():
+    occurrences = [_occurrence("Turdus merula", 40.41, -3.68, species_key=2495414)] * 3
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": len(occurrences)}
+        return {"results": occurrences, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    assert species_list[0]["species_key"] == 2495414
+
+
+def test_hotspot_uses_the_density_cluster_not_the_plain_average():
+    # A dense cluster of 3 close-together points plus one far outlier. The
+    # plain average would be pulled toward the outlier; the density-cluster
+    # hotspot should land in the winning grid cell (the dense group) instead.
+    dense_points = [
+        (40.4100, -3.6800),
+        (40.4101, -3.6801),
+        (40.4099, -3.6799),
+    ]
+    outlier = (40.4200, -3.6700)
+    occurrences = [_occurrence("Turdus merula", lat, lon) for lat, lon in dense_points + [outlier]]
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": len(occurrences)}
+        return {"results": occurrences, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    species = species_list[0]
+    plain_avg_lat = sum(lat for lat, _ in dense_points + [outlier]) / 4
+    plain_avg_lon = sum(lon for _, lon in dense_points + [outlier]) / 4
+
+    assert abs(species["hotspot_lat"] - plain_avg_lat) > 0.001
+    assert abs(species["hotspot_lat"] - 40.41) < 0.001
+    assert abs(species["hotspot_lon"] - (-3.68)) < 0.001
 
 
 def test_defaults_to_the_retiro_park_polygon():
