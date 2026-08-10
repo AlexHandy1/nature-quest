@@ -8,37 +8,17 @@ A running list of ideas to revisit during planning. Not prioritised — add free
 
 Expose nature walk data as structured outputs that feed into an agent loop or anyone's custom UI. Rather than baking a specific UI into the product, make the data layer the interface — an agent can query GBIF, score paths, and return structured JSON that a CLI, chatbot, or third-party UI can consume directly.
 
-## Draw your own map
-
-Let users sketch or define a custom area (e.g. draw a polygon on a map) and get recommended walks within that boundary. Rather than the system picking the park, the user defines the search zone and receives scored route suggestions for it.
-
-## AI-personalised walk intent (core differentiator)
-
-Users state a goal or interest for that day — "Today I want to learn about plants", "I'm curious about insects", "show me something rare" — and the system generates a fully personalised species selection, waypoint set, and narrative guide from that input. This is only possible with AI: the same park produces near-infinite distinct walks depending on the intent, drawing on the full breadth of GBIF's species catalogue rather than a fixed set of featured species.
-
-**Why this matters:** It is the primary thing that makes Nature Walker impossible to replicate without AI. A static app can show you the ten most common birds; only an AI-backed system can hear "I want to learn about fungi" and construct a coherent, accurate, engaging walk from GBIF occurrence data in seconds.
-
-**Architecture implication:** The pipeline must be intent-driven from the start. Species selection, waypoint ordering, information retrieval, and narrative generation all receive the user's stated intent as a first-class input. Efficiency matters — the system needs to generate fresh combinations quickly enough to feel live, which shapes how GBIF queries are structured, how species info is cached or retrieved, and how narrative prompts are templated.
-
-## WebGL 3D map experience
-
-Explore WebGL for a genuinely 3D, game-like map experience (vs. the current 2D Leaflet-based prototypes). Aimed at the fantasy video game journey direction — closer to the depth/perspective feel of Zelda/Minecraft-style exploration than a flat top-down map can offer.
-
 ## Show raw observations behind a species' cluster marker
 
 On click/selection of a species in the final map, show all of that species' raw underlying observations (not just the single hotspot marker), so users get a sense of the real distribution behind the cluster to help guide their walk — e.g. "this species is common across a wide area" vs. "this species was only seen in one tight spot." Prototyped in `prototypes/scripts/e2e_walk_spike_clustering.py` (click-to-reveal raw occurrence points + winning grid cell).
-
-## Explore GBIF's AWS-hosted cache/snapshot for large queries
-
-Live `occurrence/search` pagination (300 records/request) doesn't scale for common taxa in dense areas — a single "birds in Retiro Park" query returned 55,756 matching occurrences, requiring ~186 sequential paginated requests. GBIF publishes a bulk-access snapshot on AWS (their public dataset / Open Data on AWS listing) that may allow querying large result sets far more efficiently than paginating the live REST API one page at a time. Worth investigating as the production-scale answer to the fetch-scaling issue found in `WORK_SUMMARY_250726.md`, instead of ad-hoc mitigations like the prototype's count-then-fallback-year guard.
 
 ## Automated AI audio accompaniment (text-to-audio narration)
 
 Convert the AI-generated walk narrative into spoken audio automatically, so users can listen hands-free while actually walking rather than reading text on their phone. Feeds directly off the existing narrative generation step in the AI-personalised walk intent pipeline — the text is already produced per waypoint/species, so this would add a text-to-speech stage to turn that into an audio track (or per-waypoint clips) the user can play as they reach each point on the route.
 
-## Remote immersive walkthrough (WebGL / Google Earth-style) prior to walking
+## Immersive 3D map experience (WebGL)
 
-Once a route is generated, let the user "walk" it remotely first in an immersive 3D environment (WebGL, or something like Google Earth's flyover/street-level view) before doing it in person — a preview experience to build familiarity and excitement with the actual route and waypoints ahead of time. Related to the existing [WebGL 3D map experience](#webgl-3d-map-experience) idea above, but focused specifically on previewing the *already-identified route* immersively rather than general 3D map exploration.
+Explore WebGL for a genuinely 3D, game-like map experience (vs. the current 2D Leaflet-based prototypes) — closer to the depth/perspective feel of Zelda/Minecraft-style exploration than a flat top-down map can offer. Extends naturally to letting a user "walk" a generated route remotely first, in an immersive 3D flyover/street-level preview (Google Earth-style), to build familiarity and excitement with the actual route and waypoints ahead of time.
 
 ## Shareable walk link
 
@@ -52,45 +32,19 @@ Longer-term direction: move toward AI agents writing, reviewing, testing, and de
 - **Removing the human PR-merge gate.** Current decision: a human still merges the PR into `main`, which then triggers the full CI/CD pipeline — this is the deliberate human checkpoint for now. Moving beyond this toward full autonomy would need real automated PR-review checks (e.g. an AI review pass) as a substitute gate before auto-merge could be trusted, not just green CI.
 - Staging environment considered and explicitly rejected as part of this — the intent is for production itself to be the single, verified, confidence-worthy deployment target, not to add a parallel environment.
 
-## GBIF MCP server for agentic data access
-
-Explore adopting (or forking/building) an MCP server for GBIF so the AI pipeline gets abstracted, agentic access to biodiversity data — species search, occurrence queries, taxonomy lookups — as MCP tools instead of hand-rolled API client code. Would let the AI-personalised walk intent pipeline (and any future agent-led interface, see [Agent-led CLI interface](#agent-led-cli-interface)) call GBIF through a standard tool-use interface rather than bespoke query/pagination logic, and could simplify or replace parts of the existing GBIF client work.
-
-Existing implementations to review before building anything new:
-- https://github.com/cyanheads/gbif-biodiversity-mcp-server
-- https://github.com/pipeworx-io/mcp-gbif
-- https://github.com/agentmorris/gbif-mcp-server
-- https://github.com/tyson-swetnam/gbif-mcp
-
-Open questions: how each handles the large-result-set pagination problem already noted in [Explore GBIF's AWS-hosted cache/snapshot for large queries](#explore-gbifs-aws-hosted-cachesnapshot-for-large-queries), how actively maintained/licensed each is, and whether integrating one is preferable to the current direct-API-client approach or worth forking for this project's specific needs.
-
-**Reservation — latency:** going through an MCP layer (extra process/tool-call hop, agent reasoning over which tool to call) could be slower than the current direct API-client calls, especially in a pipeline that already needs to feel responsive. This needs to be measured against the current approach before committing, not assumed either way.
-
-**Potential upside — query surface area:** an agentic layer may handle a broader range of query types more gracefully than the current hand-rolled client — e.g. rarity-based queries ("show me something rare"), recency-based queries (recent sightings only), or other compound filters that would otherwise need bespoke logic per query type. Worth weighing against the latency reservation above rather than treating as a clear win.
-
 ## Daily email activity digest (internal tool)
 
 An internal tool (not user-facing) that sends the maintainer a daily email summarising website activity — sourced from PostHog (client-side product events, and once built, server-side AI Observability `$ai_generation` traces) and Cloud Run/Cloud Logging (structured request/outcome logs). Would give a single daily digest of things like query volume, resolved/unresolved/no_results/gbif_unavailable outcome breakdown, guardrail triggers (rate-limited, daily-cap-reached), and LLM cost/token usage — rather than having to check PostHog and GCP Cloud Logging separately.
 
 Surfaced while scoping `spec-tool-llm-guardrails-gbif-query-040826.md`, which adds the first structured logging (`REQ-017`) and both PostHog observability channels (`REQ-018`/`REQ-019`) this digest would draw on — worth revisiting once that slice is live and there's real traffic/log data to summarise. Complementary to, not a replacement for, the basic uptime/5xx alerting (`REQ-025`-`REQ-027`) in the same spec, which is real-time/threshold-based rather than a daily rollup.
 
-## Full GBIF catalogue + vector DB semantic taxon search
+## Rearchitect GBIF data dependency (latency, reliability, accuracy)
 
-A more comprehensive alternative to the current lay-term → GBIF-rank resolution approach (LLM worked examples for common cases like birds/fish/reptiles, live `species/match` for everything else): download the full GBIF backbone taxonomy catalogue and build a vector DB (embeddings over scientific names, common names, and taxonomic metadata) to do semantic search over it directly. Would remove the need to hand-curate lay-term worked examples (fish's 7-order union, reptile's 4-class union, etc.) or rely on the LLM correctly recalling specific scientific names from a system prompt — instead, "fish" or any other lay/vague term could be resolved by nearest-neighbour semantic search against the real, complete taxonomy.
+Move off live, per-query calls to the GBIF REST API (`occurrence/search`, `species/match`) toward a local/cached data store built from GBIF's bulk data, to fix problems hit directly in production code (`slice3_enhanced_query_to_route_ordering_on_map`, 100826):
 
-Surfaced while deciding against a curated cache or deterministic lay-term expansion for Slice A's multi-taxon query support (see `slice3_enhanced_query_to_route_ordering_on_map` branch) — those decisions deliberately kept things flexible/simple for now (LLM-taught worked examples only), but this is the more complete, scalable answer if lay-term taxon resolution accuracy or coverage becomes a real problem worth prioritising.
+- **Reliability**: parallelizing GBIF calls (`ThreadPoolExecutor`, one call per taxon group) immediately triggered `429 Too Many Requests` on a real multi-group query (7 fish + 1 bird + 1 insect groups), exhausting `MAX_RETRIES` and surfacing as `gbif_unavailable`. Currently mitigated by capping concurrency at `MAX_CONCURRENT_GBIF_REQUESTS = 3`, but that's blunt — it caps latency gains and the live eval suite still throttles when its 4 tests run back-to-back. A local store removes the rate limit as a constraint entirely.
+- **Latency**: every query does at least one live `occurrence/search` round-trip per resolved taxon group — often paginated, since live pagination (300 records/request) doesn't scale for common taxa in dense areas (a single "birds in Retiro Park" query returned 55,756 occurrences, ~186 pages) — plus a `species/match` round-trip per group for resolution. GBIF's [AWS Open Data snapshot](https://registry.opendata.aws/gbif/) (bulk-access dataset) or a local index queried directly would cut this to in-process lookups, and is the production-scale answer to the fetch-scaling issue found in `WORK_SUMMARY_250726.md`, instead of ad-hoc mitigations like the prototype's count-then-fallback-year guard.
+- **Accuracy**: the current lay-term → GBIF-rank resolution approach relies on hand-curated LLM worked examples (fish's 7-order union, reptile's 4-class union, etc.) for common cases, falling back to live `species/match` otherwise. A full GBIF backbone taxonomy catalogue loaded locally, with a vector DB (embeddings over scientific/common names and taxonomic metadata) for semantic search, would let any lay/vague term resolve via nearest-neighbour search against the real, complete taxonomy instead of curated examples or LLM recall.
+- **Agentic access**: once data is local, worth also exploring an MCP server (adopt/fork existing options — `cyanheads/gbif-biodiversity-mcp-server`, `pipeworx-io/mcp-gbif`, `agentmorris/gbif-mcp-server`, `tyson-swetnam/gbif-mcp` — or build one) so the AI pipeline and any future agent-led interface (see [Agent-led CLI interface](#agent-led-cli-interface)) can query it through a standard tool-use interface rather than bespoke client code. Reservation: an MCP hop could add latency in a pipeline that needs to feel responsive — measure against the direct-lookup approach rather than assuming either way.
 
-## Abstract away from the live GBIF REST API to a local/cached data store
-
-Explore replacing (or fronting) direct live calls to `occurrence/search` and `species/match` with a local data store built from GBIF's bulk data — e.g. the [GBIF AWS Open Data snapshot](https://registry.opendata.aws/gbif/) — to address two problems hit directly in production code this session (`slice3_enhanced_query_to_route_ordering_on_map`, 100826):
-
-- **Brittleness under concurrency**: parallelizing `fetch_top_species`/`_resolve_taxon_keys` (`ThreadPoolExecutor`, one call per taxon group) immediately triggered `429 Too Many Requests` from GBIF on a real multi-group query (7 fish + 1 bird + 1 insect groups), which exhausted `MAX_RETRIES` and surfaced as `gbif_unavailable`. Worked around for now by capping concurrency at `MAX_CONCURRENT_GBIF_REQUESTS = 3`, but that's a blunt mitigation — it caps latency gains and the live eval suite still throttles when its 4 tests run back-to-back (confirmed passing individually, failing with 429s when run together in ~30s). A local store removes the rate limit as a constraint entirely.
-- **Latency**: every query does at least one live `occurrence/search` round-trip per resolved taxon group (often paginated — a single "birds in Retiro Park" query alone returned 55,756 occurrences, ~186 pages, per the existing [AWS-hosted cache/snapshot](#explore-gbifs-aws-hosted-cachesnapshot-for-large-queries) entry below), plus a `species/match` round-trip per group for resolution. A local store queried directly (SQL/vector index over a downloaded snapshot) would cut this to in-process lookups.
-
-This overlaps with, but is motivated differently from, the existing [Explore GBIF's AWS-hosted cache/snapshot for large queries](#explore-gbifs-aws-hosted-cachesnapshot-for-large-queries) entry below (that one is about pagination not scaling for common taxa in dense areas; this one is about rate-limit brittleness and general per-query latency) — worth scoping together as one investigation rather than two, since both point at the same underlying fix (stop hitting the live REST API per query).
-
-## Internal capability: agent-browser-driven end-to-end smoke tests
-
-An internal tool/skill that runs a scripted manual smoke test fully end-to-end against the live (or local dev) app via `agent-browser`, rather than a human clicking through it each time — e.g. confirming the consent banner's accept/reject workflow persists correctly, submitting a real query through `QueryForm` and confirming the right outcome renders (resolved species list, unresolved/no_results/gbif_unavailable/429 copy), and checking PostHog/Cloud Logging for the resulting events.
-
-Surfaced during Slice 2's UX build (060826) after manually validating `QueryForm`/`ConsentBanner` with `agent-browser` this session — that validation was ad hoc (one-off commands run interactively); worth turning into a repeatable, scripted smoke-test flow that can be re-run after future frontend changes without a human re-deriving the steps each time. Complementary to the Vitest/RTL component tests (which exercise components in isolation with mocked `fetch`) — this would be the one layer that exercises the real browser + real backend + real third-party dashboards together.
+Scope these together rather than as separate investigations — reliability, latency, and accuracy all point at the same underlying fix (stop depending on live REST calls per query).
