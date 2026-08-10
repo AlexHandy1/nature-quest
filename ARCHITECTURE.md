@@ -4,9 +4,11 @@ A current, whole-system map. For the detailed "why" behind any decision here, fo
 
 ## What's live vs. what's not
 
-**Phase 1 (production foundation)** and **Slice 2 (LLM guardrails + first GBIF query)** are both built and **deployed**. The landing page's primary interaction is now `QueryForm`: free text → LLM taxon resolution (real Anthropic call) → GBIF species list, behind per-IP rate limiting and a daily LLM-call budget guardrail, with the Anthropic API key fetched explicitly from Secret Manager at container startup (REQ-005) — never a plain env var in production. Structured operational logging (REQ-017) and consent-gated PostHog observability (REQ-018/019, client- and server-side) are both live. Full detail: `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md`.
+**Phase 1 (production foundation)** and **Slice 2 (LLM guardrails + first GBIF query)** are both built and **deployed**. The landing page's primary interaction is now `MapView`: free text → LLM taxon resolution (real Anthropic call) → GBIF species list, behind per-IP rate limiting and a daily LLM-call budget guardrail, with the Anthropic API key fetched explicitly from Secret Manager at container startup (REQ-005) — never a plain env var in production. Structured operational logging (REQ-017) and consent-gated PostHog observability (REQ-018/019, client- and server-side) are both live. Full detail: `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md`.
 
-**Still outstanding from Slice 2's original scope**: basic GCP uptime/error-rate alerting (REQ-025-027) — not yet built. A *different* alert was built first instead: a real-time email on every `/api/query` submission (`infra/monitoring.tf` — log-based metric + alert policy), a deliberate, explicitly-scoped short-term deviation that will not scale past near-zero traffic — see `docs/decisions/ADR-010-realtime-per-query-alerting.md`. `POST /api/interest`, `InterestSubmission`, and `InterestForm.tsx` are kept in place, dormant/unreferenced, pending a future cleanup slice (`CON-001`) — do not assume they're still the primary interaction.
+**Slice 3 (multi-taxon query, in progress)**: the query pipeline now handles mixed-taxa requests (e.g. "birds and plants") and lay terms with no single GBIF rank (e.g. "fish", "reptiles") — previously these returned nothing. The LLM resolves to a *list* of taxon filters, each resolved and fetched independently, then merged via quota/round-robin — see `docs/decisions/ADR-011-multi-taxon-query-resolution-strategy.md`. Clustering and route ordering (the rest of Slice 3's original scope) are not yet built.
+
+**Still outstanding from Slice 2's original scope**: basic GCP uptime/error-rate alerting (REQ-025-027) — not yet built. A *different* alert was built first instead: a real-time email on every `/api/query` submission (`infra/monitoring.tf` — log-based metric + alert policy), a deliberate, explicitly-scoped short-term deviation that will not scale past near-zero traffic — see `docs/decisions/ADR-010-realtime-per-query-alerting.md`. `POST /api/interest`, `InterestSubmission`, and `InterestForm.tsx` (dormant since `CON-001`) have since been deleted entirely, along with their tests and the CI/CD smoke-test check that POSTed to `/api/interest`.
 
 **REQ-019's implementation deviates from the spec's original design**: the spec specifies OpenTelemetry (`AnthropicInstrumentor` + `PostHogSpanProcessor`); the actual build uses `posthog.ai.anthropic.Anthropic`, a wrapper client — see `docs/decisions/ADR-009-posthog-ai-observability-wrapper-client.md` for why.
 
@@ -32,26 +34,37 @@ prototypes/     Throwaway validation code — untouched, never deployed, not par
 ```
 main.py                    create_app(): FastAPI instance, JSON stdout logging config,
                              slowapi rate-limiter wiring, .env loading (load_dotenv), static-file mount
-routers/interest.py        GET /health, POST /api/interest (Phase 1, still reachable, unused by frontend)
-routers/query.py           POST /api/query (Slice 2) — rate-limited; validate → daily budget →
-                             LLM resolve (+ token usage capture) → taxon key resolve → GBIF fetch
-                             → 4-outcome response, structured log line on every branch (REQ-017)
-models/interest.py         InterestSubmission (Pydantic) — query only, no PII
+routers/health.py          GET /health
+routers/query.py           POST /api/query (Slice 2, extended Slice 3) — rate-limited; validate →
+                             daily budget → LLM resolve to a list of taxon filters (+ token usage
+                             capture) → per-filter key resolve (_resolve_taxon_keys — drops/surfaces
+                             any filter that fails to resolve as unresolvedGroups) → GBIF fetch
+                             across all resolved filters → 4-outcome response, structured log line
+                             on every branch (REQ-017)
 models/query.py            QueryRequest (Pydantic) — query, distinctId, consent (default False)
 services/
-  logging_client.py        log_interest_submission(), log_query_outcome() — structured Cloud Logging
-                             writes (JsonLogFormatter, main.py)
-  anthropic_client.py      TAXON_GUIDANCE + QUERY_SCHEMA_TOOL, resolve_taxon_filter() (accepts an
-                             optional on_response callback + **extra_kwargs passthrough), build_client(),
-                             resolve_api_key() (Secret Manager on Cloud Run via K_SERVICE check, local
-                             ANTHROPIC_API_KEY env var otherwise), _fetch_api_key_from_secret_manager()
+  logging_client.py        log_query_outcome() plus per-pipeline-stage log lines (log_query_submitted,
+                             log_llm_taxon_filters_resolved, log_species_selected, log_waypoints_ordered)
+                             — structured Cloud Logging writes (JsonLogFormatter, main.py), all stamped
+                             with distinct_id so they can be cross-referenced with PostHog's Activity view
+  anthropic_client.py      TAXON_GUIDANCE + QUERY_SCHEMA_TOOL, resolve_taxon_filters() (accepts an
+                             optional on_response callback + **extra_kwargs passthrough) — returns a
+                             list of {taxonRank, taxonValue}, empty if no signal. System prompt
+                             directly teaches two multi-entry lay-term expansions (fish, reptiles) —
+                             see ADR-011. build_client(), resolve_api_key() (Secret Manager on Cloud
+                             Run via K_SERVICE check, local ANTHROPIC_API_KEY env var otherwise),
+                             _fetch_api_key_from_secret_manager()
   ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
                              anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
                              wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
                              capture) when consent=True. Lazily builds/reuses a singleton PostHog client
                              from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. See ADR-009.
-  taxon_resolution.py      resolve_taxon_key() — live GBIF species/match only, no local cache (see spec §9)
-  gbif_client.py            fetch_top_species() — fixed Retiro polygon/year, scale-guard, retry, ranking
+  taxon_resolution.py      resolve_taxon_key() — live GBIF species/match only, no local cache (see
+                             ADR-011); called once per filter, sequentially, by routers/query.py
+  gbif_client.py            fetch_top_species(taxon_filters, polygon=GBIF_POLYGON) — one
+                             occurrence/search call per filter, ranked per group, merged via
+                             quota/round-robin (_select_species_across_groups, see ADR-011);
+                             fixed Retiro polygon by default, scale-guard, retry, ranking
   rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
                              from the still-unconsumed request body for REQ-017's log line, since
                              slowapi intercepts before FastAPI's own body parsing)
@@ -61,17 +74,22 @@ static/                    Built frontend assets, copied in at Docker build time
 
 One structural rule: any future router must be registered in `create_app()` **before** the static-file mount — the mount matches every remaining path, so a route added after it would be unreachable. Noted inline in `main.py`.
 
-Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls) and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative, mixed-taxa), a real end-to-end GBIF pipeline case, and an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`.
+Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls) and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end GBIF pipeline case for both a single filter and a mixed-taxa pair (verified against real GBIF data via independent `species/match` calls, not production's own resolver), and an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`.
 
 ### Frontend (`app/frontend/`)
 
 ```
-src/App.tsx                       Landing page, mounts QueryForm + ConsentBanner
-src/components/QueryForm.tsx      One-shot: idle (input+button) → loading (both disabled) → terminal
-                                     result. POSTs {query, distinctId, consent} to /api/query. Renders
-                                     all 4 outcomes + both 429 variants distinctly; species list is
-                                     name+count only (no map yet). Fires query_submitted/query_outcome.
-src/components/InterestForm.tsx   Dormant, unreferenced by App.tsx — kept per CON-001, not deleted
+src/App.tsx                       Landing page, mounts MapView + ConsentBanner
+src/components/MapView.tsx        react-leaflet map fixed to Retiro Park. Owns query/loading/result
+                                     state, POSTs {query, distinctId, consent} to /api/query, plots
+                                     route-ordered numbered markers + a dashed connector line on a
+                                     resolved outcome. Fires query_submitted/query_outcome.
+src/components/QueryPanel.tsx     Presentational query form floating on the map — always resubmittable
+                                     regardless of outcome (no one-shot/refresh-required behavior).
+                                     Docks to a small bar once a result is resolved.
+src/components/ResultsPanel.tsx   Species list (scientific name + observation count) in route order,
+                                     for cross-checking against the plotted markers. Renders nothing
+                                     until a resolved outcome.
 src/components/ConsentBanner.tsx  Accept/reject, persists choice in localStorage, gates PostHog
 src/lib/posthog.ts                init (opt-out-by-default), optIn/optOut, getDistinctId(), hasConsent(),
                                      trackEvent(), exported CONSENT_KEY
@@ -89,7 +107,7 @@ Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public,
 
 ```
 Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
-                                                    ├─ GET /health, POST /api/interest → routers/interest.py
+                                                    ├─ GET /health → routers/health.py
                                                     ├─ POST /api/query → routers/query.py
                                                     │    → services/ai_observability.py (consent-gated
                                                     │      client selection) → services/anthropic_client.py
@@ -109,7 +127,9 @@ PR opened  → lint/typecheck + unit tests (backend+frontend, parallel) + docker
              (no deploy credentials touched at all — job gated out for pull_request events)
 Merge to main → same checks again, then:
              docker build → push to Artifact Registry → gcloud run deploy → post-deploy smoke test
-             (GET /health, POST /api/interest against the live URL)
+             (GET /health against the live URL — this is the only smoke-test check now that
+             POST /api/interest is gone; no other endpoint is cheap/side-effect-free enough
+             to smoke-test post-deploy, so this is a real, accepted coverage reduction)
 ```
 
 Authentication uses Workload Identity Federation — no static GCP keys anywhere. The trust is scoped twice, not just once: the GitHub Actions workflow only runs the deploy job `if: push to main`, **and** GCP's own WIF provider independently rejects any token whose claims aren't `repository == AlexHandy1/nature-quest && ref == refs/heads/main` (`infra/wif.tf`) — so even a modified workflow file on a fork PR couldn't obtain deploy credentials.

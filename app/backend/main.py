@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
-from routers.interest import router as interest_router
+from routers.health import router as health_router
 from routers.query import router as query_router
 from services.rate_limiter import handle_rate_limit_exceeded, limiter
 
@@ -41,8 +41,11 @@ DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
 def create_app(static_dir: Path = DEFAULT_STATIC_DIR) -> FastAPI:
     app = FastAPI()
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, handle_rate_limit_exceeded)
-    app.include_router(interest_router)
+    # Starlette's add_exception_handler is typed for Callable[[Request, Exception], ...];
+    # a handler narrowed to a specific exception subclass (as it must be, to distinguish
+    # handlers) doesn't satisfy that contravariantly — a known typing limitation, not a bug.
+    app.add_exception_handler(RateLimitExceeded, handle_rate_limit_exceeded)  # type: ignore[arg-type]
+    app.include_router(health_router)
     app.include_router(query_router)
     # Any future router must be included above this line — the static mount
     # matches every remaining path, so routes added after it are unreachable.

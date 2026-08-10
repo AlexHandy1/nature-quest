@@ -11,7 +11,9 @@ limiter = Limiter(key_func=get_remote_address)
 
 async def handle_rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     body = await request.json()
-    log_query_outcome(body.get("query"), "rate_limited", guardrail="rate_limit")
+    log_query_outcome(
+        body.get("query"), "rate_limited", distinct_id=body.get("distinctId"), guardrail="rate_limit"
+    )
     return JSONResponse(
         status_code=429,
         content={
