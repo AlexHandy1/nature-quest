@@ -7,3 +7,4 @@ prototypes/logs/*
 prototypes/osm_sample*.json
 .env
 *.tfvars
+tests/.smoke_test_output/
