@@ -35,4 +35,6 @@ def test_exceeding_the_per_ip_rate_limit_logs_the_guardrail():
 
         client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
 
-    mock_log.assert_called_once_with("birds", "rate_limited", guardrail="rate_limit")
+    mock_log.assert_called_once_with(
+        "birds", "rate_limited", distinct_id="anon-1", guardrail="rate_limit"
+    )

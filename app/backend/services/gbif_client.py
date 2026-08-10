@@ -1,3 +1,4 @@
+import math
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -31,6 +32,18 @@ KEY_PARAM_BY_RANK = {
 
 class GbifUnavailableError(Exception):
     """Raised when GBIF occurrence/search fails after all retries."""
+
+
+def polygon_centroid(polygon_wkt: str) -> tuple[float, float]:
+    """Simple average of a WKT POLYGON's vertices ("lon lat" pairs), excluding
+    the closing repeat of the first vertex. Returns (lat, lon)."""
+    ring = polygon_wkt.removeprefix("POLYGON((").removesuffix("))")
+    points = [tuple(map(float, pair.split())) for pair in ring.split(",")]
+    if points[0] == points[-1]:
+        points = points[:-1]
+    lats = [lat for _, lat in points]
+    lons = [lon for lon, _ in points]
+    return sum(lats) / len(lats), sum(lons) / len(lons)
 
 
 def fetch_top_species(taxon_filters: list[dict], polygon: str = GBIF_POLYGON) -> list[dict]:
@@ -118,13 +131,28 @@ def _request_occurrence_page(params: dict) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
-def _cluster_species_hotspot(points: list[tuple[float, float]], grid_n: int = DEFAULT_GRID_N) -> tuple[float, float]:
+def _haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    d_phi, d_lambda = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _cluster_species_hotspot(points: list[tuple[float, float]], grid_n: int = DEFAULT_GRID_N) -> dict:
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
     avg_lat, avg_lon = sum(lats) / len(lats), sum(lons) / len(lons)
 
     if len(points) < MIN_POINTS_TO_CLUSTER:
-        return avg_lat, avg_lon
+        return {
+            "cluster_lat": avg_lat,
+            "cluster_lon": avg_lon,
+            "cells_occupied": None,
+            "winning_cell_count": None,
+            "fallback_reason": "too_few_points",
+            "distance_from_average_m": 0.0,
+        }
 
     min_lat, max_lat = min(lats), max(lats)
     min_lon, max_lon = min(lons), max(lons)
@@ -138,10 +166,17 @@ def _cluster_species_hotspot(points: list[tuple[float, float]], grid_n: int = DE
         cells[(row, col)].append((lat, lon))
 
     _, winning_points = max(cells.items(), key=lambda kv: len(kv[1]))
-    return (
-        sum(p[0] for p in winning_points) / len(winning_points),
-        sum(p[1] for p in winning_points) / len(winning_points),
-    )
+    cluster_lat = sum(p[0] for p in winning_points) / len(winning_points)
+    cluster_lon = sum(p[1] for p in winning_points) / len(winning_points)
+
+    return {
+        "cluster_lat": cluster_lat,
+        "cluster_lon": cluster_lon,
+        "cells_occupied": len(cells),
+        "winning_cell_count": len(winning_points),
+        "fallback_reason": None,
+        "distance_from_average_m": _haversine_m(avg_lat, avg_lon, cluster_lat, cluster_lon),
+    }
 
 
 def _rank_top_species(occurrences: list[dict]) -> list[dict]:
@@ -162,15 +197,21 @@ def _rank_top_species(occurrences: list[dict]) -> list[dict]:
         ]
         if not points:
             continue
-        hotspot_lat, hotspot_lon = _cluster_species_hotspot(points)
+        clustering = _cluster_species_hotspot(points)
         species_list.append(
             {
                 "species": species,
                 "species_key": records[0].get("speciesKey"),
                 "count": len(records),
                 "kingdom": records[0].get("kingdom", "?"),
-                "hotspot_lat": hotspot_lat,
-                "hotspot_lon": hotspot_lon,
+                "hotspot_lat": clustering["cluster_lat"],
+                "hotspot_lon": clustering["cluster_lon"],
+                "clustering": {
+                    "cells_occupied": clustering["cells_occupied"],
+                    "winning_cell_count": clustering["winning_cell_count"],
+                    "fallback_reason": clustering["fallback_reason"],
+                    "distance_from_average_m": clustering["distance_from_average_m"],
+                },
             }
         )
     return species_list

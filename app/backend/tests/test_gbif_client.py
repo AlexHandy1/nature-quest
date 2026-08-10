@@ -13,6 +13,7 @@ from services.gbif_client import (
     GbifUnavailableError,
     _gbif_search,
     fetch_top_species,
+    polygon_centroid,
 )
 
 
@@ -102,6 +103,25 @@ def test_sorts_the_final_merged_selection_by_observation_count_descending():
         "Podarcis virescens",
     ]
     assert [s["count"] for s in species_list] == [121, 16, 1]
+
+
+def test_polygon_centroid_averages_the_polygon_vertices():
+    # A simple closed square: (0,0),(0,2),(2,2),(2,0),(0,0) in "lon lat" WKT
+    # order. Average of the 4 unique vertices (excluding the closing repeat
+    # of the first point) is (1, 1).
+    square = "POLYGON((0 0,0 2,2 2,2 0,0 0))"
+
+    lat, lon = polygon_centroid(square)
+
+    assert lat == pytest.approx(1.0)
+    assert lon == pytest.approx(1.0)
+
+
+def test_polygon_centroid_of_the_default_retiro_polygon():
+    lat, lon = polygon_centroid(GBIF_POLYGON)
+
+    assert lat == pytest.approx(40.4137, abs=0.001)
+    assert lon == pytest.approx(-3.6826, abs=0.001)
 
 
 def test_fetches_multiple_taxon_filters_concurrently_not_sequentially():
@@ -227,6 +247,51 @@ def test_hotspot_uses_the_density_cluster_not_the_plain_average():
     assert abs(species["hotspot_lat"] - plain_avg_lat) > 0.001
     assert abs(species["hotspot_lat"] - 40.41) < 0.001
     assert abs(species["hotspot_lon"] - (-3.68)) < 0.001
+
+
+def test_clustering_diagnostics_when_a_winning_cell_is_found():
+    dense_points = [
+        (40.4100, -3.6800),
+        (40.4101, -3.6801),
+        (40.4099, -3.6799),
+    ]
+    outlier = (40.4200, -3.6700)
+    occurrences = [_occurrence("Turdus merula", lat, lon) for lat, lon in dense_points + [outlier]]
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": len(occurrences)}
+        return {"results": occurrences, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    clustering = species_list[0]["clustering"]
+    assert clustering["fallback_reason"] is None
+    assert clustering["winning_cell_count"] == 3
+    assert clustering["cells_occupied"] >= 1
+    assert clustering["distance_from_average_m"] > 0
+
+
+def test_clustering_diagnostics_fall_back_below_min_points():
+    occurrences = [
+        _occurrence("Turdus merula", 40.41, -3.68),
+        _occurrence("Turdus merula", 40.42, -3.69),
+    ]
+
+    def fake_search(params):
+        if params.get("limit") == 0:
+            return {"count": len(occurrences)}
+        return {"results": occurrences, "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    clustering = species_list[0]["clustering"]
+    assert clustering["fallback_reason"] == "too_few_points"
+    assert clustering["cells_occupied"] is None
+    assert clustering["winning_cell_count"] is None
+    assert clustering["distance_from_average_m"] == 0.0
 
 
 def test_defaults_to_the_retiro_park_polygon():

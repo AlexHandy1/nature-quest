@@ -111,8 +111,85 @@ def test_resolved_query_returns_a_species_list():
     assert body["unresolvedGroups"] == []
     assert body["species"][0]["species"] == "Turdus merula"
     mock_log.assert_called_once_with(
-        "birds", "resolved", gbif_result_count=1, input_tokens=10, output_tokens=5
+        "birds",
+        "resolved",
+        distinct_id="anon-1",
+        gbif_result_count=1,
+        input_tokens=10,
+        output_tokens=5,
     )
+
+
+def test_resolved_species_are_returned_in_nearest_neighbour_route_order():
+    # Center is Retiro's fixed CENTER_LAT/CENTER_LON (40.4153, -3.6844).
+    # "Far" is mentioned/returned first by fetch_top_species (count order),
+    # but "Near" is much closer to the center, so route order should place
+    # Near first despite count order saying otherwise.
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch("routers.query.resolve_taxon_key", return_value=212),
+        patch(
+            "routers.query.fetch_top_species",
+            return_value=[
+                {
+                    "species": "Far",
+                    "count": 10,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.50,
+                    "hotspot_lon": -3.60,
+                },
+                {
+                    "species": "Near",
+                    "count": 1,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.4154,
+                    "hotspot_lon": -3.6845,
+                },
+            ],
+        ),
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+
+    body = response.json()
+    assert [s["species"] for s in body["species"]] == ["Near", "Far"]
+    assert body["species"][0]["distance_m"] < body["species"][1]["distance_m"]
+
+
+def test_resolved_response_omits_internal_clustering_diagnostics():
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch("routers.query.resolve_taxon_key", return_value=212),
+        patch(
+            "routers.query.fetch_top_species",
+            return_value=[
+                {
+                    "species": "Turdus merula",
+                    "count": 5,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.41,
+                    "hotspot_lon": -3.68,
+                    "clustering": {
+                        "cells_occupied": 4,
+                        "winning_cell_count": 3,
+                        "fallback_reason": None,
+                        "distance_from_average_m": 12.3,
+                    },
+                }
+            ],
+        ),
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+
+    body = response.json()
+    assert "clustering" not in body["species"][0]
 
 
 def test_resolved_query_with_multiple_taxon_filters_merges_species():
@@ -162,7 +239,9 @@ def test_resolved_query_with_multiple_taxon_filters_merges_species():
     ]
     assert body["unresolvedGroups"] == []
     assert [s["species"] for s in body["species"]] == ["Turdus merula", "Quercus ilex"]
-    mock_log.assert_called_once_with("birds and plants", "resolved", gbif_result_count=2)
+    mock_log.assert_called_once_with(
+        "birds and plants", "resolved", distinct_id="anon-1", gbif_result_count=2
+    )
 
 
 def test_more_than_ten_taxon_filters_caps_gbif_calls_and_marks_the_rest_unresolved():
@@ -199,7 +278,7 @@ def test_no_taxonomic_signal_returns_unresolved_with_no_gbif_call():
     assert response.status_code == 200
     assert response.json()["status"] == "unresolved"
     mock_gbif.assert_not_called()
-    mock_log.assert_called_once_with("surprise me", "unresolved")
+    mock_log.assert_called_once_with("surprise me", "unresolved", distinct_id="anon-1")
 
 
 def test_unresolvable_taxon_returns_unresolved_with_no_gbif_call():
@@ -217,7 +296,7 @@ def test_unresolvable_taxon_returns_unresolved_with_no_gbif_call():
     assert response.status_code == 200
     assert response.json()["status"] == "unresolved"
     mock_gbif.assert_not_called()
-    mock_log.assert_called_once_with("gibberish", "unresolved")
+    mock_log.assert_called_once_with("gibberish", "unresolved", distinct_id="anon-1")
 
 
 def test_resolved_taxon_with_zero_occurrences_returns_no_results():
@@ -236,7 +315,9 @@ def test_resolved_taxon_with_zero_occurrences_returns_no_results():
     assert response.status_code == 200
     assert body["status"] == "no_results"
     assert body["taxonFilters"] == [{"taxonRank": "class", "taxonValue": "Aves"}]
-    mock_log.assert_called_once_with("birds", "no_results", gbif_result_count=0)
+    mock_log.assert_called_once_with(
+        "birds", "no_results", distinct_id="anon-1", gbif_result_count=0
+    )
 
 
 def test_gbif_failure_after_retries_returns_502():
@@ -253,7 +334,7 @@ def test_gbif_failure_after_retries_returns_502():
 
     assert response.status_code == 502
     assert response.json()["status"] == "gbif_unavailable"
-    mock_log.assert_called_once_with("birds", "gbif_unavailable")
+    mock_log.assert_called_once_with("birds", "gbif_unavailable", distinct_id="anon-1")
 
 
 def test_daily_budget_exhausted_returns_429_with_no_llm_call():
@@ -269,4 +350,6 @@ def test_daily_budget_exhausted_returns_429_with_no_llm_call():
     assert response.status_code == 429
     assert response.json()["error"] == "daily_limit_reached"
     mock_llm.assert_not_called()
-    mock_log.assert_called_once_with("birds", "daily_limit_reached", guardrail="daily_limit")
+    mock_log.assert_called_once_with(
+        "birds", "daily_limit_reached", distinct_id="anon-1", guardrail="daily_limit"
+    )
