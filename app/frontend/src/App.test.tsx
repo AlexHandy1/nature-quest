@@ -13,6 +13,13 @@ vi.mock('./lib/posthog', () => ({
   CONSENT_KEY: 'analytics-consent',
 }))
 
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  TileLayer: () => null,
+  Marker: () => null,
+  Polyline: () => null,
+}))
+
 beforeEach(() => {
   window.localStorage.clear()
   vi.clearAllMocks()
@@ -24,7 +31,7 @@ test('renders the Nature Quest heading', () => {
   expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
 })
 
-test('renders the query form and the consent banner', () => {
+test('renders the map view and the consent banner', () => {
   render(<App />)
 
   expect(
