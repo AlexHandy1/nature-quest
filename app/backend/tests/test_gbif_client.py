@@ -1,3 +1,5 @@
+import threading
+import time
 from unittest.mock import patch
 
 import pytest
@@ -59,6 +61,88 @@ def test_merges_species_across_multiple_taxon_filters_by_quota():
         "Corvus monedula",
         "Quercus ilex",
         "Pinus pinea",
+    ]
+
+
+def test_fetches_multiple_taxon_filters_concurrently_not_sequentially():
+    per_group_delay = 0.2
+
+    def fake_search(params):
+        time.sleep(per_group_delay)
+        if params.get("limit") == 0:
+            return {"count": 0}
+        return {"results": [], "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        start = time.monotonic()
+        fetch_top_species(
+            [
+                {"taxon_rank": "class", "taxon_key": 212},
+                {"taxon_rank": "kingdom", "taxon_key": 6},
+                {"taxon_rank": "order", "taxon_key": 1},
+            ]
+        )
+        elapsed = time.monotonic() - start
+
+    # 3 groups x 2 sequential GBIF calls each (probe + page) = 6 x 0.2s = 1.2s
+    # if sequential. Comfortably under that if groups run concurrently.
+    assert elapsed < 0.6
+
+
+def test_caps_concurrent_gbif_requests_at_three_even_with_more_groups():
+    lock = threading.Lock()
+    concurrent_count = 0
+    max_concurrent_seen = 0
+
+    def fake_search(params):
+        nonlocal concurrent_count, max_concurrent_seen
+        with lock:
+            concurrent_count += 1
+            max_concurrent_seen = max(max_concurrent_seen, concurrent_count)
+        time.sleep(0.1)
+        with lock:
+            concurrent_count -= 1
+        if params.get("limit") == 0:
+            return {"count": 0}
+        return {"results": [], "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        fetch_top_species(
+            [{"taxon_rank": "class", "taxon_key": i} for i in range(6)]
+        )
+
+    assert max_concurrent_seen <= 3
+
+
+def test_preserves_input_order_even_when_the_first_group_finishes_last():
+    # First filter's fake GBIF calls are slowest, last filter's are fastest —
+    # completion order is the reverse of input order. If the implementation
+    # used something like as_completed() instead of executor.map(), this
+    # would catch it: the result list would come back in completion order
+    # (key=1 group, then key=6, then key=212) instead of input order.
+    delay_by_key = {212: 0.15, 6: 0.08, 1: 0.0}
+    species_by_key = {212: "Turdus merula", 6: "Quercus ilex", 1: "Perca fluviatilis"}
+
+    def fake_search(params):
+        key = params.get("classKey") or params.get("kingdomKey") or params.get("orderKey")
+        time.sleep(delay_by_key[key])
+        if params.get("limit") == 0:
+            return {"count": 1}
+        return {"results": [_occurrence(species_by_key[key], 40.41, -3.68)], "endOfRecords": True}
+
+    with patch("services.gbif_client._gbif_search", side_effect=fake_search):
+        species_list = fetch_top_species(
+            [
+                {"taxon_rank": "class", "taxon_key": 212},
+                {"taxon_rank": "kingdom", "taxon_key": 6},
+                {"taxon_rank": "order", "taxon_key": 1},
+            ]
+        )
+
+    assert [s["species"] for s in species_list] == [
+        "Turdus merula",
+        "Quercus ilex",
+        "Perca fluviatilis",
     ]
 
 

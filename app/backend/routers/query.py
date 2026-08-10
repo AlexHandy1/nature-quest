@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from fastapi import APIRouter, Request
@@ -20,6 +21,7 @@ GBIF_UNAVAILABLE_MESSAGE = "We're having trouble reaching nature data right now 
 DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please try again tomorrow."
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 MAX_TAXON_FILTERS = 10
+MAX_CONCURRENT_GBIF_REQUESTS = 3
 
 
 def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
@@ -99,10 +101,20 @@ def submit_query(request: Request, body: QueryRequest):
 
 
 def _resolve_taxon_keys(taxon_filters: list[dict]) -> tuple[list[dict], list[str]]:
+    if not taxon_filters:
+        return [], []
+
+    max_workers = min(len(taxon_filters), MAX_CONCURRENT_GBIF_REQUESTS)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        taxon_keys = list(
+            executor.map(
+                lambda f: resolve_taxon_key(f["taxonRank"], f["taxonValue"]), taxon_filters
+            )
+        )
+
     resolved = []
     unresolved_groups = []
-    for taxon_filter in taxon_filters:
-        taxon_key = resolve_taxon_key(taxon_filter["taxonRank"], taxon_filter["taxonValue"])
+    for taxon_filter, taxon_key in zip(taxon_filters, taxon_keys):
         if taxon_key is None:
             unresolved_groups.append(taxon_filter["taxonValue"])
         else:

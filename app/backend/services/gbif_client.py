@@ -1,4 +1,5 @@
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 
@@ -14,6 +15,7 @@ SCALE_GUARD_THRESHOLD = 1000
 MAX_RETRIES = 2
 REQUEST_TIMEOUT = 30.0
 TOP_SPECIES_COUNT = 5
+MAX_CONCURRENT_GBIF_REQUESTS = 3
 
 KEY_PARAM_BY_RANK = {
     "kingdom": "kingdomKey",
@@ -30,12 +32,14 @@ class GbifUnavailableError(Exception):
 
 
 def fetch_top_species(taxon_filters: list[dict], polygon: str = GBIF_POLYGON) -> list[dict]:
-    groups = [
-        _rank_top_species(
+    def _fetch_and_rank(f: dict) -> list[dict]:
+        return _rank_top_species(
             _fetch_occurrences({KEY_PARAM_BY_RANK[f["taxon_rank"]]: f["taxon_key"]}, polygon)
         )
-        for f in taxon_filters
-    ]
+
+    max_workers = min(len(taxon_filters), MAX_CONCURRENT_GBIF_REQUESTS)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        groups = list(executor.map(_fetch_and_rank, taxon_filters))
     return _select_species_across_groups(groups, TOP_SPECIES_COUNT)
 
 

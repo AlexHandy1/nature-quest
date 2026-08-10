@@ -1,13 +1,81 @@
+import threading
+import time
 from datetime import date
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from main import app
+from routers.query import _resolve_taxon_keys
 from services.gbif_client import GbifUnavailableError
 from services.query_budget import DAILY_LLM_CALL_CAP, try_consume_daily_budget
 
 client = TestClient(app)
+
+
+def test_resolve_taxon_keys_resolves_multiple_filters_concurrently_not_sequentially():
+    per_filter_delay = 0.2
+    taxon_filters = [
+        {"taxonRank": "class", "taxonValue": "Aves"},
+        {"taxonRank": "kingdom", "taxonValue": "Plantae"},
+        {"taxonRank": "order", "taxonValue": "Perciformes"},
+    ]
+
+    def fake_resolve(rank, value):
+        time.sleep(per_filter_delay)
+        return 1
+
+    with patch("routers.query.resolve_taxon_key", side_effect=fake_resolve):
+        start = time.monotonic()
+        _resolve_taxon_keys(taxon_filters)
+        elapsed = time.monotonic() - start
+
+    assert elapsed < 0.4
+
+
+def test_resolve_taxon_keys_caps_concurrent_gbif_requests_at_three():
+    lock = threading.Lock()
+    concurrent_count = 0
+    max_concurrent_seen = 0
+    taxon_filters = [
+        {"taxonRank": "class", "taxonValue": f"Group{i}"} for i in range(6)
+    ]
+
+    def fake_resolve(rank, value):
+        nonlocal concurrent_count, max_concurrent_seen
+        with lock:
+            concurrent_count += 1
+            max_concurrent_seen = max(max_concurrent_seen, concurrent_count)
+        time.sleep(0.1)
+        with lock:
+            concurrent_count -= 1
+        return 1
+
+    with patch("routers.query.resolve_taxon_key", side_effect=fake_resolve):
+        _resolve_taxon_keys(taxon_filters)
+
+    assert max_concurrent_seen <= 3
+
+
+def test_resolve_taxon_keys_preserves_input_order_even_when_the_first_filter_finishes_last():
+    delay_by_value = {"Aves": 0.15, "Plantae": 0.08, "Perciformes": 0.0}
+    key_by_value = {"Aves": 212, "Plantae": 6, "Perciformes": 1}
+    taxon_filters = [
+        {"taxonRank": "class", "taxonValue": "Aves"},
+        {"taxonRank": "kingdom", "taxonValue": "Plantae"},
+        {"taxonRank": "order", "taxonValue": "Perciformes"},
+    ]
+
+    def fake_resolve(rank, value):
+        time.sleep(delay_by_value[value])
+        return key_by_value[value]
+
+    with patch("routers.query.resolve_taxon_key", side_effect=fake_resolve):
+        resolved, unresolved_groups = _resolve_taxon_keys(taxon_filters)
+
+    assert [r["taxonValue"] for r in resolved] == ["Aves", "Plantae", "Perciformes"]
+    assert [r["taxon_key"] for r in resolved] == [212, 6, 1]
+    assert unresolved_groups == []
 
 
 def test_resolved_query_returns_a_species_list():
