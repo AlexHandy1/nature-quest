@@ -245,6 +245,7 @@ def test_hotspot_uses_the_density_cluster_not_the_plain_average():
     plain_avg_lon = sum(lon for _, lon in dense_points + [outlier]) / 4
 
     assert abs(species["hotspot_lat"] - plain_avg_lat) > 0.001
+    assert abs(species["hotspot_lon"] - plain_avg_lon) > 0.001
     assert abs(species["hotspot_lat"] - 40.41) < 0.001
     assert abs(species["hotspot_lon"] - (-3.68)) < 0.001
 
@@ -403,16 +404,17 @@ def test_returns_no_species_when_gbif_has_zero_occurrences():
 
 
 def test_raises_when_gbif_fails_after_all_retries():
-    with patch("services.gbif_client._request_occurrence_page", return_value=None):
-        with pytest.raises(GbifUnavailableError):
-            fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+    with (
+        patch("services.gbif_client._request_occurrence_page", return_value=None),
+        pytest.raises(GbifUnavailableError),
+    ):
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
 
 
 def test_retries_the_configured_number_of_times_before_giving_up():
     with patch(
         "services.gbif_client._request_occurrence_page", return_value=None
-    ) as mock_request:
-        with pytest.raises(GbifUnavailableError):
-            _gbif_search({"limit": 0})
+    ) as mock_request, pytest.raises(GbifUnavailableError):
+        _gbif_search({"limit": 0})
 
     assert mock_request.call_count == MAX_RETRIES + 1

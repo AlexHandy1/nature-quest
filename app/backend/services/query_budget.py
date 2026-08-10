@@ -1,10 +1,17 @@
 import threading
 from datetime import date
+from typing import TypedDict
+
+
+class _BudgetState(TypedDict):
+    date: date | None
+    count: int
+
 
 DAILY_LLM_CALL_CAP = 200
 
 _lock = threading.Lock()
-_state = {"date": None, "count": 0}
+_state: _BudgetState = {"date": None, "count": 0}
 
 
 def try_consume_daily_budget(today: date) -> bool:

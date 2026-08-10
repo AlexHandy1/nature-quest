@@ -1,6 +1,7 @@
 import httpx
 import pytest
 
+from routers.query import _resolve_taxon_keys
 from services.anthropic_client import (
     MODEL,
     QUERY_SCHEMA_TOOL,
@@ -8,7 +9,6 @@ from services.anthropic_client import (
     build_client,
     resolve_taxon_filters,
 )
-from routers.query import _resolve_taxon_keys
 from services.gbif_client import GBIF_POLYGON, fetch_top_species
 from services.taxon_resolution import GBIF_SPECIES_MATCH_URL
 
@@ -91,18 +91,6 @@ FISH_ORDERS = {
 def _species_is_a_curated_fish_group_member(scientific_name: str) -> bool:
     return _species_belongs_to_class(scientific_name, "Elasmobranchii") or any(
         _species_belongs_to_order(scientific_name, order) for order in FISH_ORDERS
-    )
-
-
-# Mirrors the "reptiles" worked example in TAXON_GUIDANCE: no single GBIF
-# "Reptilia" class, so it's expanded into four class-rank entries.
-REPTILE_CLASSES = {"Crocodylia", "Squamata", "Testudines", "Sphenodontia"}
-
-
-def _species_is_a_curated_reptile_group_member(scientific_name: str) -> bool:
-    return any(
-        _species_belongs_to_class(scientific_name, reptile_class)
-        for reptile_class in REPTILE_CLASSES
     )
 
 

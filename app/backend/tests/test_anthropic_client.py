@@ -1,8 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from services.anthropic_client import (
     MODEL,
     QUERY_SCHEMA_TOOL,

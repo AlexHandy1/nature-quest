@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -7,7 +7,12 @@ from fastapi.responses import JSONResponse
 from models.query import QueryRequest
 from services import ai_observability
 from services.anthropic_client import resolve_api_key, resolve_taxon_filters
-from services.gbif_client import GBIF_POLYGON, GbifUnavailableError, fetch_top_species, polygon_centroid
+from services.gbif_client import (
+    GBIF_POLYGON,
+    GbifUnavailableError,
+    fetch_top_species,
+    polygon_centroid,
+)
 from services.logging_client import (
     log_llm_taxon_filters_resolved,
     log_query_outcome,
@@ -56,7 +61,7 @@ def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple
 def submit_query(request: Request, body: QueryRequest):
     log_query_submitted(body.query, body.distinctId)
 
-    if not try_consume_daily_budget(date.today()):
+    if not try_consume_daily_budget(datetime.now(tz=timezone.utc).date()):
         log_query_outcome(
             body.query, "daily_limit_reached", distinct_id=body.distinctId, guardrail="daily_limit"
         )

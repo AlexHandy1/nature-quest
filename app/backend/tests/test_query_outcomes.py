@@ -1,6 +1,6 @@
 import threading
 import time
-from datetime import date
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -339,7 +339,7 @@ def test_gbif_failure_after_retries_returns_502():
 
 def test_daily_budget_exhausted_returns_429_with_no_llm_call():
     for _ in range(DAILY_LLM_CALL_CAP):
-        try_consume_daily_budget(date.today())
+        try_consume_daily_budget(datetime.now(tz=timezone.utc).date())
 
     with (
         patch("routers.query._resolve_taxon_filters") as mock_llm,
