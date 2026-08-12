@@ -1,5 +1,16 @@
 import { test, expect } from 'vitest'
-import { pointsToWkt, validatePolygonPoints } from './polygon'
+import { pointsToWkt, validatePolygonPoints, wktToPoints } from './polygon'
+
+test('converts a WKT polygon back to [lat, lon] points, dropping the closing repeat', () => {
+  const wkt =
+    'POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,-3.68876 40.4199))'
+
+  expect(wktToPoints(wkt)).toEqual([
+    [40.4199, -3.68876],
+    [40.40777, -3.689],
+    [40.4076, -3.67912],
+  ])
+})
 
 test('converts Leaflet [lat, lon] points to a closed WKT polygon in "lon lat" order', () => {
   const points: [number, number][] = [

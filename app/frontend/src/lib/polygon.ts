@@ -1,3 +1,17 @@
+export function wktToPoints(wkt: string): [number, number][] {
+  const ring = wkt.replace(/^POLYGON\(\(/, '').replace(/\)\)$/, '')
+  const pairs = ring.split(',').map((pair) => {
+    const [lon, lat] = pair.trim().split(/\s+/).map(Number)
+    return [lat, lon] as [number, number]
+  })
+  const first = pairs[0]
+  const last = pairs[pairs.length - 1]
+  if (first[0] === last[0] && first[1] === last[1]) {
+    pairs.pop()
+  }
+  return pairs
+}
+
 export function pointsToWkt(points: [number, number][]): string {
   const ring = points.map(([lat, lon]) => [lon, lat] as [number, number])
   const first = ring[0]
