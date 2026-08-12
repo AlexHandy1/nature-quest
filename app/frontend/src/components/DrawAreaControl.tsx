@@ -19,6 +19,10 @@ function centroid(vertices: [number, number][]): [number, number] {
   return [lat, lon]
 }
 
+function layerToPoints(layer: L.Polygon): [number, number][] {
+  return (layer.getLatLngs()[0] as L.LatLng[]).map((ll): [number, number] => [ll.lat, ll.lng])
+}
+
 function DrawAreaControl({
   onConfirm,
   geolocationOffered,
@@ -54,20 +58,12 @@ function DrawAreaControl({
       const created = e as L.DrawEvents.Created
       drawnItems.clearLayers()
       drawnItems.addLayer(created.layer)
-      const layer = created.layer as L.Polygon
-      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(
-        (ll): [number, number] => [ll.lat, ll.lng]
-      )
-      commitIfValid(latlngs)
+      commitIfValid(layerToPoints(created.layer as L.Polygon))
     }
     function onEdited() {
       const layers = drawnItems.getLayers()
       if (!layers.length) return
-      const layer = layers[0] as L.Polygon
-      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(
-        (ll): [number, number] => [ll.lat, ll.lng]
-      )
-      commitIfValid(latlngs)
+      commitIfValid(layerToPoints(layers[0] as L.Polygon))
     }
     function onDeleted() {
       setVertices([])

@@ -24,8 +24,8 @@ export function pointsToWkt(points: [number, number][]): string {
 }
 
 // Must match models/query.py's MIN_POLYGON_VERTICES / MAX_POLYGON_AREA_KM2.
-export const MIN_POLYGON_VERTICES = 3
-export const MAX_POLYGON_AREA_KM2 = 25.0
+const MIN_POLYGON_VERTICES = 3
+const MAX_POLYGON_AREA_KM2 = 25.0
 const KM_PER_DEGREE_LAT = 111.0
 
 export type PolygonValidation =

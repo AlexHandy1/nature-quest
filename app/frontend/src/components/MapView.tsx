@@ -139,6 +139,8 @@ function MapView() {
             attribution="&copy; OpenStreetMap contributors"
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
+          {/* Leaflet pathOptions take JS color strings, not CSS custom properties —
+              these must be kept in sync by hand with --accent/--text in index.css. */}
           <Polygon
             positions={wktToPoints(areaState.polygon)}
             pathOptions={{ color: '#3f6b4a', weight: 2, fillOpacity: 0.08 }}
