@@ -47,10 +47,8 @@ function QueryPanel({ query, onQueryChange, loading, result, onSubmit }: QueryPa
           {loading ? 'Searching…' : 'Create walk'}
         </button>
       </form>
-      {loading && (
-        <p className="form-message nav-bar__message">Searching — this can take a few seconds.</p>
-      )}
-      {result && !loading && (
+      {loading && <p className="form-message nav-bar__message">Generating your walk…</p>}
+      {result && !loading && result.outcome !== 'resolved' && (
         <p className={`form-message nav-bar__message form-message--${VARIANT_BY_OUTCOME[result.outcome]}`}>
           {result.message}
         </p>

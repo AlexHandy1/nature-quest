@@ -48,16 +48,24 @@ test('disables the input and button and shows a loading message while loading', 
 
   expect(screen.getByRole('button', { name: /searching/i })).toBeDisabled()
   expect(screen.getByLabelText('What would you want to see on a walk?')).toBeDisabled()
-  expect(screen.getByText(/searching — this can take/i)).toBeInTheDocument()
+  expect(screen.getByText(/generating your walk/i)).toBeInTheDocument()
 })
 
-test('shows the outcome message without a species list', () => {
+test('shows the outcome message for a non-resolved outcome', () => {
+  renderPanel({
+    result: { outcome: 'unresolved', message: "couldn't match that" },
+  })
+
+  expect(screen.getByText("couldn't match that")).toBeInTheDocument()
+  expect(screen.queryByRole('list')).not.toBeInTheDocument()
+})
+
+test('hides the outcome message for a resolved outcome — results speak for themselves', () => {
   renderPanel({
     result: { outcome: 'resolved', message: 'Early preview message' },
   })
 
-  expect(screen.getByText('Early preview message')).toBeInTheDocument()
-  expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  expect(screen.queryByText('Early preview message')).not.toBeInTheDocument()
 })
 
 test('keeps the form enabled and resubmittable after a resolved result', () => {

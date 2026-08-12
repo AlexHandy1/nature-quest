@@ -172,7 +172,7 @@ test('shows the results panel with species names and counts on a resolved outcom
   expect(items[1]).toHaveTextContent('Pica pica')
 })
 
-test('shows the outcome message on a resolved outcome', async () => {
+test('hides the outcome message on a resolved outcome — the results speak for themselves', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -189,7 +189,8 @@ test('shows the outcome message on a resolved outcome', async () => {
   render(<MapView />)
   await submit('birds')
 
-  await screen.findByText('Early preview message')
+  await screen.findAllByTestId('marker')
+  expect(screen.queryByText('Early preview message')).not.toBeInTheDocument()
 })
 
 test('shows no markers on an unresolved outcome', async () => {
@@ -233,7 +234,7 @@ test('tracks query_submitted and query_outcome', async () => {
   render(<MapView />)
   await submit('birds')
 
-  await screen.findByText('ok')
+  await screen.findByRole('button', { name: /create walk/i })
   expect(trackEvent).toHaveBeenCalledWith('query_submitted')
   expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'resolved' })
 })
@@ -248,7 +249,7 @@ test('allows submitting a new query after a resolved outcome', async () => {
 
   render(<MapView />)
   await submit('birds')
-  await screen.findByText('ok')
+  await screen.findByRole('button', { name: /create walk/i })
 
   expect(screen.getByLabelText('What would you want to see on a walk?')).not.toBeDisabled()
   expect(screen.getByRole('button', { name: /create walk/i })).not.toBeDisabled()
