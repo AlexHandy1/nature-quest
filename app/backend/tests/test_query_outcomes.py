@@ -170,6 +170,46 @@ def test_resolved_species_are_returned_in_nearest_neighbour_route_order():
     assert body["species"][0]["distance_m"] < body["species"][1]["distance_m"]
 
 
+def test_custom_polygon_is_passed_to_fetch_top_species_and_used_for_route_ordering():
+    # Rascafria-area polygon, centroid far from Retiro's (~40.41, -3.68).
+    custom_polygon = (
+        "POLYGON((-3.88 40.90,-3.86 40.90,-3.86 40.88,-3.88 40.88,-3.88 40.90))"
+    )
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch("routers.query.resolve_taxon_key", return_value=212),
+        patch(
+            "routers.query.fetch_top_species",
+            return_value=[
+                {
+                    "species": "Near custom center",
+                    "count": 1,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.89,
+                    "hotspot_lon": -3.87,
+                },
+            ],
+        ) as mock_fetch,
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": custom_polygon},
+        )
+
+    assert response.status_code == 200
+    mock_fetch.assert_called_once()
+    _, call_kwargs = mock_fetch.call_args
+    assert call_kwargs["polygon"] == custom_polygon
+    body = response.json()
+    # Distance from the custom polygon's own centroid should be small (tens of
+    # metres), not the ~55km it would be from Retiro's centroid.
+    assert body["species"][0]["distance_m"] < 5000
+
+
 def test_resolved_response_omits_internal_clustering_diagnostics():
     with (
         patch(

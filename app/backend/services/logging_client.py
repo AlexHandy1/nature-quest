@@ -26,9 +26,10 @@ def log_query_outcome(
     )
 
 
-def log_query_submitted(query: str, distinct_id: str) -> None:
+def log_query_submitted(query: str, distinct_id: str, polygon: str) -> None:
     query_logger.info(
-        "query_submitted", extra={"query": query, "distinct_id": distinct_id}
+        "query_submitted",
+        extra={"query": query, "distinct_id": distinct_id, "polygon": polygon},
     )
 
 
