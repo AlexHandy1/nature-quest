@@ -32,7 +32,6 @@ type QueryPanelProps = {
 function QueryPanel({ query, onQueryChange, loading, result, onSubmit, docked }: QueryPanelProps) {
   return (
     <div className={`query-panel${docked ? ' query-panel--docked' : ''}`}>
-      <h1>Nature Quest</h1>
       {!docked && (
         <p className="query-panel__intro">
           Tell us what you'd like to see on a walk through Retiro Park, Madrid

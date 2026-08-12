@@ -31,12 +31,10 @@ test('renders the Nature Quest heading', () => {
   expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
 })
 
-test('renders the map view and the consent banner', () => {
+test('renders the area choice popup and the consent banner', () => {
   render(<App />)
 
-  expect(
-    screen.getByLabelText('What would you want to see on a walk?')
-  ).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /explore retiro park/i })).toBeInTheDocument()
   expect(
     screen.getByText(/we use privacy-friendly analytics/i)
   ).toBeInTheDocument()

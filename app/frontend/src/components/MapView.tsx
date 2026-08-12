@@ -4,15 +4,30 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import QueryPanel, { type Outcome, type Result } from './QueryPanel'
 import ResultsPanel from './ResultsPanel'
+import AreaChoicePopup from './AreaChoicePopup'
 import { getDistinctId, hasConsent, trackEvent } from '../lib/posthog'
 
 // Centroid of the fixed Retiro Park polygon (services/gbif_client.py's
 // GBIF_POLYGON) — kept in sync manually since the frontend doesn't share
 // the backend's polygon_centroid() computation.
 const RETIRO_CENTER: [number, number] = [40.4137, -3.6826]
+// Must match services/gbif_client.py's GBIF_POLYGON exactly.
+const RETIRO_POLYGON =
+  'POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,' +
+  '-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))'
 const DEFAULT_ZOOM = 15
 const MIN_ZOOM = 14
 const MAX_ZOOM = 18
+
+type AreaMode = 'fixed' | 'draw'
+
+type AreaState = {
+  mode: AreaMode
+  polygon: string
+  center: [number, number]
+}
+
+type FlowStage = 'choice' | 'drawing' | 'ready'
 
 export type Species = {
   species: string
@@ -37,6 +52,21 @@ function MapView() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [species, setSpecies] = useState<Species[]>([])
+  const [areaState, setAreaState] = useState<AreaState>({
+    mode: 'fixed',
+    polygon: RETIRO_POLYGON,
+    center: RETIRO_CENTER,
+  })
+  const [flowStage, setFlowStage] = useState<FlowStage>('choice')
+
+  function selectFixedArea() {
+    setAreaState({ mode: 'fixed', polygon: RETIRO_POLYGON, center: RETIRO_CENTER })
+    setFlowStage('ready')
+  }
+
+  function startDrawing() {
+    setFlowStage('drawing')
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -49,6 +79,7 @@ function MapView() {
         query,
         distinctId: getDistinctId(),
         consent: hasConsent(),
+        polygon: areaState.polygon,
       }),
     })
     const body = await response.json()
@@ -63,8 +94,9 @@ function MapView() {
 
   return (
     <div className="map-view">
+      <h1 className="map-view__title">Nature Quest</h1>
       <MapContainer
-        center={RETIRO_CENTER}
+        center={areaState.center}
         zoom={DEFAULT_ZOOM}
         minZoom={MIN_ZOOM}
         maxZoom={MAX_ZOOM}
@@ -85,14 +117,19 @@ function MapView() {
           />
         ))}
       </MapContainer>
-      <QueryPanel
-        query={query}
-        onQueryChange={setQuery}
-        loading={loading}
-        result={result}
-        onSubmit={handleSubmit}
-        docked={result?.outcome === 'resolved'}
-      />
+      {flowStage === 'choice' && (
+        <AreaChoicePopup onSelectFixed={selectFixedArea} onSelectDraw={startDrawing} />
+      )}
+      {flowStage === 'ready' && (
+        <QueryPanel
+          query={query}
+          onQueryChange={setQuery}
+          loading={loading}
+          result={result}
+          onSubmit={handleSubmit}
+          docked={result?.outcome === 'resolved'}
+        />
+      )}
       <ResultsPanel species={species} />
     </div>
   )

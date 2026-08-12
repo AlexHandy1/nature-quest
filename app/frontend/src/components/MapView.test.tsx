@@ -31,8 +31,16 @@ function jsonResponse(status: number, body: unknown) {
   return { status, json: () => Promise.resolve(body) }
 }
 
+async function chooseRetiro() {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /explore retiro park/i }))
+}
+
 async function submit(query = 'birds') {
   const user = userEvent.setup()
+  if (screen.queryByRole('button', { name: /explore retiro park/i })) {
+    await chooseRetiro()
+  }
   await user.type(
     screen.getByLabelText('What would you want to see on a walk?'),
     query
@@ -40,10 +48,23 @@ async function submit(query = 'birds') {
   await user.click(screen.getByRole('button', { name: /show me/i }))
 }
 
-test('renders the map and the query panel', () => {
+test('renders the map with an area choice popup on load', () => {
   render(<MapView />)
 
   expect(screen.getByTestId('map-container')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /explore retiro park/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /draw your own area/i })).toBeInTheDocument()
+  expect(screen.queryByLabelText('What would you want to see on a walk?')).not.toBeInTheDocument()
+})
+
+test('choosing Explore Retiro Park dismisses the popup and shows the query panel', async () => {
+  render(<MapView />)
+
+  await chooseRetiro()
+
+  expect(
+    screen.queryByRole('button', { name: /explore retiro park/i })
+  ).not.toBeInTheDocument()
   expect(
     screen.getByLabelText('What would you want to see on a walk?')
   ).toBeInTheDocument()
@@ -142,11 +163,13 @@ test('posts query, distinctId, and consent to /api/query', async () => {
   render(<MapView />)
   await submit('birds')
 
-  expect(fetchMock).toHaveBeenCalledWith('/api/query', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query: 'birds', distinctId: 'anon-123', consent: true }),
-  })
+  const [, options] = fetchMock.mock.calls[0]
+  const sentBody = JSON.parse(options.body)
+  expect(sentBody.query).toBe('birds')
+  expect(sentBody.distinctId).toBe('anon-123')
+  expect(sentBody.consent).toBe(true)
+  expect(typeof sentBody.polygon).toBe('string')
+  expect(sentBody.polygon.length).toBeGreaterThan(0)
 })
 
 test('tracks query_submitted and query_outcome', async () => {

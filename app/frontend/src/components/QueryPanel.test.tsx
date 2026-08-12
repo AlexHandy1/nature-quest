@@ -26,16 +26,6 @@ test('renders the label, input, and submit button', () => {
   expect(screen.getByRole('button', { name: /show me/i })).toBeInTheDocument()
 })
 
-test('renders the Nature Quest heading when not docked', () => {
-  renderPanel({ docked: false })
-  expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
-})
-
-test('renders the Nature Quest heading when docked', () => {
-  renderPanel({ docked: true })
-  expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
-})
-
 test('shows the explanatory intro copy when not docked', () => {
   renderPanel({ docked: false })
 
