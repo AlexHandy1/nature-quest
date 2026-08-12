@@ -10,7 +10,6 @@ function renderPanel(overrides = {}) {
     loading: false,
     result: null,
     onSubmit: vi.fn((event) => event.preventDefault()),
-    docked: false,
     ...overrides,
   }
   render(<QueryPanel {...props} />)
@@ -23,36 +22,14 @@ test('renders the label, input, and submit button', () => {
   expect(
     screen.getByLabelText('What would you want to see on a walk?')
   ).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: /show me/i })).toBeInTheDocument()
-})
-
-test('renders the Nature Quest heading when not docked', () => {
-  renderPanel({ docked: false })
-  expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
-})
-
-test('renders the Nature Quest heading when docked', () => {
-  renderPanel({ docked: true })
-  expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
-})
-
-test('shows the explanatory intro copy when not docked', () => {
-  renderPanel({ docked: false })
-
-  expect(screen.getByText(/tell us what you'd like to see/i)).toBeInTheDocument()
-})
-
-test('hides the explanatory intro copy when docked', () => {
-  renderPanel({ docked: true })
-
-  expect(screen.queryByText(/tell us what you'd like to see/i)).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /create walk/i })).toBeInTheDocument()
 })
 
 test('calls onSubmit when the form is submitted', async () => {
   const user = userEvent.setup()
   const props = renderPanel({ query: 'birds' })
 
-  await user.click(screen.getByRole('button', { name: /show me/i }))
+  await user.click(screen.getByRole('button', { name: /create walk/i }))
 
   expect(props.onSubmit).toHaveBeenCalledTimes(1)
 })
@@ -71,16 +48,24 @@ test('disables the input and button and shows a loading message while loading', 
 
   expect(screen.getByRole('button', { name: /searching/i })).toBeDisabled()
   expect(screen.getByLabelText('What would you want to see on a walk?')).toBeDisabled()
-  expect(screen.getByText(/searching retiro park/i)).toBeInTheDocument()
+  expect(screen.getByText(/generating your walk/i)).toBeInTheDocument()
 })
 
-test('shows the outcome message without a species list', () => {
+test('shows the outcome message for a non-resolved outcome', () => {
+  renderPanel({
+    result: { outcome: 'unresolved', message: "couldn't match that" },
+  })
+
+  expect(screen.getByText("couldn't match that")).toBeInTheDocument()
+  expect(screen.queryByRole('list')).not.toBeInTheDocument()
+})
+
+test('hides the outcome message for a resolved outcome — results speak for themselves', () => {
   renderPanel({
     result: { outcome: 'resolved', message: 'Early preview message' },
   })
 
-  expect(screen.getByText('Early preview message')).toBeInTheDocument()
-  expect(screen.queryByRole('list')).not.toBeInTheDocument()
+  expect(screen.queryByText('Early preview message')).not.toBeInTheDocument()
 })
 
 test('keeps the form enabled and resubmittable after a resolved result', () => {
@@ -90,7 +75,7 @@ test('keeps the form enabled and resubmittable after a resolved result', () => {
   })
 
   expect(screen.getByLabelText('What would you want to see on a walk?')).not.toBeDisabled()
-  expect(screen.getByRole('button', { name: /show me/i })).not.toBeDisabled()
+  expect(screen.getByRole('button', { name: /create walk/i })).not.toBeDisabled()
 })
 
 test('keeps the form enabled and resubmittable after a non-resolved outcome', () => {
@@ -100,5 +85,5 @@ test('keeps the form enabled and resubmittable after a non-resolved outcome', ()
   })
 
   expect(screen.getByLabelText('What would you want to see on a walk?')).not.toBeDisabled()
-  expect(screen.getByRole('button', { name: /show me/i })).not.toBeDisabled()
+  expect(screen.getByRole('button', { name: /create walk/i })).not.toBeDisabled()
 })

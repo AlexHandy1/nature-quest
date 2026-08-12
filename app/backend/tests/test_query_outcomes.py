@@ -12,6 +12,11 @@ from services.query_budget import DAILY_LLM_CALL_CAP, try_consume_daily_budget
 
 client = TestClient(app)
 
+RETIRO_POLYGON = (
+    "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,"
+    "-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))"
+)
+
 
 def test_resolve_taxon_keys_resolves_multiple_filters_concurrently_not_sequentially():
     per_filter_delay = 0.2
@@ -102,7 +107,10 @@ def test_resolved_query_returns_a_species_list():
         ),
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     body = response.json()
     assert response.status_code == 200
@@ -152,11 +160,54 @@ def test_resolved_species_are_returned_in_nearest_neighbour_route_order():
         ),
         patch("routers.query.log_query_outcome"),
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     body = response.json()
     assert [s["species"] for s in body["species"]] == ["Near", "Far"]
     assert body["species"][0]["distance_m"] < body["species"][1]["distance_m"]
+
+
+def test_custom_polygon_is_passed_to_fetch_top_species_and_used_for_route_ordering():
+    # Rascafria-area polygon, centroid far from Retiro's (~40.41, -3.68).
+    custom_polygon = (
+        "POLYGON((-3.88 40.90,-3.86 40.90,-3.86 40.88,-3.88 40.88,-3.88 40.90))"
+    )
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch("routers.query.resolve_taxon_key", return_value=212),
+        patch(
+            "routers.query.fetch_top_species",
+            return_value=[
+                {
+                    "species": "Near custom center",
+                    "count": 1,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.89,
+                    "hotspot_lon": -3.87,
+                },
+            ],
+        ) as mock_fetch,
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": custom_polygon},
+        )
+
+    assert response.status_code == 200
+    mock_fetch.assert_called_once()
+    _, call_kwargs = mock_fetch.call_args
+    assert call_kwargs["polygon"] == custom_polygon
+    body = response.json()
+    # Distance from the custom polygon's own centroid should be small (tens of
+    # metres), not the ~55km it would be from Retiro's centroid.
+    assert body["species"][0]["distance_m"] < 5000
 
 
 def test_resolved_response_omits_internal_clustering_diagnostics():
@@ -186,7 +237,10 @@ def test_resolved_response_omits_internal_clustering_diagnostics():
         ),
         patch("routers.query.log_query_outcome"),
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     body = response.json()
     assert "clustering" not in body["species"][0]
@@ -227,7 +281,12 @@ def test_resolved_query_with_multiple_taxon_filters_merges_species():
         patch("routers.query.log_query_outcome") as mock_log,
     ):
         response = client.post(
-            "/api/query", json={"query": "birds and plants", "distinctId": "anon-1"}
+            "/api/query",
+            json={
+                "query": "birds and plants",
+                "distinctId": "anon-1",
+                "polygon": RETIRO_POLYGON,
+            },
         )
 
     body = response.json()
@@ -250,15 +309,18 @@ def test_more_than_ten_taxon_filters_caps_gbif_calls_and_marks_the_rest_unresolv
     ]
 
     with (
-        patch(
-            "routers.query._resolve_taxon_filters", return_value=(taxon_filters, {})
-        ),
+        patch("routers.query._resolve_taxon_filters", return_value=(taxon_filters, {})),
         patch("routers.query.resolve_taxon_key", side_effect=range(10)),
         patch("routers.query.fetch_top_species", return_value=[]),
         patch("routers.query.log_query_outcome"),
     ):
         response = client.post(
-            "/api/query", json={"query": "eleven groups", "distinctId": "anon-1"}
+            "/api/query",
+            json={
+                "query": "eleven groups",
+                "distinctId": "anon-1",
+                "polygon": RETIRO_POLYGON,
+            },
         )
 
     body = response.json()
@@ -273,7 +335,14 @@ def test_no_taxonomic_signal_returns_unresolved_with_no_gbif_call():
         patch("routers.query.fetch_top_species") as mock_gbif,
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "surprise me", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={
+                "query": "surprise me",
+                "distinctId": "anon-1",
+                "polygon": RETIRO_POLYGON,
+            },
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "unresolved"
@@ -291,7 +360,14 @@ def test_unresolvable_taxon_returns_unresolved_with_no_gbif_call():
         patch("routers.query.fetch_top_species") as mock_gbif,
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "gibberish", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={
+                "query": "gibberish",
+                "distinctId": "anon-1",
+                "polygon": RETIRO_POLYGON,
+            },
+        )
 
     assert response.status_code == 200
     assert response.json()["status"] == "unresolved"
@@ -309,7 +385,10 @@ def test_resolved_taxon_with_zero_occurrences_returns_no_results():
         patch("routers.query.fetch_top_species", return_value=[]),
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     body = response.json()
     assert response.status_code == 200
@@ -330,7 +409,10 @@ def test_gbif_failure_after_retries_returns_502():
         patch("routers.query.fetch_top_species", side_effect=GbifUnavailableError()),
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     assert response.status_code == 502
     assert response.json()["status"] == "gbif_unavailable"
@@ -345,7 +427,10 @@ def test_daily_budget_exhausted_returns_429_with_no_llm_call():
         patch("routers.query._resolve_taxon_filters") as mock_llm,
         patch("routers.query.log_query_outcome") as mock_log,
     ):
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     assert response.status_code == 429
     assert response.json()["error"] == "daily_limit_reached"

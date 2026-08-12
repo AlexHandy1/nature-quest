@@ -34,13 +34,25 @@ class GbifUnavailableError(Exception):
     """Raised when GBIF occurrence/search fails after all retries."""
 
 
+def parse_polygon_vertices(polygon_wkt: str) -> list[tuple[float, float]]:
+    """Parses a WKT POLYGON's vertices into (lon, lat) pairs, excluding the
+    closing repeat of the first vertex."""
+    ring = polygon_wkt.removeprefix("POLYGON((").removesuffix("))")
+    points = [_parse_vertex(pair) for pair in ring.split(",")]
+    if points[0] == points[-1]:
+        points = points[:-1]
+    return points
+
+
+def _parse_vertex(pair: str) -> tuple[float, float]:
+    lon, lat = pair.split()
+    return float(lon), float(lat)
+
+
 def polygon_centroid(polygon_wkt: str) -> tuple[float, float]:
     """Simple average of a WKT POLYGON's vertices ("lon lat" pairs), excluding
     the closing repeat of the first vertex. Returns (lat, lon)."""
-    ring = polygon_wkt.removeprefix("POLYGON((").removesuffix("))")
-    points = [tuple(map(float, pair.split())) for pair in ring.split(",")]
-    if points[0] == points[-1]:
-        points = points[:-1]
+    points = parse_polygon_vertices(polygon_wkt)
     lats = [lat for _, lat in points]
     lons = [lon for lon, _ in points]
     return sum(lats) / len(lats), sum(lons) / len(lons)

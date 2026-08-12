@@ -43,12 +43,15 @@ def test_log_query_outcome_logs_which_guardrail_fired(caplog):
 
 def test_log_query_submitted_logs_the_query_and_distinct_id(caplog):
     with caplog.at_level("INFO"):
-        log_query_submitted(query="show me some birds", distinct_id="anon-123")
+        log_query_submitted(
+            query="show me some birds", distinct_id="anon-123", polygon="POLYGON((0 0,1 0,1 1,0 0))"
+        )
 
     record = caplog.records[0]
     assert record.message == "query_submitted"
     assert record.query == "show me some birds"
     assert record.distinct_id == "anon-123"
+    assert record.polygon == "POLYGON((0 0,1 0,1 1,0 0))"
 
 
 def test_log_llm_taxon_filters_resolved_logs_the_filters(caplog):

@@ -16,8 +16,10 @@ vi.mock('./lib/posthog', () => ({
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   TileLayer: () => null,
+  Polygon: () => null,
   Marker: () => null,
   Polyline: () => null,
+  useMap: () => ({ setView: vi.fn(), getZoom: () => 15 }),
 }))
 
 beforeEach(() => {
@@ -28,10 +30,10 @@ beforeEach(() => {
 test('renders the Nature Quest heading', () => {
   render(<App />)
 
-  expect(screen.getByRole('heading', { name: 'Nature Quest' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: /nature quest/i })).toBeInTheDocument()
 })
 
-test('renders the map view and the consent banner', () => {
+test('renders the query panel and the consent banner', () => {
   render(<App />)
 
   expect(

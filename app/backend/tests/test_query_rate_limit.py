@@ -6,20 +6,34 @@ from main import app
 
 client = TestClient(app)
 
+RETIRO_POLYGON = (
+    "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,"
+    "-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))"
+)
+
 
 def test_requests_within_the_per_ip_rate_limit_are_not_blocked():
     with patch("routers.query._resolve_taxon_filters", return_value=([], {})):
         for _ in range(10):
-            response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+            response = client.post(
+                "/api/query",
+                json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+            )
             assert response.status_code != 429
 
 
 def test_exceeding_the_per_ip_rate_limit_returns_429():
     with patch("routers.query._resolve_taxon_filters", return_value=([], {})):
         for _ in range(10):
-            client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+            client.post(
+                "/api/query",
+                json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+            )
 
-        response = client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     assert response.status_code == 429
     assert response.json()["error"] == "rate_limited"
@@ -31,9 +45,15 @@ def test_exceeding_the_per_ip_rate_limit_logs_the_guardrail():
         patch("services.rate_limiter.log_query_outcome") as mock_log,
     ):
         for _ in range(10):
-            client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+            client.post(
+                "/api/query",
+                json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+            )
 
-        client.post("/api/query", json={"query": "birds", "distinctId": "anon-1"})
+        client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
 
     mock_log.assert_called_once_with(
         "birds", "rate_limited", distinct_id="anon-1", guardrail="rate_limit"

@@ -8,7 +8,6 @@ from models.query import QueryRequest
 from services import ai_observability
 from services.anthropic_client import resolve_api_key, resolve_taxon_filters
 from services.gbif_client import (
-    GBIF_POLYGON,
     GbifUnavailableError,
     fetch_top_species,
     polygon_centroid,
@@ -34,9 +33,6 @@ DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please t
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 MAX_TAXON_FILTERS = 10
 MAX_CONCURRENT_GBIF_REQUESTS = 3
-# Derived from GBIF_POLYGON (fixed to Retiro Park for this slice) so it stays
-# in sync with the search area rather than being a second hardcoded constant.
-CENTER_LAT, CENTER_LON = polygon_centroid(GBIF_POLYGON)
 
 
 def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
@@ -59,7 +55,7 @@ def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple
 @router.post("/api/query")
 @limiter.limit("10/minute")
 def submit_query(request: Request, body: QueryRequest):
-    log_query_submitted(body.query, body.distinctId)
+    log_query_submitted(body.query, body.distinctId, body.polygon)
 
     if not try_consume_daily_budget(datetime.now(tz=timezone.utc).date()):
         log_query_outcome(
@@ -88,7 +84,8 @@ def submit_query(request: Request, body: QueryRequest):
 
     try:
         species = fetch_top_species(
-            [{"taxon_rank": r["taxonRank"], "taxon_key": r["taxon_key"]} for r in resolved]
+            [{"taxon_rank": r["taxonRank"], "taxon_key": r["taxon_key"]} for r in resolved],
+            polygon=body.polygon,
         )
     except GbifUnavailableError:
         log_query_outcome(body.query, "gbif_unavailable", distinct_id=body.distinctId, **usage)
@@ -112,7 +109,8 @@ def submit_query(request: Request, body: QueryRequest):
             "message": NO_RESULTS_MESSAGE,
         }
 
-    ordered_species = order_waypoints(species, CENTER_LAT, CENTER_LON)
+    center_lat, center_lon = polygon_centroid(body.polygon)
+    ordered_species = order_waypoints(species, center_lat, center_lon)
     log_waypoints_ordered(body.query, body.distinctId, ordered_species)
 
     log_query_outcome(
