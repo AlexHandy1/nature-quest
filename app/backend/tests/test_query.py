@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from main import app
@@ -50,3 +52,50 @@ def test_query_over_max_length_returns_422():
     )
 
     assert response.status_code == 422
+
+
+def test_missing_polygon_returns_422_before_any_llm_or_gbif_call():
+    with (
+        patch("routers.query._resolve_taxon_filters") as mock_llm,
+        patch("routers.query.fetch_top_species") as mock_gbif,
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-123"},
+        )
+
+    assert response.status_code == 422
+    mock_llm.assert_not_called()
+    mock_gbif.assert_not_called()
+
+
+def test_polygon_with_fewer_than_three_vertices_returns_422_before_any_llm_or_gbif_call():
+    two_vertex_polygon = "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.68876 40.4199))"
+    with (
+        patch("routers.query._resolve_taxon_filters") as mock_llm,
+        patch("routers.query.fetch_top_species") as mock_gbif,
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-123", "polygon": two_vertex_polygon},
+        )
+
+    assert response.status_code == 422
+    mock_llm.assert_not_called()
+    mock_gbif.assert_not_called()
+
+
+def test_polygon_exceeding_area_cap_returns_422_before_any_llm_or_gbif_call():
+    oversized_polygon = "POLYGON((-4.0 40.0,-3.5 40.0,-3.5 40.5,-4.0 40.5,-4.0 40.0))"
+    with (
+        patch("routers.query._resolve_taxon_filters") as mock_llm,
+        patch("routers.query.fetch_top_species") as mock_gbif,
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-123", "polygon": oversized_polygon},
+        )
+
+    assert response.status_code == 422
+    mock_llm.assert_not_called()
+    mock_gbif.assert_not_called()
