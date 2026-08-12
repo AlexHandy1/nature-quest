@@ -46,6 +46,10 @@ UNRESOLVED_MESSAGE = (
     "try something like 'birds' or 'plants'."
 )
 
+SUBMIT_BUTTON = ".nav-bar__query button[type=submit]"
+QUERY_INPUT = "#query"
+AREA_LABEL = ".area-control__label"
+
 OUT_DIR = REPO_ROOT / "tests" / ".smoke_test_output" / datetime.now().strftime("%Y%m%d_%H%M%S")
 
 HEADED = False  # set from --headed in main(); read by ab()
@@ -88,12 +92,31 @@ def write_report(base_url: str, headed: bool) -> Path:
 # ---------- agent-browser CLI wrapper ----------
 
 
-def ab(*args: str, input_data: str | None = None) -> str:
+def reset_session() -> None:
+    """Best-effort close of any stale daemon/session left over from a prior
+    run under the same session name — avoids the "daemon already running" /
+    "Resource temporarily unavailable" failures a leftover session causes
+    partway through a run."""
+    try:
+        subprocess.run(
+            ["agent-browser", "close", "--session", SESSION],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def ab(*args: str, input_data: str | None = None, timeout: float = 30.0) -> str:
     cmd = ["agent-browser", "--session", SESSION]
     if HEADED:
         cmd.append("--headed")
     cmd.extend(args)
-    result = subprocess.run(cmd, capture_output=True, text=True, input=input_data)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, input=input_data, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"agent-browser {' '.join(args)} timed out after {timeout}s") from exc
     if result.returncode != 0:
         raise RuntimeError(f"agent-browser {' '.join(args)} failed:\n{result.stderr}")
     return result.stdout.strip()
@@ -178,14 +201,14 @@ def submit_query(query: str, check_loading: bool = True) -> dict:
     """Fills the query input, submits, waits for completion, and returns
     {elapsed_s, body} where body is the real /api/query JSON response."""
     ab("network", "requests", "--clear")
-    ab("fill", "#query", query)
+    ab("fill", QUERY_INPUT, query)
 
     start = time.monotonic()
-    ab("click", ".query-panel form button[type=submit]")
+    ab("click", SUBMIT_BUTTON)
 
     if check_loading:
         try:
-            ab("wait", "--text", "Searching")
+            ab("wait", "--text", "Generating your walk")
             record(f'loading state shown for "{query}"', True)
         except RuntimeError as exc:
             record(f'loading state shown for "{query}"', False, str(exc))
@@ -193,7 +216,7 @@ def submit_query(query: str, check_loading: bool = True) -> dict:
     ab(
         "wait",
         "--fn",
-        "document.querySelector('.query-panel form button[type=submit]').textContent.trim() === 'Show me'",
+        f"document.querySelector('{SUBMIT_BUTTON}').textContent.trim() === 'Create walk'",
     )
     elapsed = time.monotonic() - start
 
@@ -238,6 +261,8 @@ def get_results_panel_species() -> list[dict]:
 
 
 def check_result(query: str, result: dict, expected_species_count: int = 5) -> None:
+    """Strict check for areas known to have real GBIF data (the fixed Retiro
+    polygon) — expects a resolved outcome with a specific species count."""
     body = result["body"]
     elapsed = result["elapsed_s"]
     log(f'  elapsed: {elapsed:.1f}s')
@@ -285,27 +310,33 @@ def check_taxon_filters_contain(query: str, body: dict, expected_values: list[st
         )
 
 
+def area_label_text() -> str:
+    return get_text(AREA_LABEL)
+
+
 # ---------- checklist ----------
 
 
 def run_checklist(base_url: str) -> None:
-    log("\n== Landing page ==")
+    reset_session()
+    log("\n== Landing page (default Retiro Park area) ==")
     ab("open", base_url)
     ab("wait", "--load", "networkidle")
     record("map container present", get_count(".leaflet-container") == 1)
-    record("query input present", get_count("#query") == 1)
-    record("Nature Quest heading present", get_count(".query-panel h1") == 1)
+    record("query input present", get_count(QUERY_INPUT) == 1)
+    record("Nature Quest heading present", get_count(".nav-bar__wordmark") == 1)
+    record("area control defaults to Retiro Park", "Retiro Park" in area_label_text(), area_label_text())
     ab("screenshot", str(OUT_DIR / "01_landing.png"))
     log(f"  screenshot: {OUT_DIR / '01_landing.png'}")
 
-    log('\n== Query: "Show me some plants" ==')
+    log('\n== Query: "Show me some plants" (default Retiro Park area) ==')
     result = submit_query("Show me some plants")
     check_result("Show me some plants", result)
     check_taxon_filters_contain("Show me some plants", result["body"], ["Plantae"])
     kingdoms = {s.get("kingdom") for s in result["body"].get("species", [])}
     record('"Show me some plants" all species are kingdom Plantae', kingdoms == {"Plantae"}, str(kingdoms))
 
-    log('\n== Query: "Show me some birds" ==')
+    log('\n== Query: "Show me some birds" (default Retiro Park area) ==')
     result = submit_query("Show me some birds")
     check_result("Show me some birds", result)
     check_taxon_filters_contain("Show me some birds", result["body"], ["Aves"])
@@ -313,19 +344,22 @@ def run_checklist(base_url: str) -> None:
     log("\n== Mobile viewport ==")
     ab("set", "viewport", "390", "844")
     viewport_w, viewport_h = 390, 844
-    for label, selector in [
-        ("map", ".leaflet-container"),
-        ("docked query panel", ".query-panel--docked"),
-        ("results panel", ".results-panel"),
-    ]:
-        box = get_box(selector)
-        within_bounds = (
-            box["x"] >= 0
-            and box["y"] >= 0
-            and box["x"] + box["width"] <= viewport_w
-            and box["y"] + box["height"] <= viewport_h
-        )
-        record(f"mobile: {label} fully within viewport", within_bounds, str(box))
+
+    scroll_width = int(ab("eval", "document.documentElement.scrollWidth"))
+    record("mobile: no horizontal page overflow", scroll_width <= viewport_w, f"scrollWidth={scroll_width}")
+
+    map_box = get_box(".leaflet-container")
+    record("mobile: map retains a usable height", map_box["height"] >= 200, str(map_box))
+
+    results_box = get_box(".results-panel")
+    within_bounds = (
+        results_box["x"] >= 0
+        and results_box["y"] >= 0
+        and results_box["x"] + results_box["width"] <= viewport_w
+        and results_box["y"] + results_box["height"] <= viewport_h
+    )
+    record("mobile: results panel fully within viewport", within_bounds, str(results_box))
+
     ab("screenshot", str(OUT_DIR / "03_birds_mobile.png"))
     log(f"  screenshot: {OUT_DIR / '03_birds_mobile.png'}")
     ab("set", "viewport", "1280", "800")
@@ -407,3 +441,49 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# ---------- known gaps: not covered by this script ----------
+#
+# The entire draw-your-own-area surface is untested here. It was attempted
+# and removed (2026-08-12) after repeated flaky failures automating
+# Leaflet-draw's polygon tool via synthetic agent-browser mouse events:
+# "shape edges cannot cross" errors, dropped vertices, and inconsistent
+# results even after several rounds of fixes (longer settle delays,
+# verify-and-retry loops, geometry changes) — none of it reproduced
+# reliably, despite the same interaction working fine when driven manually,
+# by hand, in a real browser. The automation approach itself is the
+# unsolved problem, not (as far as could be determined) the app's own
+# drawing/validation logic. Concretely, none of the following is covered by
+# any automated end-to-end test:
+#   - Choosing "Draw your own area" and drawing a valid custom polygon.
+#   - The drawn polygon auto-confirming (no separate "Confirm" button — the
+#     app relies on Leaflet-draw's own CREATED event).
+#   - The 25 km^2 area-too-large rejection and its inline warning message.
+#   - Editing an already-drawn shape via Leaflet's native edit (pencil)
+#     control (the EDITED-event auto-confirm/re-validate path).
+#   - Deleting a drawn shape via Leaflet's native delete (trash) control.
+#   - "Redraw area" replacing an already-confirmed custom polygon.
+#   - Switching between "Explore Retiro Park" and a drawn custom area via
+#     AreaControl, in either direction.
+#   - Submitting a second, different query in the same drawn area without
+#     redrawing.
+#   - The "Use my location" geolocation flow (recenter + drawing there).
+#   - Drawing/interacting with the map on a touch-sized mobile viewport.
+#
+# This is a real, non-trivial coverage gap for a slice whose whole point is
+# the draw-your-own-area flow — manual verification is currently the only
+# check this functionality gets. Revisiting the automation approach (a
+# different agent-browser interaction pattern, or driving the app's own
+# state directly rather than simulating map clicks) is a follow-up, not
+# solved here.
+#
+# Also never covered by this script:
+#   - The consent banner's Accept/Reject buttons.
+#   - Rate-limit (10/minute) and daily-budget guardrail responses.
+#   - Server-side polygon validation (422 on a missing/undersized/oversized
+#     polygon) via a direct API call — covered by backend unit/integration
+#     tests instead; a UI-driven check would depend on the same drawing
+#     automation that's unsolved above.
+#   - A live eval run against a real non-Retiro reference polygon with an
+#     asserted species/centroid check (spec's suggested Rascafría reference
+#     area) — a separate backend eval test, not part of this script.
