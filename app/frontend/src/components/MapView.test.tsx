@@ -23,6 +23,18 @@ vi.mock('react-leaflet', () => ({
   ),
 }))
 
+const CUSTOM_POLYGON = 'POLYGON((-3.87 40.90,-3.86 40.90,-3.86 40.89,-3.87 40.90))'
+
+vi.mock('./DrawAreaControl', () => ({
+  default: ({ onConfirm }: { onConfirm: (polygon: string, center: [number, number]) => void }) => (
+    <div data-testid="draw-area-control">
+      <button type="button" onClick={() => onConfirm(CUSTOM_POLYGON, [40.895, -3.865])}>
+        Confirm (mock)
+      </button>
+    </div>
+  ),
+}))
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -55,6 +67,43 @@ test('renders the map with an area choice popup on load', () => {
   expect(screen.getByRole('button', { name: /explore retiro park/i })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /draw your own area/i })).toBeInTheDocument()
   expect(screen.queryByLabelText('What would you want to see on a walk?')).not.toBeInTheDocument()
+})
+
+test('choosing Draw your own area dismisses the popup and shows the draw control', async () => {
+  const user = userEvent.setup()
+  render(<MapView />)
+
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+
+  expect(
+    screen.queryByRole('button', { name: /explore retiro park/i })
+  ).not.toBeInTheDocument()
+  expect(screen.getByTestId('draw-area-control')).toBeInTheDocument()
+  expect(screen.queryByLabelText('What would you want to see on a walk?')).not.toBeInTheDocument()
+})
+
+test('confirming a drawn polygon shows the query panel and submits that polygon', async () => {
+  const user = userEvent.setup()
+  const fetchMock = vi.fn().mockResolvedValue(
+    jsonResponse(200, { status: 'unresolved', message: 'no match' })
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  render(<MapView />)
+
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
+
+  expect(screen.getByLabelText('What would you want to see on a walk?')).toBeInTheDocument()
+
+  await user.type(
+    screen.getByLabelText('What would you want to see on a walk?'),
+    'plants'
+  )
+  await user.click(screen.getByRole('button', { name: /show me/i }))
+
+  const [, options] = fetchMock.mock.calls[0]
+  const sentBody = JSON.parse(options.body)
+  expect(sentBody.polygon).toBe(CUSTOM_POLYGON)
 })
 
 test('choosing Explore Retiro Park dismisses the popup and shows the query panel', async () => {

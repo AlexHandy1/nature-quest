@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import QueryPanel, { type Outcome, type Result } from './QueryPanel'
 import ResultsPanel from './ResultsPanel'
 import AreaChoicePopup from './AreaChoicePopup'
+import DrawAreaControl from './DrawAreaControl'
 import { getDistinctId, hasConsent, trackEvent } from '../lib/posthog'
 
 // Centroid of the fixed Retiro Park polygon (services/gbif_client.py's
@@ -68,6 +69,11 @@ function MapView() {
     setFlowStage('drawing')
   }
 
+  function confirmDrawnArea(polygon: string, center: [number, number]) {
+    setAreaState({ mode: 'draw', polygon, center })
+    setFlowStage('ready')
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
@@ -116,6 +122,7 @@ function MapView() {
             icon={numberedIcon(index + 1)}
           />
         ))}
+        {flowStage === 'drawing' && <DrawAreaControl onConfirm={confirmDrawnArea} />}
       </MapContainer>
       {flowStage === 'choice' && (
         <AreaChoicePopup onSelectFixed={selectFixedArea} onSelectDraw={startDrawing} />
