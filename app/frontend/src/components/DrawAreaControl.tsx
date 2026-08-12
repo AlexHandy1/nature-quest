@@ -4,11 +4,13 @@ import L from 'leaflet'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
 import GeolocationPrompt from './GeolocationPrompt'
-import DrawConfirmBar from './DrawConfirmBar'
-import { pointsToWkt } from '../lib/polygon'
+import AreaSizeWarning from './AreaSizeWarning'
+import { pointsToWkt, validatePolygonPoints } from '../lib/polygon'
 
 type DrawAreaControlProps = {
   onConfirm: (polygon: string, center: [number, number]) => void
+  geolocationOffered: boolean
+  onGeolocationOffered: () => void
 }
 
 function centroid(vertices: [number, number][]): [number, number] {
@@ -17,7 +19,11 @@ function centroid(vertices: [number, number][]): [number, number] {
   return [lat, lon]
 }
 
-function DrawAreaControl({ onConfirm }: DrawAreaControlProps) {
+function DrawAreaControl({
+  onConfirm,
+  geolocationOffered,
+  onGeolocationOffered,
+}: DrawAreaControlProps) {
   const map = useMap()
   const [vertices, setVertices] = useState<[number, number][]>([])
 
@@ -33,26 +39,35 @@ function DrawAreaControl({ onConfirm }: DrawAreaControlProps) {
         rectangle: false,
         polyline: false,
       },
-      edit: { featureGroup: drawnItems, remove: false },
+      edit: { featureGroup: drawnItems, remove: true },
     })
     map.addControl(drawControl)
 
-    function captureVertices(layer: L.Polygon) {
-      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(
-        (ll): [number, number] => [ll.lat, ll.lng]
-      )
-      setVertices(latlngs)
+    function commitIfValid(points: [number, number][]) {
+      setVertices(points)
+      if (validatePolygonPoints(points).valid) {
+        onConfirm(pointsToWkt(points), centroid(points))
+      }
     }
 
     function onCreated(e: L.LeafletEvent) {
       const created = e as L.DrawEvents.Created
       drawnItems.clearLayers()
       drawnItems.addLayer(created.layer)
-      captureVertices(created.layer as L.Polygon)
+      const layer = created.layer as L.Polygon
+      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(
+        (ll): [number, number] => [ll.lat, ll.lng]
+      )
+      commitIfValid(latlngs)
     }
     function onEdited() {
       const layers = drawnItems.getLayers()
-      if (layers.length) captureVertices(layers[0] as L.Polygon)
+      if (!layers.length) return
+      const layer = layers[0] as L.Polygon
+      const latlngs = (layer.getLatLngs()[0] as L.LatLng[]).map(
+        (ll): [number, number] => [ll.lat, ll.lng]
+      )
+      commitIfValid(latlngs)
     }
     function onDeleted() {
       setVertices([])
@@ -69,20 +84,18 @@ function DrawAreaControl({ onConfirm }: DrawAreaControlProps) {
       map.removeControl(drawControl)
       map.removeLayer(drawnItems)
     }
-  }, [map])
+  }, [map, onConfirm])
 
   function handleUseMyLocation(lat: number, lon: number) {
     map.setView([lat, lon], map.getZoom())
   }
 
-  function handleConfirm() {
-    onConfirm(pointsToWkt(vertices), centroid(vertices))
-  }
-
   return (
     <div className="draw-area-control">
-      <GeolocationPrompt onLocated={handleUseMyLocation} />
-      <DrawConfirmBar vertices={vertices} onConfirm={handleConfirm} />
+      {!geolocationOffered && (
+        <GeolocationPrompt onLocated={handleUseMyLocation} onOffered={onGeolocationOffered} />
+      )}
+      <AreaSizeWarning vertices={vertices} />
     </div>
   )
 }

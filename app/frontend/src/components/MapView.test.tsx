@@ -15,6 +15,9 @@ vi.mock('react-leaflet', () => ({
     <div data-testid="map-container">{children}</div>
   ),
   TileLayer: () => <div data-testid="tile-layer" />,
+  Polygon: ({ positions }: { positions: [number, number][] }) => (
+    <div data-testid="area-polygon" data-points={positions.length} />
+  ),
   Marker: ({ position }: { position: [number, number] }) => (
     <div data-testid="marker" data-lat={position[0]} data-lon={position[1]} />
   ),
@@ -44,46 +47,34 @@ function jsonResponse(status: number, body: unknown) {
   return { status, json: () => Promise.resolve(body) }
 }
 
-async function chooseRetiro() {
-  const user = userEvent.setup()
-  await user.click(screen.getByRole('button', { name: /explore retiro park/i }))
-}
-
 async function submit(query = 'birds') {
   const user = userEvent.setup()
-  if (screen.queryByRole('button', { name: /explore retiro park/i })) {
-    await chooseRetiro()
-  }
   await user.type(
     screen.getByLabelText('What would you want to see on a walk?'),
     query
   )
-  await user.click(screen.getByRole('button', { name: /show me/i }))
+  await user.click(screen.getByRole('button', { name: /create walk/i }))
 }
 
-test('renders the map with an area choice popup on load', () => {
+test('renders the map, area control, and query panel immediately in fixed mode', () => {
   render(<MapView />)
 
   expect(screen.getByTestId('map-container')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: /explore retiro park/i })).toBeInTheDocument()
+  expect(screen.getByText(/exploring: retiro park/i)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: /draw your own area/i })).toBeInTheDocument()
-  expect(screen.queryByLabelText('What would you want to see on a walk?')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('What would you want to see on a walk?')).toBeInTheDocument()
 })
 
-test('choosing Draw your own area dismisses the popup and shows the draw control', async () => {
+test('clicking "Draw your own area" shows the draw control', async () => {
   const user = userEvent.setup()
   render(<MapView />)
 
   await user.click(screen.getByRole('button', { name: /draw your own area/i }))
 
-  expect(
-    screen.queryByRole('button', { name: /explore retiro park/i })
-  ).not.toBeInTheDocument()
   expect(screen.getByTestId('draw-area-control')).toBeInTheDocument()
-  expect(screen.queryByLabelText('What would you want to see on a walk?')).not.toBeInTheDocument()
 })
 
-test('confirming a drawn polygon shows the query panel and submits that polygon', async () => {
+test('confirming a drawn polygon updates the area control and submits that polygon', async () => {
   const user = userEvent.setup()
   const fetchMock = vi.fn().mockResolvedValue(
     jsonResponse(200, { status: 'unresolved', message: 'no match' })
@@ -94,31 +85,44 @@ test('confirming a drawn polygon shows the query panel and submits that polygon'
   await user.click(screen.getByRole('button', { name: /draw your own area/i }))
   await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
 
-  expect(screen.getByLabelText('What would you want to see on a walk?')).toBeInTheDocument()
+  expect(screen.getByText(/custom area/i)).toBeInTheDocument()
 
-  await user.type(
-    screen.getByLabelText('What would you want to see on a walk?'),
-    'plants'
-  )
-  await user.click(screen.getByRole('button', { name: /show me/i }))
+  await submit('plants')
 
   const [, options] = fetchMock.mock.calls[0]
   const sentBody = JSON.parse(options.body)
   expect(sentBody.polygon).toBe(CUSTOM_POLYGON)
 })
 
-test('choosing Explore Retiro Park dismisses the popup and shows the query panel', async () => {
+test('"Redraw area" reopens the draw control without losing the query panel afterward', async () => {
+  const user = userEvent.setup()
   render(<MapView />)
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
 
-  await chooseRetiro()
+  await user.click(screen.getByRole('button', { name: /redraw area/i }))
 
-  expect(
-    screen.queryByRole('button', { name: /explore retiro park/i })
-  ).not.toBeInTheDocument()
-  expect(
-    screen.getByLabelText('What would you want to see on a walk?')
-  ).toBeInTheDocument()
-  expect(screen.getByText(/tell us what you'd like to see/i)).toBeInTheDocument()
+  expect(screen.getByTestId('draw-area-control')).toBeInTheDocument()
+})
+
+test('"Explore Retiro Park" from draw mode switches back to fixed mode', async () => {
+  const user = userEvent.setup()
+  const fetchMock = vi.fn().mockResolvedValue(
+    jsonResponse(200, { status: 'unresolved', message: 'no match' })
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  render(<MapView />)
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
+
+  await user.click(screen.getByRole('button', { name: /explore retiro park/i }))
+
+  expect(screen.getByRole('button', { name: /draw your own area/i })).toBeInTheDocument()
+
+  await submit('plants')
+  const [, options] = fetchMock.mock.calls[0]
+  const sentBody = JSON.parse(options.body)
+  expect(sentBody.polygon).not.toBe(CUSTOM_POLYGON)
 })
 
 test('plots numbered markers and a route line on a resolved outcome', async () => {
@@ -168,7 +172,7 @@ test('shows the results panel with species names and counts on a resolved outcom
   expect(items[1]).toHaveTextContent('Pica pica')
 })
 
-test('docks the panel and hides the intro copy on a resolved outcome', async () => {
+test('shows the outcome message on a resolved outcome', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(
@@ -186,10 +190,9 @@ test('docks the panel and hides the intro copy on a resolved outcome', async () 
   await submit('birds')
 
   await screen.findByText('Early preview message')
-  expect(screen.queryByText(/tell us what you'd like to see/i)).not.toBeInTheDocument()
 })
 
-test('shows no markers and keeps the panel expanded on an unresolved outcome', async () => {
+test('shows no markers on an unresolved outcome', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn().mockResolvedValue(jsonResponse(200, { status: 'unresolved', message: "couldn't match that" }))
@@ -200,7 +203,6 @@ test('shows no markers and keeps the panel expanded on an unresolved outcome', a
 
   await screen.findByText("couldn't match that")
   expect(screen.queryByTestId('marker')).not.toBeInTheDocument()
-  expect(screen.getByText(/tell us what you'd like to see/i)).toBeInTheDocument()
 })
 
 test('posts query, distinctId, and consent to /api/query', async () => {
@@ -236,49 +238,6 @@ test('tracks query_submitted and query_outcome', async () => {
   expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'resolved' })
 })
 
-test('redraw area returns to the draw control after a resolved outcome in draw mode', async () => {
-  const user = userEvent.setup()
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue(
-      jsonResponse(200, { status: 'resolved', species: [], message: 'ok' })
-    )
-  )
-  render(<MapView />)
-  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
-  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
-  await submit('birds')
-  await screen.findByText('ok')
-
-  await user.click(screen.getByRole('button', { name: /redraw area/i }))
-
-  expect(screen.getByTestId('draw-area-control')).toBeInTheDocument()
-})
-
-test('switch to Retiro returns to the fixed-mode query panel after a resolved outcome in draw mode', async () => {
-  const user = userEvent.setup()
-  const fetchMock = vi.fn().mockResolvedValue(
-    jsonResponse(200, { status: 'resolved', species: [], message: 'ok' })
-  )
-  vi.stubGlobal('fetch', fetchMock)
-  render(<MapView />)
-  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
-  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
-  await submit('birds')
-  await screen.findByText('ok')
-
-  await user.click(screen.getByRole('button', { name: /switch to retiro/i }))
-
-  expect(
-    screen.queryByRole('button', { name: /redraw area/i })
-  ).not.toBeInTheDocument()
-
-  await submit('plants')
-  const [, options] = fetchMock.mock.calls[1]
-  const sentBody = JSON.parse(options.body)
-  expect(sentBody.polygon).not.toBe(CUSTOM_POLYGON)
-})
-
 test('allows submitting a new query after a resolved outcome', async () => {
   vi.stubGlobal(
     'fetch',
@@ -292,5 +251,5 @@ test('allows submitting a new query after a resolved outcome', async () => {
   await screen.findByText('ok')
 
   expect(screen.getByLabelText('What would you want to see on a walk?')).not.toBeDisabled()
-  expect(screen.getByRole('button', { name: /show me/i })).not.toBeDisabled()
+  expect(screen.getByRole('button', { name: /create walk/i })).not.toBeDisabled()
 })

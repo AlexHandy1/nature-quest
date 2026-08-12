@@ -2,34 +2,43 @@ import { useState } from 'react'
 
 type GeolocationPromptProps = {
   onLocated: (lat: number, lon: number) => void
+  onOffered: () => void
 }
 
 const FALLBACK_MESSAGE = "Couldn't get your location — pan and zoom manually."
 
-function GeolocationPrompt({ onLocated }: GeolocationPromptProps) {
+function GeolocationPrompt({ onLocated, onOffered }: GeolocationPromptProps) {
   const [error, setError] = useState(!navigator.geolocation)
 
   function handleClick() {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         onLocated(position.coords.latitude, position.coords.longitude)
+        onOffered()
       },
       () => {
         setError(true)
+        onOffered()
       }
     )
   }
 
   return (
     <div className="geolocation-prompt">
-      <p className="geolocation-prompt__copy">
-        This only centers the map on your position — it's never sent to the
-        server or stored, and is separate from analytics consent.
-      </p>
       {navigator.geolocation && (
-        <button type="button" onClick={handleClick}>
-          Use my location
-        </button>
+        <>
+          <button
+            type="button"
+            className="geolocation-prompt__button"
+            title="Center the map on your location"
+            onClick={handleClick}
+          >
+            📍 Use my location
+          </button>
+          <button type="button" className="geolocation-prompt__skip" onClick={onOffered}>
+            Skip
+          </button>
+        </>
       )}
       {error && <p className="geolocation-prompt__fallback">{FALLBACK_MESSAGE}</p>}
     </div>
