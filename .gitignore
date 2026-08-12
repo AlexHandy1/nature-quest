@@ -8,5 +8,6 @@ prototypes/osm_sample*.json
 .env
 *.tfvars
 tests/.smoke_test_output/
+tests/.security_review_output/
 node_modules/
 .vite/

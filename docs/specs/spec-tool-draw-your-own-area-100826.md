@@ -2,9 +2,14 @@
 title: Draw-your-own-area flow (PRD Slice 9)
 version: 1.0
 date_created: 2026-08-10
-last_updated: 2026-08-10
+last_updated: 2026-08-12
 tags: [tool]
-status: Design complete, not yet built
+status: Built and deployed — implementation diverges from this spec's original
+  area-selection state machine (REQ-005 through REQ-009); see
+  docs/decisions/ADR-012-area-selection-persistent-widget-not-popup-funnel.md
+  for what changed and why. Backend requirements (REQ-010 through REQ-017)
+  were built as specified. Automated end-to-end coverage for this flow was
+  not achieved — see the "known gaps" comment in tests/e2e_web_smoke_test.py.
 sources:
   - app/backend/services/gbif_client.py (production)
   - app/backend/routers/query.py (production)
