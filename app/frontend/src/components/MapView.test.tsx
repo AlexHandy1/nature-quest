@@ -21,6 +21,7 @@ vi.mock('react-leaflet', () => ({
   Polyline: ({ positions }: { positions: [number, number][] }) => (
     <div data-testid="polyline" data-points={positions.length} />
   ),
+  useMap: () => ({ setView: vi.fn(), getZoom: () => 15 }),
 }))
 
 const CUSTOM_POLYGON = 'POLYGON((-3.87 40.90,-3.86 40.90,-3.86 40.89,-3.87 40.90))'
@@ -233,6 +234,49 @@ test('tracks query_submitted and query_outcome', async () => {
   await screen.findByText('ok')
   expect(trackEvent).toHaveBeenCalledWith('query_submitted')
   expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'resolved' })
+})
+
+test('redraw area returns to the draw control after a resolved outcome in draw mode', async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, { status: 'resolved', species: [], message: 'ok' })
+    )
+  )
+  render(<MapView />)
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
+  await submit('birds')
+  await screen.findByText('ok')
+
+  await user.click(screen.getByRole('button', { name: /redraw area/i }))
+
+  expect(screen.getByTestId('draw-area-control')).toBeInTheDocument()
+})
+
+test('switch to Retiro returns to the fixed-mode query panel after a resolved outcome in draw mode', async () => {
+  const user = userEvent.setup()
+  const fetchMock = vi.fn().mockResolvedValue(
+    jsonResponse(200, { status: 'resolved', species: [], message: 'ok' })
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  render(<MapView />)
+  await user.click(screen.getByRole('button', { name: /draw your own area/i }))
+  await user.click(screen.getByRole('button', { name: /confirm \(mock\)/i }))
+  await submit('birds')
+  await screen.findByText('ok')
+
+  await user.click(screen.getByRole('button', { name: /switch to retiro/i }))
+
+  expect(
+    screen.queryByRole('button', { name: /redraw area/i })
+  ).not.toBeInTheDocument()
+
+  await submit('plants')
+  const [, options] = fetchMock.mock.calls[1]
+  const sentBody = JSON.parse(options.body)
+  expect(sentBody.polygon).not.toBe(CUSTOM_POLYGON)
 })
 
 test('allows submitting a new query after a resolved outcome', async () => {

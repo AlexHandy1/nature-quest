@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { MapContainer, Marker, Polyline, TileLayer } from 'react-leaflet'
+import { useEffect, useState } from 'react'
+import { MapContainer, Marker, Polyline, TileLayer, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import QueryPanel, { type Outcome, type Result } from './QueryPanel'
@@ -39,6 +39,14 @@ export type Species = {
   distance_m?: number
 }
 
+function MapRecenter({ center }: { center: [number, number] }) {
+  const map = useMap()
+  useEffect(() => {
+    map.setView(center, map.getZoom())
+  }, [center, map])
+  return null
+}
+
 function numberedIcon(num: number) {
   return L.divIcon({
     html: `<div class="map-marker-number">${num}</div>`,
@@ -72,6 +80,14 @@ function MapView() {
   function confirmDrawnArea(polygon: string, center: [number, number]) {
     setAreaState({ mode: 'draw', polygon, center })
     setFlowStage('ready')
+  }
+
+  function redrawArea() {
+    setFlowStage('drawing')
+  }
+
+  function switchToRetiro() {
+    selectFixedArea()
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -123,6 +139,7 @@ function MapView() {
           />
         ))}
         {flowStage === 'drawing' && <DrawAreaControl onConfirm={confirmDrawnArea} />}
+        <MapRecenter center={areaState.center} />
       </MapContainer>
       {flowStage === 'choice' && (
         <AreaChoicePopup onSelectFixed={selectFixedArea} onSelectDraw={startDrawing} />
@@ -135,6 +152,9 @@ function MapView() {
           result={result}
           onSubmit={handleSubmit}
           docked={result?.outcome === 'resolved'}
+          areaMode={areaState.mode}
+          onRedraw={redrawArea}
+          onSwitchToRetiro={switchToRetiro}
         />
       )}
       <ResultsPanel species={species} />

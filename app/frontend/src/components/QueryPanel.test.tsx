@@ -11,6 +11,9 @@ function renderPanel(overrides = {}) {
     result: null,
     onSubmit: vi.fn((event) => event.preventDefault()),
     docked: false,
+    areaMode: 'fixed' as const,
+    onRedraw: vi.fn(),
+    onSwitchToRetiro: vi.fn(),
     ...overrides,
   }
   render(<QueryPanel {...props} />)
@@ -91,4 +94,43 @@ test('keeps the form enabled and resubmittable after a non-resolved outcome', ()
 
   expect(screen.getByLabelText('What would you want to see on a walk?')).not.toBeDisabled()
   expect(screen.getByRole('button', { name: /show me/i })).not.toBeDisabled()
+})
+
+test('does not show redraw/switch-to-Retiro controls when not docked', () => {
+  renderPanel({ docked: false, areaMode: 'draw' })
+
+  expect(screen.queryByRole('button', { name: /redraw area/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /switch to retiro/i })).not.toBeInTheDocument()
+})
+
+test('shows redraw and switch-to-Retiro controls when docked in draw mode', () => {
+  renderPanel({ docked: true, areaMode: 'draw' })
+
+  expect(screen.getByRole('button', { name: /redraw area/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /switch to retiro/i })).toBeInTheDocument()
+})
+
+test('hides redraw and switch-to-Retiro controls when docked in fixed mode', () => {
+  renderPanel({ docked: true, areaMode: 'fixed' })
+
+  expect(screen.queryByRole('button', { name: /redraw area/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /switch to retiro/i })).not.toBeInTheDocument()
+})
+
+test('calls onRedraw when "Redraw area" is clicked', async () => {
+  const user = userEvent.setup()
+  const props = renderPanel({ docked: true, areaMode: 'draw' })
+
+  await user.click(screen.getByRole('button', { name: /redraw area/i }))
+
+  expect(props.onRedraw).toHaveBeenCalledOnce()
+})
+
+test('calls onSwitchToRetiro when "Switch to Retiro" is clicked', async () => {
+  const user = userEvent.setup()
+  const props = renderPanel({ docked: true, areaMode: 'draw' })
+
+  await user.click(screen.getByRole('button', { name: /switch to retiro/i }))
+
+  expect(props.onSwitchToRetiro).toHaveBeenCalledOnce()
 })

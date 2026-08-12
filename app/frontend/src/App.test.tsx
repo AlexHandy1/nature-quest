@@ -18,6 +18,7 @@ vi.mock('react-leaflet', () => ({
   TileLayer: () => null,
   Marker: () => null,
   Polyline: () => null,
+  useMap: () => ({ setView: vi.fn(), getZoom: () => 15 }),
 }))
 
 beforeEach(() => {

@@ -27,9 +27,22 @@ type QueryPanelProps = {
   result: Result | null
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
   docked: boolean
+  areaMode: 'fixed' | 'draw'
+  onRedraw: () => void
+  onSwitchToRetiro: () => void
 }
 
-function QueryPanel({ query, onQueryChange, loading, result, onSubmit, docked }: QueryPanelProps) {
+function QueryPanel({
+  query,
+  onQueryChange,
+  loading,
+  result,
+  onSubmit,
+  docked,
+  areaMode,
+  onRedraw,
+  onSwitchToRetiro,
+}: QueryPanelProps) {
   return (
     <div className={`query-panel${docked ? ' query-panel--docked' : ''}`}>
       {!docked && (
@@ -63,6 +76,16 @@ function QueryPanel({ query, onQueryChange, loading, result, onSubmit, docked }:
         <p className={`form-message form-message--${VARIANT_BY_OUTCOME[result.outcome]}`}>
           {result.message}
         </p>
+      )}
+      {docked && areaMode === 'draw' && (
+        <div className="query-panel__area-actions">
+          <button type="button" onClick={onRedraw}>
+            Redraw area
+          </button>
+          <button type="button" onClick={onSwitchToRetiro}>
+            Switch to Retiro
+          </button>
+        </div>
       )}
     </div>
   )
