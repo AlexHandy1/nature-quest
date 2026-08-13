@@ -437,7 +437,7 @@ def test_fetch_common_name_prefers_the_english_vernacular_name():
 
     assert name == "Common Blackbird"
     mock_get.assert_called_once_with(
-        "https://api.gbif.org/v1/species/2495414/vernacularNames", timeout=15.0
+        "https://api.gbif.org/v1/species/2495414/vernacularNames", timeout=30.0
     )
 
 

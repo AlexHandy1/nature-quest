@@ -150,7 +150,7 @@ def fetch_common_name(species_key: int | None) -> str | None:
         return None
     try:
         response = httpx.get(
-            f"{GBIF_SPECIES_URL}/{species_key}/vernacularNames", timeout=15.0
+            f"{GBIF_SPECIES_URL}/{species_key}/vernacularNames", timeout=REQUEST_TIMEOUT
         )
     except httpx.HTTPError:
         return None
