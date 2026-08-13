@@ -52,3 +52,10 @@ def log_waypoints_ordered(query: str, distinct_id: str, waypoints: list[dict]) -
         "waypoints_ordered",
         extra={"query": query, "distinct_id": distinct_id, "waypoints": waypoints},
     )
+
+
+def log_species_enriched(query: str, distinct_id: str, species: list[dict]) -> None:
+    query_logger.info(
+        "species_enriched",
+        extra={"query": query, "distinct_id": distinct_id, "species": species},
+    )

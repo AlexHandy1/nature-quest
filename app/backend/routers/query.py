@@ -16,11 +16,13 @@ from services.logging_client import (
     log_llm_taxon_filters_resolved,
     log_query_outcome,
     log_query_submitted,
+    log_species_enriched,
     log_species_selected,
     log_waypoints_ordered,
 )
 from services.query_budget import try_consume_daily_budget
 from services.rate_limiter import limiter
+from services.species_enrichment import enrich_species
 from services.taxon_resolution import resolve_taxon_key
 from services.waypoints import order_waypoints
 
@@ -112,6 +114,8 @@ def submit_query(request: Request, body: QueryRequest):
     center_lat, center_lon = polygon_centroid(body.polygon)
     ordered_species = order_waypoints(species, center_lat, center_lon)
     log_waypoints_ordered(body.query, body.distinctId, ordered_species)
+    ordered_species = enrich_species(ordered_species)
+    log_species_enriched(body.query, body.distinctId, ordered_species)
 
     log_query_outcome(
         body.query, "resolved", distinct_id=body.distinctId, gbif_result_count=len(species), **usage
