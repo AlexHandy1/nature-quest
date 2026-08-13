@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — species_detail_mobile_prototype.html
+Throwaway UI prototype. Do not promote to production as-is.
+
+Question: how should species detail (common name, photo, GBIF link, all-
+observations toggle) surface on mobile, and how should map markers and the
+species list relate to each other? Also mocks up the AreaControl mobile fix
+(collapsed chip instead of the current overflowing 3-button pill) in the nav,
+shared across all three variants, since it's chrome common to all of them.
+
+Three variants of the results/species-detail experience, switchable via
+?variant=A|B|C, rendered inside a fixed 375x667 (iPhone SE) phone frame so
+the mobile-first comparison doesn't depend on resizing the browser window.
+Real Leaflet + OpenStreetMap tiles, hand-captured demo species data (5 mock
+Retiro Park species — not wired to the live GBIF/query pipeline).
+
+  A — Map-first bottom sheet: peek shows the species list (thumbnail, common
+      name, count); tapping a row expands an inline accordion (photo, GBIF
+      link, observations toggle). Tapping a marker expands its row.
+  B — Bottom card carousel: one full species-detail card at a time, swipeable,
+      dot indicators. Tapping a marker scrolls the carousel to match; the
+      active marker gets a pulsing highlight ring.
+  C — Marker-popup centric: minimal chrome. Tapping a marker opens a native
+      Leaflet popup anchored to it (photo, common name, GBIF link,
+      observations toggle inside the popup). A slim always-visible chip row
+      pinned to the bottom lets you jump between species without touching
+      the map.
+
+No existing page to host these in yet (and deliberately kept out of
+app/frontend/src — see docs/status_docs for why: CI lint/typecheck/build
+runs on any path under app/**, and this needs zero footprint there), so this
+is a standalone throwaway route (sub-shape B) per prototypes/README.md's
+existing ux/ convention (see map_narrative_layout_prototype.html).
+
+Run: open this file directly in a browser, e.g.
+  open prototypes/ux/species_detail_mobile_prototype.html
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — species detail mobile UX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    /* Same trail-guide tokens as app/frontend/src/index.css (light mode only — this
+       prototype doesn't need to answer the dark-mode question). */
+    --text: #5a4f3d;
+    --text-h: #2c2417;
+    --bg: #f7f1e1;
+    --border: #d9c9a3;
+    --surface: #ede2c9;
+    --accent: #3f6b4a;
+    --accent-hover: #345a3d;
+    --accent-text: #fbf7ec;
+    --display: 'Fraunces', Georgia, serif;
+    --sans: 'Work Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: #d9cba3; font-family: var(--sans); color: var(--text);
+  }
+  body { display: flex; flex-direction: column; align-items: center; padding: 32px 12px 100px; }
+  h1.page-title { font-family: var(--sans); font-size: 14px; color: #5a4f3d; margin: 0 0 16px; }
+
+  /* ── Phone frame — fixed 375x667 (iPhone SE) so this reads as mobile
+       regardless of the reviewer's actual window size ── */
+  .phone {
+    width: 375px; height: 667px; border-radius: 36px; background: #1c1912;
+    padding: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.35);
+  }
+  .phone-screen {
+    position: relative; width: 100%; height: 100%; border-radius: 26px;
+    overflow: hidden; background: var(--bg);
+  }
+
+  /* ── Prototype switcher ── */
+  #proto-switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 5000; display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; padding: 8px 10px; border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4); font-size: 13px; font-family: monospace;
+    border: 2px solid #ffd700;
+  }
+  #proto-switcher button {
+    background: #ffd700; color: #111; border: none; width: 28px; height: 28px;
+    border-radius: 50%; font-weight: bold; cursor: pointer; font-size: 14px;
+  }
+  #proto-switcher button:hover { background: #fff; }
+  #proto-switcher .label { min-width: 230px; text-align: center; }
+
+  /* ═══════════════ Shared chrome — nav bar + compact AreaControl ═══════════════ */
+  .nav {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 800;
+    height: 52px; padding: 0 12px; display: flex; align-items: center;
+    justify-content: space-between; gap: 8px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .nav__brand {
+    font-family: var(--display); font-weight: 600; font-size: 15px;
+    color: var(--text-h); white-space: nowrap;
+  }
+  .area-chip {
+    display: flex; align-items: center; gap: 6px; padding: 0 12px; height: 36px;
+    min-width: 44px; border-radius: 999px; background: var(--bg);
+    border: 1px solid var(--border); font-size: 12px; font-weight: 600;
+    color: var(--text-h); cursor: pointer; white-space: nowrap; position: relative;
+  }
+  .area-chip__caret { transition: transform .15s ease; font-size: 10px; }
+  .area-chip.open .area-chip__caret { transform: rotate(180deg); }
+  .area-chip__menu {
+    position: absolute; top: 42px; right: 0; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    padding: 6px; display: none; flex-direction: column; gap: 2px; min-width: 160px;
+  }
+  .area-chip.open .area-chip__menu { display: flex; }
+  .area-chip__menu button {
+    all: unset; padding: 10px 10px; border-radius: 8px; font-size: 12.5px;
+    font-family: var(--sans); font-weight: 600; color: var(--text-h); cursor: pointer;
+    min-height: 44px; display: flex; align-items: center;
+  }
+  .area-chip__menu button:hover { background: var(--surface); }
+
+  .map-wrap { position: absolute; inset: 52px 0 0 0; }
+  .map-el { width: 100%; height: 100%; }
+  .marker-num {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    border: 2px solid var(--bg); font-family: var(--sans);
+  }
+  .marker-num.active { box-shadow: 0 0 0 6px rgba(63,107,74,.35), 0 2px 8px rgba(0,0,0,.35); }
+
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+    min-height: 36px; border-radius: 999px; background: var(--accent);
+    color: var(--accent-text); font-family: var(--sans); font-weight: 600;
+    font-size: 12.5px; text-decoration: none; border: none; cursor: pointer;
+  }
+  .pill-btn--ghost {
+    background: var(--surface); color: var(--text-h); border: 1px solid var(--border);
+  }
+  .count-badge {
+    font-size: 11px; font-weight: 600; color: var(--text-h); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
+  .sci-name { font-style: italic; color: var(--text); font-size: 12px; }
+
+  /* ═══════════════ VARIANT A — Bottom sheet ═══════════════ */
+  .sheetA {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 900;
+    background: var(--bg); border-top: 1px solid var(--border);
+    border-radius: 20px 20px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.15);
+    max-height: 300px; transition: max-height .25s ease; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .sheetA.full { max-height: 560px; }
+  .sheetA__handle { flex: 0 0 auto; display: flex; justify-content: center; padding: 10px 0 6px; cursor: pointer; }
+  .sheetA__handle span { width: 36px; height: 4px; border-radius: 999px; background: var(--border); }
+  .sheetA__header { padding: 0 20px 8px; font-family: var(--sans); font-weight: 600; font-size: 13px; color: var(--text-h); }
+  .sheetA__list { overflow-y: auto; padding-bottom: 12px; }
+  .sheetA__row {
+    all: unset; display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 10px 20px; min-height: 44px; cursor: pointer;
+  }
+  .sheetA__thumb { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: var(--surface); }
+  .sheetA__name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .sheetA__name b { font-family: var(--sans); font-size: 13.5px; color: var(--text-h); font-weight: 600; }
+  .sheetA__chevron { font-size: 12px; color: var(--text); transition: transform .15s ease; }
+  .sheetA__row.expanded .sheetA__chevron { transform: rotate(90deg); }
+  .sheetA__detail { padding: 0 20px 16px 20px; display: none; }
+  .sheetA__row.expanded + .sheetA__detail { display: block; }
+  .sheetA__detail img { width: 100%; height: 140px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; }
+  .sheetA__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .toggle-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-h); cursor: pointer; min-height: 36px; }
+
+  /* ═══════════════ VARIANT B — Bottom card carousel ═══════════════ */
+  .dockB { position: absolute; left: 0; right: 0; bottom: 0; z-index: 900; padding: 0 0 14px; }
+  .dotsB { display: flex; justify-content: center; gap: 6px; margin-bottom: 10px; }
+  .dotsB span { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .dotsB span.active { background: var(--accent); width: 16px; border-radius: 4px; }
+  .carouselB {
+    display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory;
+    padding: 0 38px; scrollbar-width: none;
+  }
+  .carouselB::-webkit-scrollbar { display: none; }
+  .cardB {
+    flex: 0 0 300px; scroll-snap-align: center; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.15);
+    overflow: hidden;
+  }
+  .cardB img { width: 100%; height: 120px; object-fit: cover; display: block; }
+  .cardB__body { padding: 12px 14px 14px; }
+  .cardB__top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+  .cardB__top b { font-family: var(--sans); font-size: 14px; color: var(--text-h); }
+  .cardB__actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  /* ═══════════════ VARIANT C — Marker-popup centric ═══════════════ */
+  .chipsC {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 900;
+    display: flex; gap: 8px; overflow-x: auto; padding: 10px 12px;
+    background: linear-gradient(to top, rgba(247,241,225,.97), rgba(247,241,225,0));
+  }
+  .chipC {
+    all: unset; flex: 0 0 auto; display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px; min-height: 40px; border-radius: 999px; background: var(--bg);
+    border: 1px solid var(--border); font-family: var(--sans); font-size: 12px;
+    font-weight: 600; color: var(--text-h); cursor: pointer; white-space: nowrap;
+  }
+  .chipC.active { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .chipC__num {
+    width: 18px; height: 18px; border-radius: 50%; background: var(--surface); color: var(--text-h);
+    display: flex; align-items: center; justify-content: center; font-size: 10px; flex: 0 0 auto;
+  }
+  .chipC.active .chipC__num { background: rgba(255,255,255,.25); color: var(--accent-text); }
+  .leaflet-popup-content { font-family: var(--sans); margin: 10px 12px; }
+  .popupC img { width: 220px; height: 110px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; display: block; }
+  .popupC b { font-size: 13.5px; color: var(--text-h); font-family: var(--sans); }
+  .popupC__actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<h1 class="page-title">species_detail_mobile_prototype.html — 375×667 phone frame, ?variant=A|B|C</h1>
+<div class="phone"><div class="phone-screen" id="app"></div></div>
+
+<div id="proto-switcher">
+  <button id="proto-prev">&larr;</button>
+  <span class="label" id="proto-label">A — Map-first bottom sheet</span>
+  <button id="proto-next">&rarr;</button>
+</div>
+
+<script>
+// ── Demo data — 5 hand-captured mock species around Retiro Park, not live GBIF data ──
+const SPECIES = [
+  { id: 1, common: 'Eurasian Blue Tit', sci: 'Cyanistes caeruleus', count: 142, lat: 40.4150, lon: -3.6810,
+    img: 'https://picsum.photos/seed/bluetit/400/260' },
+  { id: 2, common: 'Common Carp', sci: 'Cyprinus carpio', count: 88, lat: 40.4122, lon: -3.6845,
+    img: 'https://picsum.photos/seed/carp/400/260' },
+  { id: 3, common: 'European Robin', sci: 'Erithacus rubecula', count: 210, lat: 40.4108, lon: -3.6795,
+    img: 'https://picsum.photos/seed/robin/400/260' },
+  { id: 4, common: 'Holm Oak', sci: 'Quercus ilex', count: 340, lat: 40.4146, lon: -3.6852,
+    img: 'https://picsum.photos/seed/holmoak/400/260' },
+  { id: 5, common: 'Iberian Wall Lizard', sci: 'Podarcis hispanicus', count: 56, lat: 40.4098, lon: -3.6828,
+    img: 'https://picsum.photos/seed/lizard/400/260' },
+];
+function gbifUrl(s) { return 'https://www.gbif.org/species/search?q=' + encodeURIComponent(s.sci); }
+const RETIRO_CENTER = [40.4137, -3.6826];
+
+const VARIANTS = ['A', 'B', 'C'];
+const LABELS = {
+  A: 'A — Map-first bottom sheet',
+  B: 'B — Bottom card carousel',
+  C: 'C — Marker-popup centric',
+};
+
+function currentVariant() {
+  const v = new URLSearchParams(location.search).get('variant');
+  return VARIANTS.includes(v) ? v : 'A';
+}
+function setVariant(v) {
+  const url = new URL(location.href);
+  url.searchParams.set('variant', v);
+  history.replaceState(null, '', url);
+  render(v);
+}
+
+// ── Shared nav bar + compact AreaControl chip (the mobile overflow fix) ──
+function navHtml() {
+  return `
+    <div class="nav">
+      <span class="nav__brand">🌿 Nature Quest</span>
+      <div class="area-chip" id="area-chip">
+        <span>Retiro Park</span><span class="area-chip__caret">▾</span>
+        <div class="area-chip__menu">
+          <button type="button">Draw your own area</button>
+        </div>
+      </div>
+    </div>`;
+}
+function wireAreaChip() {
+  const chip = document.getElementById('area-chip');
+  chip.addEventListener('click', (e) => {
+    if (e.target.closest('.area-chip__menu button')) { chip.classList.remove('open'); return; }
+    chip.classList.toggle('open');
+  });
+}
+
+let map = null;
+function destroyMap() { if (map) { map.remove(); map = null; } }
+function baseMap(el) {
+  map = L.map(el, { zoomControl: false }).setView(RETIRO_CENTER, 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
+  return map;
+}
+function numberedIcon(num, active) {
+  return L.divIcon({
+    html: `<div class="marker-num${active ? ' active' : ''}">${num}</div>`,
+    className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+  });
+}
+
+// ═══════════════ VARIANT A ═══════════════
+function renderA() {
+  document.getElementById('app').innerHTML = `
+    ${navHtml()}
+    <div class="map-wrap"><div class="map-el" id="mapA"></div></div>
+    <div class="sheetA" id="sheetA">
+      <div class="sheetA__handle" id="sheetA-handle"><span></span></div>
+      <div class="sheetA__header">${SPECIES.length} species found</div>
+      <div class="sheetA__list" id="sheetA-list"></div>
+    </div>`;
+  wireAreaChip();
+  const m = baseMap('mapA');
+  const markers = {};
+  SPECIES.forEach((s) => {
+    markers[s.id] = L.marker([s.lat, s.lon], { icon: numberedIcon(s.id, false) }).addTo(m);
+    markers[s.id].on('click', () => expandRowA(s.id));
+  });
+
+  const list = document.getElementById('sheetA-list');
+  list.innerHTML = SPECIES.map((s) => `
+    <button type="button" class="sheetA__row" data-id="${s.id}">
+      <img class="sheetA__thumb" src="${s.img}" alt=""/>
+      <span class="sheetA__name"><b>${s.common}</b><span class="sci-name">${s.sci}</span></span>
+      <span class="count-badge">${s.count}</span>
+      <span class="sheetA__chevron">›</span>
+    </button>
+    <div class="sheetA__detail" data-detail="${s.id}">
+      <img src="${s.img}" alt=""/>
+      <div class="sheetA__actions">
+        <a class="pill-btn" href="${gbifUrl(s)}" target="_blank" rel="noopener">View on GBIF ↗</a>
+        <label class="toggle-pill"><input type="checkbox"/> Show all sightings</label>
+      </div>
+    </div>`).join('');
+
+  function expandRowA(id) {
+    const wasExpanded = list.querySelector(`.sheetA__row[data-id="${id}"]`).classList.contains('expanded');
+    list.querySelectorAll('.sheetA__row').forEach((r) => r.classList.remove('expanded'));
+    Object.values(markers).forEach((mk, i) => mk.setIcon(numberedIcon(SPECIES[i].id, false)));
+    if (!wasExpanded) {
+      list.querySelector(`.sheetA__row[data-id="${id}"]`).classList.add('expanded');
+      markers[id].setIcon(numberedIcon(id, true));
+      document.getElementById('sheetA').classList.add('full');
+    }
+  }
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.sheetA__row');
+    if (row) expandRowA(Number(row.dataset.id));
+  });
+  document.getElementById('sheetA-handle').addEventListener('click', () => {
+    document.getElementById('sheetA').classList.toggle('full');
+  });
+}
+
+// ═══════════════ VARIANT B ═══════════════
+function renderB() {
+  document.getElementById('app').innerHTML = `
+    ${navHtml()}
+    <div class="map-wrap"><div class="map-el" id="mapB"></div></div>
+    <div class="dockB">
+      <div class="dotsB" id="dotsB"></div>
+      <div class="carouselB" id="carouselB"></div>
+    </div>`;
+  wireAreaChip();
+  const m = baseMap('mapB');
+  const markers = SPECIES.map((s) => L.marker([s.lat, s.lon], { icon: numberedIcon(s.id, false) }).addTo(m));
+
+  document.getElementById('dotsB').innerHTML = SPECIES.map((_, i) => `<span data-i="${i}"></span>`).join('');
+  const carousel = document.getElementById('carouselB');
+  carousel.innerHTML = SPECIES.map((s) => `
+    <div class="cardB" data-i="${s.id - 1}">
+      <img src="${s.img}" alt=""/>
+      <div class="cardB__body">
+        <div class="cardB__top"><b>${s.common}</b><span class="count-badge">${s.count}</span></div>
+        <span class="sci-name">${s.sci}</span>
+        <div class="cardB__actions">
+          <a class="pill-btn" href="${gbifUrl(s)}" target="_blank" rel="noopener">View on GBIF ↗</a>
+          <label class="toggle-pill"><input type="checkbox"/> All sightings</label>
+        </div>
+      </div>
+    </div>`).join('');
+
+  function setActive(i) {
+    document.querySelectorAll('#dotsB span').forEach((d, di) => d.classList.toggle('active', di === i));
+    markers.forEach((mk, mi) => mk.setIcon(numberedIcon(SPECIES[mi].id, mi === i)));
+  }
+  setActive(0);
+  let scrollTimer;
+  carousel.addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      const cardW = carousel.children[0].getBoundingClientRect().width + 12;
+      const i = Math.round(carousel.scrollLeft / cardW);
+      setActive(Math.max(0, Math.min(SPECIES.length - 1, i)));
+    }, 80);
+  });
+  markers.forEach((mk, i) => mk.on('click', () => {
+    const card = carousel.children[i];
+    carousel.scrollTo({ left: card.offsetLeft - carousel.offsetLeft - 38, behavior: 'smooth' });
+    setActive(i);
+  }));
+}
+
+// ═══════════════ VARIANT C ═══════════════
+function renderC() {
+  document.getElementById('app').innerHTML = `
+    ${navHtml()}
+    <div class="map-wrap"><div class="map-el" id="mapC"></div></div>
+    <div class="chipsC" id="chipsC"></div>`;
+  wireAreaChip();
+  const m = baseMap('mapC');
+  const markers = SPECIES.map((s) => {
+    const mk = L.marker([s.lat, s.lon], { icon: numberedIcon(s.id, false) }).addTo(m);
+    mk.bindPopup(`
+      <div class="popupC">
+        <img src="${s.img}" alt=""/>
+        <b>${s.common}</b><br/><span class="sci-name">${s.sci}</span>
+        <div class="popupC__actions">
+          <a class="pill-btn" href="${gbifUrl(s)}" target="_blank" rel="noopener">GBIF ↗</a>
+          <label class="toggle-pill"><input type="checkbox"/> All sightings</label>
+        </div>
+      </div>`);
+    return mk;
+  });
+
+  const chips = document.getElementById('chipsC');
+  chips.innerHTML = SPECIES.map((s) => `
+    <button type="button" class="chipC" data-id="${s.id}">
+      <span class="chipC__num">${s.id}</span>${s.common}
+    </button>`).join('');
+
+  function activate(id) {
+    markers.forEach((mk, i) => mk.setIcon(numberedIcon(SPECIES[i].id, SPECIES[i].id === id)));
+    chips.querySelectorAll('.chipC').forEach((c) => c.classList.toggle('active', Number(c.dataset.id) === id));
+    const mk = markers[id - 1];
+    m.panTo(mk.getLatLng());
+    mk.openPopup();
+  }
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chipC');
+    if (chip) activate(Number(chip.dataset.id));
+  });
+  markers.forEach((mk, i) => mk.on('click', () => activate(SPECIES[i].id)));
+}
+
+function render(v) {
+  destroyMap();
+  document.getElementById('proto-label').textContent = LABELS[v];
+  if (v === 'A') renderA();
+  if (v === 'B') renderB();
+  if (v === 'C') renderC();
+  setTimeout(() => { if (map) map.invalidateSize(); }, 50);
+}
+
+document.getElementById('proto-prev').addEventListener('click', () => {
+  const i = VARIANTS.indexOf(currentVariant());
+  setVariant(VARIANTS[(i - 1 + VARIANTS.length) % VARIANTS.length]);
+});
+document.getElementById('proto-next').addEventListener('click', () => {
+  const i = VARIANTS.indexOf(currentVariant());
+  setVariant(VARIANTS[(i + 1) % VARIANTS.length]);
+});
+document.addEventListener('keydown', (e) => {
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if (e.key === 'ArrowLeft') document.getElementById('proto-prev').click();
+  if (e.key === 'ArrowRight') document.getElementById('proto-next').click();
+});
+
+render(currentVariant());
+</script>
+</body>
+</html>

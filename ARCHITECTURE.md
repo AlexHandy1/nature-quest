@@ -10,6 +10,8 @@ A current, whole-system map. For the detailed "why" behind any decision here, fo
 
 **Slice 9 (draw-your-own-area)** is **built and deployed**. `/api/query`'s `polygon` field is required (no backend default/fixed-area fallback); the frontend always sends an explicit WKT polygon, either the fixed Retiro constant or a user-drawn one. The frontend's actual area-selection UX diverges materially from the slice's original spec — a persistent, always-changeable widget (`AreaControl`) replaced a one-time popup/funnel, and Leaflet-draw's own native controls replaced a custom "Confirm Area" button — see `docs/decisions/ADR-012-area-selection-persistent-widget-not-popup-funnel.md`. Automated end-to-end coverage for the drawing flow itself was not achieved (see `tests/e2e_web_smoke_test.py`'s "known gaps" comment) — manual verification only.
 
+**Species detail enrichment (common name, image, GBIF link)** is **built and deployed**. Each of the final ~5 selected species is enriched with a GBIF vernacular name and a Wikipedia article image (`services/species_enrichment.py`) before the response is sent; the frontend's `ResultsPanel` renders this as an accordion (tap/click a row to expand photo + GBIF link), with the same interaction model on both a desktop sidebar and a mobile bottom-dock overlay — see `docs/decisions/ADR-013-species-image-source-wikipedia-not-gbif-media.md` for why the image comes from Wikipedia rather than GBIF's own occurrence photos.
+
 **Still outstanding from Slice 2's original scope**: basic GCP uptime/error-rate alerting (REQ-025-027) — not yet built. A *different* alert was built first instead: a real-time email on every `/api/query` submission (`infra/monitoring.tf` — log-based metric + alert policy), a deliberate, explicitly-scoped short-term deviation that will not scale past near-zero traffic — see `docs/decisions/ADR-010-realtime-per-query-alerting.md`. `POST /api/interest`, `InterestSubmission`, and `InterestForm.tsx` (dormant since `CON-001`) have since been deleted entirely, along with their tests and the CI/CD smoke-test check that POSTed to `/api/interest`.
 
 **REQ-019's implementation deviates from the spec's original design**: the spec specifies OpenTelemetry (`AnthropicInstrumentor` + `PostHogSpanProcessor`); the actual build uses `posthog.ai.anthropic.Anthropic`, a wrapper client — see `docs/decisions/ADR-009-posthog-ai-observability-wrapper-client.md` for why.
@@ -51,9 +53,9 @@ models/query.py            QueryRequest (Pydantic) — query, distinctId, consen
 services/
   logging_client.py        log_query_outcome() plus per-pipeline-stage log lines (log_query_submitted
                              — now also takes the submitted polygon, REQ-015 — log_llm_taxon_filters_resolved,
-                             log_species_selected, log_waypoints_ordered) — structured Cloud Logging writes
-                             (JsonLogFormatter, main.py), all stamped with distinct_id so they can be
-                             cross-referenced with PostHog's Activity view
+                             log_species_selected, log_waypoints_ordered, log_species_enriched) —
+                             structured Cloud Logging writes (JsonLogFormatter, main.py), all stamped
+                             with distinct_id so they can be cross-referenced with PostHog's Activity view
   anthropic_client.py      TAXON_GUIDANCE + QUERY_SCHEMA_TOOL, resolve_taxon_filters() (accepts an
                              optional on_response callback + **extra_kwargs passthrough) — returns a
                              list of {taxonRank, taxonValue}, empty if no signal. System prompt
@@ -76,7 +78,16 @@ services/
                              relies on. Also: parse_polygon_vertices/polygon_centroid (shared WKT
                              parsing, used by both this module and models/query.py's validator),
                              per-species NxN density-cluster hotspot (_cluster_species_hotspot,
-                             Slice 3), scale-guard, retry, ranking
+                             Slice 3), scale-guard, retry, ranking, fetch_common_name(species_key) —
+                             GBIF vernacularNames, majority-vote across English-tagged names (not
+                             first-match — GBIF has no preferred-name flag and mixes in rare
+                             abbreviations, see ADR-013)
+  wikipedia_client.py       fetch_species_image(common_name, scientific_name) — Wikipedia summary API,
+                             common name first then scientific name fallback on a missing/disambiguation
+                             article. See ADR-013 for why Wikipedia over GBIF's own occurrence photos.
+  species_enrichment.py     enrich_species(species_list) — adds common_name + image_url to each of the
+                             final selected species (not every candidate scanned during ranking),
+                             concurrently across species (capped at 3, same pattern as elsewhere)
   waypoints.py              order_waypoints(species, center_lat, center_lon) — pure nearest-neighbour
                              route ordering from a center point (Slice 3); no I/O
   rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
@@ -124,9 +135,16 @@ src/components/QueryPanel.tsx     Query form + loading/non-resolved-outcome mess
                                      inside nav-bar (not its own floating/docked panel). No message is
                                      shown on a resolved outcome — the markers/route/results panel
                                      already communicate success.
-src/components/ResultsPanel.tsx   Species list (scientific name + observation count) in route order,
-                                     for cross-checking against the plotted markers. Renders nothing
-                                     until a resolved outcome.
+src/components/ResultsPanel.tsx   Species list (common name primary, scientific name secondary,
+                                     observation count) in route order. Each row is an accordion —
+                                     click/tap to expand a photo + GBIF species-page link
+                                     (gbif.org/species/{species_key}), with a no-image fallback when
+                                     none was found. Expanded state is owned by MapView (controlled
+                                     component), not internal — so a marker click and a row click drive
+                                     the same state and stay in sync. Real document-flow sidebar column
+                                     on desktop; bottom-dock overlay with the same accordion behavior on
+                                     mobile (index.css's 700px breakpoint). Renders nothing until a
+                                     resolved outcome.
 src/components/ConsentBanner.tsx  Accept/reject, persists choice in localStorage, gates PostHog
 src/lib/posthog.ts                init (opt-out-by-default), optIn/optOut, getDistinctId(), hasConsent(),
                                      trackEvent(), exported CONSENT_KEY
@@ -153,6 +171,9 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     │      (Anthropic API, real key from Secret Manager)
                                                     │    → services/taxon_resolution.py (GBIF species/match)
                                                     │    → services/gbif_client.py (GBIF occurrence/search)
+                                                    │    → services/species_enrichment.py
+                                                    │      (services/gbif_client.py vernacularNames +
+                                                    │      services/wikipedia_client.py, final species only)
                                                     │    → services/logging_client.py (structured log line)
                                                     └─ everything else → static/ (built frontend)
 ```
@@ -183,6 +204,7 @@ Authentication uses Workload Identity Federation — no static GCP keys anywhere
 | Exact requirements/acceptance criteria for Phase 1 | `docs/specs/spec-infrastructure-production-foundation-300726.md` |
 | Exact requirements/acceptance criteria for Slice 2 (LLM guardrails, GBIF query) | `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` |
 | Original design + built-vs-diverged detail for Slice 9 (draw-your-own-area) | `docs/specs/spec-tool-draw-your-own-area-100826.md`, `docs/decisions/ADR-012-area-selection-persistent-widget-not-popup-funnel.md` |
+| Why species images come from Wikipedia, not GBIF occurrence photos | `docs/decisions/ADR-013-species-image-source-wikipedia-not-gbif-media.md` |
 | What's the product vision, phases, personas? | `docs/prds/nature-quest-prd-300726.md` |
 | What happened in a past session? | `docs/status_docs/WORK_SUMMARY_*.md` (date order) |
 | How was the pipeline concept validated? | `prototypes/README.md` |

@@ -33,3 +33,5 @@ This CLAUDE.md provides the framework. Skills contain the detailed guidance. Loa
 | agent-browser | Browser automation for reviewing web UIs | Validating web/UI changes |
 | documentation-and-adrs | Record architectural decisions and ensure README exists | Significant technical decisions; end of any session where no README exists |
 | summarise-session | Write a structured session summary to a WORK_SUMMARY file | End of every session |
+| simplify | Review recently changed code for clarity/consistency and refine without changing behaviour | After a burst of fast-moving changes, before committing/closing a slice |
+| security-reviewer | Review code for injection, auth, secrets, and data-handling issues | Before deploying, or when touching security-sensitive surfaces (auth, input validation, public endpoints) |

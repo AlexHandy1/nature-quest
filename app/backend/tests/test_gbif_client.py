@@ -2,6 +2,7 @@ import threading
 import time
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from services.gbif_client import (
@@ -12,6 +13,7 @@ from services.gbif_client import (
     YEAR_RANGE,
     GbifUnavailableError,
     _gbif_search,
+    fetch_common_name,
     fetch_top_species,
     polygon_centroid,
 )
@@ -418,3 +420,78 @@ def test_retries_the_configured_number_of_times_before_giving_up():
         _gbif_search({"limit": 0})
 
     assert mock_request.call_count == MAX_RETRIES + 1
+
+
+def test_fetch_common_name_prefers_the_english_vernacular_name():
+    response_json = {
+        "results": [
+            {"vernacularName": "Mirlo comun", "language": "spa"},
+            {"vernacularName": "Common Blackbird", "language": "eng"},
+        ]
+    }
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = response_json
+
+        name = fetch_common_name(2495414)
+
+    assert name == "Common Blackbird"
+    mock_get.assert_called_once_with(
+        "https://api.gbif.org/v1/species/2495414/vernacularNames", timeout=30.0
+    )
+
+
+def test_fetch_common_name_prefers_the_most_common_english_name_over_a_rare_outlier():
+    # Reproduces a real GBIF data quality issue found via a live smoke test:
+    # Gallinula chloropus's vernacularNames includes "COMO" (a banding-code
+    # abbreviation, tagged language=eng by a single source) ahead of "Common
+    # Moorhen" (the real name, repeated across many independent sources).
+    # "First English match" surfaces the abbreviation; majority vote across
+    # all English-tagged entries correctly surfaces the real name instead.
+    response_json = {
+        "results": [
+            {"vernacularName": "COMO", "language": "eng"},
+            {"vernacularName": "Common Gallinule", "language": "eng"},
+            {"vernacularName": "Common Moorhen", "language": "eng"},
+            {"vernacularName": "Common Moorhen", "language": "eng"},
+            {"vernacularName": "Common Moorhen", "language": "eng"},
+        ]
+    }
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = response_json
+
+        name = fetch_common_name(5228199)
+
+    assert name == "Common Moorhen"
+
+
+def test_fetch_common_name_falls_back_to_first_result_when_no_english_name():
+    response_json = {"results": [{"vernacularName": "Mirlo comun", "language": "spa"}]}
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = response_json
+
+        name = fetch_common_name(2495414)
+
+    assert name == "Mirlo comun"
+
+
+def test_fetch_common_name_returns_none_when_no_results():
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {"results": []}
+
+        assert fetch_common_name(2495414) is None
+
+
+def test_fetch_common_name_returns_none_when_species_key_is_missing():
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        assert fetch_common_name(None) is None
+
+    mock_get.assert_not_called()
+
+
+def test_fetch_common_name_returns_none_on_request_failure():
+    with patch("services.gbif_client.httpx.get", side_effect=httpx.HTTPError("boom")):
+        assert fetch_common_name(2495414) is None

@@ -210,6 +210,45 @@ def test_custom_polygon_is_passed_to_fetch_top_species_and_used_for_route_orderi
     assert body["species"][0]["distance_m"] < 5000
 
 
+def test_resolved_species_are_enriched_with_common_name_and_image_url():
+    def fake_enrich(species_list):
+        return [{**s, "common_name": f"Common {s['species']}", "image_url": "https://example.com/img.jpg"} for s in species_list]
+
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch("routers.query.resolve_taxon_key", return_value=212),
+        patch(
+            "routers.query.fetch_top_species",
+            return_value=[
+                {
+                    "species": "Turdus merula",
+                    "species_key": 2495414,
+                    "count": 5,
+                    "kingdom": "Animalia",
+                    "hotspot_lat": 40.41,
+                    "hotspot_lon": -3.68,
+                }
+            ],
+        ),
+        patch("routers.query.enrich_species", side_effect=fake_enrich) as mock_enrich,
+        patch("routers.query.log_query_outcome"),
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["species"][0]["common_name"] == "Common Turdus merula"
+    assert body["species"][0]["image_url"] == "https://example.com/img.jpg"
+    assert body["species"][0]["species_key"] == 2495414
+    mock_enrich.assert_called_once()
+
+
 def test_resolved_response_omits_internal_clustering_diagnostics():
     with (
         patch(

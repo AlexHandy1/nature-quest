@@ -2,6 +2,7 @@ from services.logging_client import (
     log_llm_taxon_filters_resolved,
     log_query_outcome,
     log_query_submitted,
+    log_species_enriched,
     log_species_selected,
     log_waypoints_ordered,
 )
@@ -87,3 +88,21 @@ def test_log_waypoints_ordered_logs_the_ordered_waypoints(caplog):
     assert record.message == "waypoints_ordered"
     assert record.distinct_id == "anon-123"
     assert record.waypoints == waypoints
+
+
+def test_log_species_enriched_logs_the_enriched_species(caplog):
+    species = [
+        {
+            "species": "Turdus merula",
+            "species_key": 2495414,
+            "common_name": "Common Blackbird",
+            "image_url": "https://example.com/blackbird.jpg",
+        }
+    ]
+    with caplog.at_level("INFO"):
+        log_species_enriched(query="birds", distinct_id="anon-123", species=species)
+
+    record = caplog.records[0]
+    assert record.message == "species_enriched"
+    assert record.distinct_id == "anon-123"
+    assert record.species == species

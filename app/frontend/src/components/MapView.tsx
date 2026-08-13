@@ -37,6 +37,9 @@ export type Species = {
   hotspot_lat: number
   hotspot_lon: number
   distance_m?: number
+  species_key?: number | null
+  common_name?: string | null
+  image_url?: string | null
 }
 
 function MapRecenter({ center }: { center: [number, number] }) {
@@ -47,9 +50,9 @@ function MapRecenter({ center }: { center: [number, number] }) {
   return null
 }
 
-function numberedIcon(num: number) {
+function numberedIcon(num: number, active: boolean) {
   return L.divIcon({
-    html: `<div class="map-marker-number">${num}</div>`,
+    html: `<div class="map-marker-number${active ? ' map-marker-number--active' : ''}">${num}</div>`,
     className: '',
     iconSize: [28, 28],
     iconAnchor: [14, 14],
@@ -61,6 +64,7 @@ function MapView() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [species, setSpecies] = useState<Species[]>([])
+  const [expandedSpecies, setExpandedSpecies] = useState<string | null>(null)
   const [areaState, setAreaState] = useState<AreaState>({
     mode: 'fixed',
     polygon: RETIRO_POLYGON,
@@ -83,6 +87,10 @@ function MapView() {
     setDrawing(false)
   }
 
+  function toggleExpandedSpecies(species: string) {
+    setExpandedSpecies((current) => (current === species ? null : species))
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setLoading(true)
@@ -103,6 +111,7 @@ function MapView() {
     trackEvent('query_outcome', { status: outcome })
     setResult({ outcome, message: body.message })
     setSpecies(outcome === 'resolved' ? body.species : [])
+    setExpandedSpecies(null)
   }
 
   const routeCoords = species.map((s): [number, number] => [s.hotspot_lat, s.hotspot_lon])
@@ -152,7 +161,8 @@ function MapView() {
             <Marker
               key={s.species}
               position={[s.hotspot_lat, s.hotspot_lon]}
-              icon={numberedIcon(index + 1)}
+              icon={numberedIcon(index + 1, s.species === expandedSpecies)}
+              eventHandlers={{ click: () => toggleExpandedSpecies(s.species) }}
             />
           ))}
           {drawing && (
@@ -164,7 +174,11 @@ function MapView() {
           )}
           <MapRecenter center={areaState.center} />
         </MapContainer>
-        <ResultsPanel species={species} />
+        <ResultsPanel
+          species={species}
+          expandedSpecies={expandedSpecies}
+          onToggleSpecies={toggleExpandedSpecies}
+        />
       </div>
     </div>
   )
