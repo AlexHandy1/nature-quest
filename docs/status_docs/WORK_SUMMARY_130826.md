@@ -41,15 +41,23 @@ Direct continuation of the previous session's mobile UX punch list (item 0: mobi
 
 ## Next steps
 
-Everything from `WORK_SUMMARY_120826.md`'s Session 2 next-steps list that wasn't picked up this session remains open:
-1. Add `<meta name="theme-color">` to `app/frontend/index.html` (item 1, header colour inconsistency diagnosis).
-2. Fix `.area-control`'s mobile overflow (item 2/3) — confirmed live last session, not yet ported to `AreaControl.tsx`/`index.css`.
-3. Live-verify drawing/geolocation touch targets (items 4/5) — still only code-level reasoning, never re-confirmed by interaction.
-4. Constraints transparency in the UI (observations since 2023 only, 5 species per query, GBIF-only data source).
-5. Review raising the area cap from 25 km² to at least 50 km².
-6. Two undecided candidate directions from two sessions ago: narrative-guide-as-audio, or LLM/AI infrastructure flexibility (OpenRouter etc.) — neither chosen yet.
+**Priority order, explicit (user's call, end of session):** start with (2) below. (1) is committed to ship in the next production push regardless of what else lands. (3) is scoped but not yet prioritized against the others.
 
-New from this session:
-7. "Show all sightings" was explicitly dropped, not deferred with a plan — if revisited later, the payload/rendering-cost trade-off discussion in this session's transcript is the starting point (capping/sampling per species, not a flat point-count assumption).
-8. The permanent eval suite (`tests/evals/test_full_pipeline_eval.py`) does not yet cover the enrichment pipeline — only the throwaway smoke script and the extended `e2e_web_smoke_test.py` check do. Worth a real decision on whether a permanent eval test is warranted here (explicitly deferred mid-session, not decided either way).
-9. A `/security-review` of this session's changes (`tests/.security_review_output/20260813_174437/report.md`) found a reliability gap, not a security vulnerability: `gbif_client.fetch_common_name` and `wikipedia_client._fetch_summary` both call `response.json()` outside their `httpx.HTTPError` try/except, so a 200 response with malformed JSON from GBIF or Wikipedia raises an uncaught `JSONDecodeError`. Since `routers/query.py` calls `enrich_species()` with no try/except and there's no generic exception handler in `main.py`, this would 500 the entire `/api/query` response over a hiccup in what's meant to be a secondary enrichment step, discarding an already-successful core pipeline result. Fix: widen both to also catch `ValueError` (or move `response.json()` inside the existing try block) so a third-party hiccup degrades to "no common name / no image" instead of failing the whole query. Not fixed this session.
+### 1. Outstanding UX tweaks — going in the next prod push
+- **Mobile top nav/AreaControl overflow — still reproducing live.** Flagged and confirmed live twice now (`WORK_SUMMARY_120826.md` items 2/3), not yet fixed. Root cause already diagnosed: `.area-control` (`index.css`) has no `max-width`/`flex-wrap` of its own.
+- **Colour mismatch between mobile and desktop — still happening.** Diagnosed last session as likely a missing `<meta name="theme-color">` in `app/frontend/index.html` (confirmed the header's own CSS is identical at both breakpoints via computed-style checks — the mismatch is probably the browser/OS chrome, not the in-page header). Not yet fixed.
+- **Review raising the drawn-area cap from 25 km² to up to 50 km²** — called out in the original spec as a revisitable starting guardrail.
+- **Tidy up common name / scientific name layout in the results panel row** — `ResultsPanel.tsx`'s `.results-panel__row` is `flex-wrap: wrap`, so the scientific-name span sometimes wraps onto its own second line and reads as clunky/disordered rather than a clean primary/secondary pairing. Needs a real layout pass (e.g. stack them vertically on purpose rather than letting flex-wrap decide), not just a CSS nudge.
+
+### 2. Scope and prototype AI audio narration — start here
+Candidate direction logged since `WORK_SUMMARY_120826.md`: generate a per-species narrative (from selected species + a Wikipedia extract — the same summary payload `wikipedia_client.fetch_species_image` already pulls, extract field just needs surfacing) then a text-to-speech pass ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) named as a candidate model) to produce an audio walking-guide track. Not yet scoped or prototyped — likely wants a `/grill-me` pass before building.
+
+### 3. Scope OpenRouter / broader AI model flexibility
+Reduce exclusive reliance on Claude, evaluate cost efficiency across providers. Not yet scoped.
+
+### Also carried forward, not yet addressed
+- **Reliability bug (not a security vulnerability — reclassified after `/security-review`, see `tests/.security_review_output/20260813_174437/report.md`):** `gbif_client.fetch_common_name` and `wikipedia_client._fetch_summary` both call `response.json()` outside their `httpx.HTTPError` try/except, so a 200 response with malformed JSON from GBIF or Wikipedia raises an uncaught `JSONDecodeError`. Since `routers/query.py` calls `enrich_species()` with no try/except and there's no generic exception handler in `main.py`, this would 500 the entire `/api/query` response over a hiccup in what's meant to be a secondary enrichment step, discarding an already-successful core pipeline result. Fix: widen both to also catch `ValueError` (or move `response.json()` inside the existing try block) so a third-party hiccup degrades to "no common name / no image" instead of failing the whole query.
+- Live-verify drawing/geolocation touch targets — still only code-level reasoning, never re-confirmed by interaction.
+- Constraints transparency in the UI (observations since 2023 only, 5 species per query, GBIF-only data source).
+- "Show all sightings" was explicitly dropped, not deferred with a plan — if revisited later, this session's payload/rendering-cost trade-off discussion is the starting point (capping/sampling per species, not a flat point-count assumption).
+- The permanent eval suite (`tests/evals/test_full_pipeline_eval.py`) does not yet cover the enrichment pipeline — only the throwaway smoke script and the extended `e2e_web_smoke_test.py` check do. Worth a real decision on whether a permanent eval test is warranted here.
