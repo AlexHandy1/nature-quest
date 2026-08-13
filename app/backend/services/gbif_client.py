@@ -1,5 +1,5 @@
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
@@ -145,7 +145,12 @@ def _request_occurrence_page(params: dict) -> dict | None:
 
 
 def fetch_common_name(species_key: int | None) -> str | None:
-    """Looks up a species' vernacular name from GBIF, preferring English."""
+    """Looks up a species' vernacular name from GBIF, preferring English.
+    GBIF's vernacularNames endpoint has no "preferred name" flag and mixes
+    real names with rarer entries like banding-code abbreviations (e.g.
+    "COMO" for Common Moorhen) from a single source — first-match order
+    isn't reliable, so this picks the most-repeated name across sources
+    instead, which is a much stronger real-name signal."""
     if species_key is None:
         return None
     try:
@@ -158,11 +163,12 @@ def fetch_common_name(species_key: int | None) -> str | None:
         return None
 
     results = response.json().get("results", [])
-    english = next((r["vernacularName"] for r in results if r.get("language") == "eng"), None)
-    if english:
-        return english
-    if results:
-        return results[0].get("vernacularName")
+    english_names = [r["vernacularName"] for r in results if r.get("language") == "eng"]
+    if english_names:
+        return Counter(english_names).most_common(1)[0][0]
+    all_names = [r["vernacularName"] for r in results if r.get("vernacularName")]
+    if all_names:
+        return Counter(all_names).most_common(1)[0][0]
     return None
 
 
