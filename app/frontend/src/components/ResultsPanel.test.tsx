@@ -13,7 +13,20 @@ const ENRICHED_SPECIES = [
     species: 'Turdus merula',
     species_key: 2495414,
     common_name: 'Common Blackbird',
-    image_url: 'https://example.com/blackbird.jpg',
+    image_url: 'https://upload.wikimedia.org/blackbird.jpg',
+    count: 42,
+    kingdom: 'Animalia',
+    hotspot_lat: 40.41,
+    hotspot_lon: -3.68,
+  },
+]
+
+const UNTRUSTED_IMAGE_SPECIES = [
+  {
+    species: 'Turdus merula',
+    species_key: 2495414,
+    common_name: 'Common Blackbird',
+    image_url: 'https://evil.example.com/blackbird.jpg',
     count: 42,
     kingdom: 'Animalia',
     hotspot_lat: 40.41,
@@ -70,7 +83,7 @@ test('shows image and a GBIF link only for the expanded species', () => {
   )
 
   const image = screen.getByRole('img', { name: /common blackbird/i })
-  expect(image).toHaveAttribute('src', 'https://example.com/blackbird.jpg')
+  expect(image).toHaveAttribute('src', 'https://upload.wikimedia.org/blackbird.jpg')
 
   const link = screen.getByRole('link', { name: /gbif/i })
   expect(link).toHaveAttribute('href', 'https://www.gbif.org/species/2495414')
@@ -85,6 +98,15 @@ test('does not show detail for a species that is not the expanded one', () => {
 
 test('shows a no-image fallback when the expanded species has no image', () => {
   render(<ResultsPanel species={SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} />)
+
+  expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  expect(screen.getByText(/no image available/i)).toBeInTheDocument()
+})
+
+test('shows a no-image fallback when the image url is not from a trusted wikimedia host', () => {
+  render(
+    <ResultsPanel species={UNTRUSTED_IMAGE_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} />
+  )
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
   expect(screen.getByText(/no image available/i)).toBeInTheDocument()
