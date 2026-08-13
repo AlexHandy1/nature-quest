@@ -310,6 +310,42 @@ def check_taxon_filters_contain(query: str, body: dict, expected_values: list[st
         )
 
 
+def check_enrichment(query: str, body: dict) -> None:
+    species = body.get("species") or []
+    if not species:
+        record(f'"{query}" enrichment check skipped', False, "no species in response")
+        return
+
+    all_have_common_name = all((s.get("common_name") or "").strip() for s in species)
+    record(
+        f'"{query}" every species has a common_name',
+        all_have_common_name,
+        str([s.get("common_name") for s in species]),
+    )
+
+    all_have_image = all((s.get("image_url") or "").startswith("http") for s in species)
+    record(
+        f'"{query}" every species has an image_url',
+        all_have_image,
+        str([s.get("image_url") for s in species]),
+    )
+
+    all_have_key = all(s.get("species_key") is not None for s in species)
+    record(
+        f'"{query}" every species has a species_key',
+        all_have_key,
+        str([s.get("species_key") for s in species]),
+    )
+
+    ab("click", ".results-panel li:nth-child(1) .results-panel__row")
+    ab("wait", "--fn", "!!document.querySelector('.results-panel__detail')")
+    expected_href = f"https://www.gbif.org/species/{species[0].get('species_key')}"
+    link_count = get_count(f".results-panel__detail a[href='{expected_href}']")
+    record(f'"{query}" first result links to the correct GBIF species page', link_count == 1, expected_href)
+    image_count = get_count(".results-panel__detail img")
+    record(f'"{query}" first result shows an image when expanded', image_count == 1)
+
+
 def area_label_text() -> str:
     return get_text(AREA_LABEL)
 
@@ -340,6 +376,7 @@ def run_checklist(base_url: str) -> None:
     result = submit_query("Show me some birds")
     check_result("Show me some birds", result)
     check_taxon_filters_contain("Show me some birds", result["body"], ["Aves"])
+    check_enrichment("Show me some birds", result["body"])
 
     log("\n== Mobile viewport ==")
     ab("set", "viewport", "390", "844")

@@ -18,8 +18,19 @@ vi.mock('react-leaflet', () => ({
   Polygon: ({ positions }: { positions: [number, number][] }) => (
     <div data-testid="area-polygon" data-points={positions.length} />
   ),
-  Marker: ({ position }: { position: [number, number] }) => (
-    <div data-testid="marker" data-lat={position[0]} data-lon={position[1]} />
+  Marker: ({
+    position,
+    eventHandlers,
+  }: {
+    position: [number, number]
+    eventHandlers?: { click?: () => void }
+  }) => (
+    <div
+      data-testid="marker"
+      data-lat={position[0]}
+      data-lon={position[1]}
+      onClick={eventHandlers?.click}
+    />
   ),
   Polyline: ({ positions }: { positions: [number, number][] }) => (
     <div data-testid="polyline" data-points={positions.length} />
@@ -170,6 +181,44 @@ test('shows the results panel with species names and counts on a resolved outcom
   expect(items[0]).toHaveTextContent('Turdus merula')
   expect(items[0]).toHaveTextContent('42')
   expect(items[1]).toHaveTextContent('Pica pica')
+})
+
+test('clicking a marker expands its matching row in the results panel', async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        status: 'resolved',
+        species: [
+          {
+            species: 'Turdus merula',
+            species_key: 2495414,
+            common_name: 'Common Blackbird',
+            image_url: 'https://example.com/blackbird.jpg',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+          },
+        ],
+        message: 'Early preview message',
+      })
+    )
+  )
+
+  render(<MapView />)
+  await submit('birds')
+
+  const [marker] = await screen.findAllByTestId('marker')
+  expect(screen.queryByRole('link', { name: /gbif/i })).not.toBeInTheDocument()
+
+  await user.click(marker)
+
+  expect(screen.getByRole('link', { name: /gbif/i })).toHaveAttribute(
+    'href',
+    'https://www.gbif.org/species/2495414'
+  )
 })
 
 test('hides the outcome message on a resolved outcome — the results speak for themselves', async () => {

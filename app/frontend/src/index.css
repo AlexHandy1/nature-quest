@@ -260,30 +260,34 @@ button:hover {
   order: 10;
 }
 
+/* Desktop: a real document-flow row (map + sidebar), not an overlay — the
+   sidebar has a fixed, bounded width so it can never force a horizontal
+   scrollbar regardless of content (long names, images). Mobile reverts to
+   an overlay docked to the bottom of the map (see the 700px breakpoint). */
 .map-view {
   position: relative;
   flex: 1;
   min-height: 0;
+  display: flex;
+  overflow: hidden;
 }
 
 .map-view__map {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   height: 100%;
 }
 
 .results-panel {
-  position: absolute;
-  top: 16px;
-  right: 16px;
-  z-index: 1000;
-  max-width: 280px;
-  max-height: calc(100% - 32px);
+  flex: 0 0 340px;
+  width: 340px;
+  max-width: 340px;
+  height: 100%;
   overflow-y: auto;
-  padding: 14px 18px;
-  border-radius: 12px;
+  overflow-x: hidden;
+  padding: 16px 20px;
   background: var(--bg);
-  border: 1px solid var(--border);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+  border-left: 1px solid var(--border);
   font-size: var(--fs-sm);
 }
 
@@ -297,22 +301,80 @@ button:hover {
 
 .results-panel ol {
   margin: 0;
-  padding-left: 20px;
+  padding: 0;
+  list-style: none;
 }
 
 .results-panel li {
-  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.results-panel__row {
+  all: unset;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 4px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.results-panel__row:hover {
+  background: var(--surface);
 }
 
 .results-panel__name {
-  display: block;
-  font-style: italic;
+  font-weight: 600;
   color: var(--text-h);
+  min-width: 0;
+}
+
+.results-panel__sci-name {
+  font-style: italic;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  min-width: 0;
 }
 
 .results-panel__count {
-  display: block;
   font-size: var(--fs-xs);
+  color: var(--text);
+  margin-left: auto;
+}
+
+.results-panel__detail {
+  padding: 0 4px 14px;
+}
+
+.results-panel__detail img {
+  width: 100%;
+  max-height: 150px;
+  object-fit: cover;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.results-panel__no-image {
+  height: 90px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  font-size: var(--fs-xs);
+  margin-bottom: 10px;
+}
+
+.results-panel__detail a {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--accent);
 }
 
 @media (max-width: 700px) {
@@ -329,13 +391,29 @@ button:hover {
     order: 5;
   }
 
+  .map-view {
+    display: block;
+  }
+
+  .map-view__map {
+    width: 100%;
+    height: 100%;
+  }
+
   .results-panel {
+    position: absolute;
     top: auto;
     bottom: 12px;
     left: 12px;
     right: 12px;
+    z-index: 1000;
+    width: auto;
     max-width: none;
+    flex: none;
     max-height: 35vh;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
   }
 }
 
@@ -352,6 +430,12 @@ button:hover {
   font-size: var(--fs-sm);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   border: 2px solid var(--bg);
+}
+
+.map-marker-number--active {
+  box-shadow:
+    0 0 0 6px rgba(63, 107, 74, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .area-control {
