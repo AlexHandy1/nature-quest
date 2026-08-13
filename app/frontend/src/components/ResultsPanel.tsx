@@ -6,6 +6,17 @@ type ResultsPanelProps = {
   onToggleSpecies: (species: string) => void
 }
 
+const TRUSTED_IMAGE_HOST = 'upload.wikimedia.org'
+
+function isTrustedImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'https:' && parsed.hostname === TRUSTED_IMAGE_HOST
+  } catch {
+    return false
+  }
+}
+
 function ResultsPanel({ species, expandedSpecies, onToggleSpecies }: ResultsPanelProps) {
   if (species.length === 0) {
     return null
@@ -32,7 +43,7 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies }: ResultsPane
               </button>
               {isExpanded && (
                 <div className="results-panel__detail">
-                  {s.image_url ? (
+                  {s.image_url && isTrustedImageUrl(s.image_url) ? (
                     <img src={s.image_url} alt={primaryName} />
                   ) : (
                     <div className="results-panel__no-image">No image available</div>

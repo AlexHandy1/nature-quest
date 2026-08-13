@@ -1,11 +1,9 @@
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import httpx
 
 WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary"
-# Wikimedia's REST API expects a descriptive User-Agent identifying the
-# client — unidentified traffic can be rate-limited or blocked. GBIF has no
-# equivalent requirement, which is why gbif_client.py doesn't set one.
+TRUSTED_IMAGE_HOST = "upload.wikimedia.org"
 USER_AGENT = "nature-quest/0.1"
 REQUEST_TIMEOUT = 30.0
 
@@ -22,7 +20,15 @@ def fetch_species_image(common_name: str | None, scientific_name: str) -> str | 
         return None
     thumbnail = summary.get("thumbnail") or {}
     original = summary.get("originalimage") or {}
-    return thumbnail.get("source") or original.get("source")
+    image_url = thumbnail.get("source") or original.get("source")
+    return image_url if _is_trusted_image_url(image_url) else None
+
+
+def _is_trusted_image_url(url: str | None) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme == "https" and parsed.hostname == TRUSTED_IMAGE_HOST
 
 
 def _fetch_summary(title: str) -> dict | None:
