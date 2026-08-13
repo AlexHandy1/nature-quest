@@ -19,11 +19,13 @@ def _summary(extract="A common garden bird.", thumbnail=None, originalimage=None
 def test_fetch_species_image_uses_the_common_name_article_first():
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = _summary(thumbnail="https://example.com/blackbird.jpg")
+        mock_get.return_value.json.return_value = _summary(
+            thumbnail="https://upload.wikimedia.org/blackbird.jpg"
+        )
 
         image_url = fetch_species_image("Common Blackbird", "Turdus merula")
 
-    assert image_url == "https://example.com/blackbird.jpg"
+    assert image_url == "https://upload.wikimedia.org/blackbird.jpg"
     called_url = mock_get.call_args[0][0]
     assert "Common%20Blackbird" in called_url or "Common_Blackbird" in called_url
 
@@ -31,7 +33,7 @@ def test_fetch_species_image_uses_the_common_name_article_first():
 def test_fetch_species_image_falls_back_to_scientific_name_on_disambiguation():
     responses = [
         _summary(page_type="disambiguation"),
-        _summary(thumbnail="https://example.com/turdus.jpg"),
+        _summary(thumbnail="https://upload.wikimedia.org/turdus.jpg"),
     ]
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.return_value.status_code = 200
@@ -39,7 +41,7 @@ def test_fetch_species_image_falls_back_to_scientific_name_on_disambiguation():
 
         image_url = fetch_species_image("Blackbird", "Turdus merula")
 
-    assert image_url == "https://example.com/turdus.jpg"
+    assert image_url == "https://upload.wikimedia.org/turdus.jpg"
     assert mock_get.call_count == 2
 
 
@@ -47,22 +49,22 @@ def test_fetch_species_image_falls_back_to_scientific_name_when_common_name_arti
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.side_effect = [
             type("Resp", (), {"status_code": 404, "json": lambda self: {}})(),
-            type("Resp", (), {"status_code": 200, "json": lambda self: _summary(thumbnail="https://example.com/x.jpg")})(),
+            type("Resp", (), {"status_code": 200, "json": lambda self: _summary(thumbnail="https://upload.wikimedia.org/x.jpg")})(),
         ]
 
         image_url = fetch_species_image("Nonexistent Name", "Turdus merula")
 
-    assert image_url == "https://example.com/x.jpg"
+    assert image_url == "https://upload.wikimedia.org/x.jpg"
 
 
 def test_fetch_species_image_uses_scientific_name_directly_when_no_common_name_given():
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = _summary(thumbnail="https://example.com/y.jpg")
+        mock_get.return_value.json.return_value = _summary(thumbnail="https://upload.wikimedia.org/y.jpg")
 
         image_url = fetch_species_image(None, "Turdus merula")
 
-    assert image_url == "https://example.com/y.jpg"
+    assert image_url == "https://upload.wikimedia.org/y.jpg"
     assert mock_get.call_count == 1
     called_url = mock_get.call_args[0][0]
     assert "Turdus" in called_url
@@ -71,17 +73,41 @@ def test_fetch_species_image_uses_scientific_name_directly_when_no_common_name_g
 def test_fetch_species_image_falls_back_to_originalimage_when_no_thumbnail():
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = _summary(originalimage="https://example.com/full.jpg")
+        mock_get.return_value.json.return_value = _summary(originalimage="https://upload.wikimedia.org/full.jpg")
 
         image_url = fetch_species_image(None, "Turdus merula")
 
-    assert image_url == "https://example.com/full.jpg"
+    assert image_url == "https://upload.wikimedia.org/full.jpg"
 
 
 def test_fetch_species_image_returns_none_when_article_has_no_extract():
     with patch("services.wikipedia_client.httpx.get") as mock_get:
         mock_get.return_value.status_code = 200
-        mock_get.return_value.json.return_value = _summary(extract=None, thumbnail="https://example.com/z.jpg")
+        mock_get.return_value.json.return_value = _summary(extract=None, thumbnail="https://upload.wikimedia.org/z.jpg")
+
+        assert fetch_species_image(None, "Turdus merula") is None
+
+
+def test_fetch_species_image_rejects_thumbnail_from_an_untrusted_host():
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary(thumbnail="https://evil.example.com/blackbird.jpg")
+
+        assert fetch_species_image(None, "Turdus merula") is None
+
+
+def test_fetch_species_image_rejects_originalimage_from_an_untrusted_host():
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary(originalimage="https://evil.example.com/blackbird.jpg")
+
+        assert fetch_species_image(None, "Turdus merula") is None
+
+
+def test_fetch_species_image_rejects_a_scheme_other_than_https():
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary(thumbnail="http://upload.wikimedia.org/blackbird.jpg")
 
         assert fetch_species_image(None, "Turdus merula") is None
 
