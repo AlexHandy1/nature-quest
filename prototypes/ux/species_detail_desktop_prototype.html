@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — species_detail_desktop_prototype.html
+Throwaway UI prototype. Do not promote to production as-is.
+
+Question: how should mobile prototype Variant A's approach (map-first list
+with tap-to-expand accordion rows, from species_detail_mobile_prototype.html)
+carry over to a wide/desktop viewport?
+
+Two variants, switchable via ?variant=overlay|sidebar, rendered inside a
+fixed 1280x800 "browser window" frame:
+
+  overlay — naive port. Takes Variant A's mobile bottom-sheet overlay and
+      just widens it, still absolutely positioned and docked to the bottom
+      of the map. Included deliberately to show the failure mode: on a wide
+      viewport this either wastes most of the screen as empty map behind a
+      narrow floating card, or (if stretched full-width) creates a long
+      thin strip that reads worse than the current desktop panel.
+  sidebar — real desktop treatment. Same accordion-row interaction model as
+      mobile Variant A (tap a row to expand inline photo/GBIF/toggle;
+      tapping a marker expands its row) but in a genuine document-flow
+      sidebar column beside the map, not an overlay. No "peek/full" height
+      states needed — desktop has room to just show the list.
+
+Same trail-guide CSS tokens and demo data as species_detail_mobile_prototype.html.
+Real Leaflet + OpenStreetMap tiles, hand-captured demo species data (5 mock
+Retiro Park species — not wired to the live GBIF/query pipeline).
+
+Kept out of app/frontend/src for the same reason as the mobile prototype —
+see that file's header comment (CI triggers on any app/** path change).
+
+Run: open this file directly in a browser, e.g.
+  open prototypes/ux/species_detail_desktop_prototype.html
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — species detail desktop UX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --text: #5a4f3d;
+    --text-h: #2c2417;
+    --bg: #f7f1e1;
+    --border: #d9c9a3;
+    --surface: #ede2c9;
+    --accent: #3f6b4a;
+    --accent-hover: #345a3d;
+    --accent-text: #fbf7ec;
+    --display: 'Fraunces', Georgia, serif;
+    --sans: 'Work Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: #d9cba3; font-family: var(--sans); color: var(--text);
+  }
+  body { display: flex; flex-direction: column; align-items: center; padding: 32px 12px 100px; }
+  h1.page-title { font-family: var(--sans); font-size: 14px; color: #5a4f3d; margin: 0 0 16px; }
+
+  /* ── Browser-window frame — fixed 1280x800 so this reads as desktop
+       regardless of the reviewer's actual window size ── */
+  .browser {
+    width: 1280px; max-width: 96vw; height: 800px; border-radius: 12px;
+    background: #1c1912; padding: 0; box-shadow: 0 20px 50px rgba(0,0,0,.35);
+    overflow: hidden;
+  }
+  .browser-chrome {
+    height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 12px;
+    background: #2a241a;
+  }
+  .browser-chrome span { width: 10px; height: 10px; border-radius: 50%; background: #55503f; }
+  .browser-screen {
+    position: relative; width: 100%; height: calc(100% - 34px);
+    overflow: hidden; background: var(--bg);
+  }
+
+  /* ── Prototype switcher ── */
+  #proto-switcher {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 5000; display: flex; align-items: center; gap: 10px;
+    background: #111; color: #fff; padding: 8px 10px; border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(0,0,0,.4); font-size: 13px; font-family: monospace;
+    border: 2px solid #ffd700;
+  }
+  #proto-switcher button {
+    background: #ffd700; color: #111; border: none; width: 28px; height: 28px;
+    border-radius: 50%; font-weight: bold; cursor: pointer; font-size: 14px;
+  }
+  #proto-switcher button:hover { background: #fff; }
+  #proto-switcher .label { min-width: 260px; text-align: center; }
+
+  /* ═══════════════ Shared chrome — nav bar ═══════════════ */
+  .nav {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 800;
+    height: 56px; padding: 0 20px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .nav__brand {
+    font-family: var(--display); font-weight: 600; font-size: 17px;
+    color: var(--text-h); white-space: nowrap;
+  }
+  .area-chip {
+    display: flex; align-items: center; gap: 6px; padding: 0 14px; height: 38px;
+    border-radius: 999px; background: var(--bg);
+    border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+    color: var(--text-h); cursor: pointer; white-space: nowrap;
+  }
+  .sci-name { font-style: italic; color: var(--text); font-size: 12.5px; }
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+    min-height: 34px; border-radius: 999px; background: var(--accent);
+    color: var(--accent-text); font-family: var(--sans); font-weight: 600;
+    font-size: 12.5px; text-decoration: none; border: none; cursor: pointer;
+  }
+  .count-badge {
+    font-size: 11px; font-weight: 600; color: var(--text-h); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+  }
+  .marker-num {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--accent);
+    color: var(--accent-text); display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 13px; box-shadow: 0 2px 8px rgba(0,0,0,.35);
+    border: 2px solid var(--bg); font-family: var(--sans);
+  }
+  .marker-num.active { box-shadow: 0 0 0 6px rgba(63,107,74,.35), 0 2px 8px rgba(0,0,0,.35); }
+  .toggle-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-h); cursor: pointer; }
+
+  /* ═══════════════ VARIANT "overlay" — naive widened bottom-sheet port ═══════════════ */
+  .overlay-map-wrap { position: absolute; inset: 56px 0 0 0; }
+  .overlay-map-el { width: 100%; height: 100%; }
+  .sheetO {
+    position: absolute; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 900;
+    width: 480px; max-height: 340px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: 0 -8px 30px rgba(0,0,0,.2); overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .sheetO__header { padding: 14px 20px 8px; font-weight: 600; font-size: 13px; color: var(--text-h); }
+  .sheetO__list { overflow-y: auto; padding-bottom: 10px; }
+  .sheetO__row {
+    all: unset; display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 9px 20px; cursor: pointer;
+  }
+  .sheetO__thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background: var(--surface); }
+  .sheetO__name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .sheetO__name b { font-size: 13px; color: var(--text-h); }
+  .sheetO__chevron { font-size: 12px; transition: transform .15s ease; }
+  .sheetO__row.expanded .sheetO__chevron { transform: rotate(90deg); }
+  .sheetO__detail { padding: 0 20px 14px 20px; display: none; }
+  .sheetO__row.expanded + .sheetO__detail { display: block; }
+  .sheetO__detail img { width: 100%; height: 110px; object-fit: cover; border-radius: 10px; margin-bottom: 8px; }
+  .sheetO__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .overlay-callout {
+    position: absolute; top: 72px; left: 20px; z-index: 950; max-width: 300px;
+    background: #fff3d6; border: 1px solid #e0c069; border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; color: #6b5220; line-height: 1.4;
+  }
+
+  /* ═══════════════ VARIANT "sidebar" — real desktop treatment ═══════════════ */
+  .layoutS { position: absolute; inset: 56px 0 0 0; display: flex; }
+  .sidebarS {
+    flex: 0 0 340px; height: 100%; border-right: 1px solid var(--border);
+    background: var(--bg); display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sidebarS__header { padding: 18px 22px 10px; font-weight: 600; font-size: 13.5px; color: var(--text-h); }
+  .sidebarS__list { flex: 1; overflow-y: auto; padding-bottom: 16px; }
+  .sidebarS__row {
+    all: unset; display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 12px 22px; cursor: pointer; border-bottom: 1px solid transparent;
+  }
+  .sidebarS__row:hover { background: var(--surface); }
+  .sidebarS__row.expanded { background: var(--surface); border-bottom-color: var(--border); }
+  .sidebarS__thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: var(--surface); }
+  .sidebarS__name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .sidebarS__name b { font-size: 14px; color: var(--text-h); }
+  .sidebarS__chevron { font-size: 13px; transition: transform .15s ease; }
+  .sidebarS__row.expanded .sidebarS__chevron { transform: rotate(90deg); }
+  .sidebarS__detail { padding: 0 22px 16px 22px; display: none; }
+  .sidebarS__row.expanded + .sidebarS__detail { display: block; }
+  .sidebarS__detail img { width: 100%; height: 150px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; }
+  .sidebarS__actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .mapS-wrap { flex: 1; position: relative; }
+  .mapS-el { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<h1 class="page-title">species_detail_desktop_prototype.html — 1280×800 browser frame, ?variant=overlay|sidebar</h1>
+<div class="browser">
+  <div class="browser-chrome"><span></span><span></span><span></span></div>
+  <div class="browser-screen" id="app"></div>
+</div>
+
+<div id="proto-switcher">
+  <button id="proto-prev">&larr;</button>
+  <span class="label" id="proto-label">overlay — naive widened port</span>
+  <button id="proto-next">&rarr;</button>
+</div>
+
+<script>
+const SPECIES = [
+  { id: 1, common: 'Eurasian Blue Tit', sci: 'Cyanistes caeruleus', count: 142, lat: 40.4150, lon: -3.6810,
+    img: 'https://picsum.photos/seed/bluetit/400/260' },
+  { id: 2, common: 'Common Carp', sci: 'Cyprinus carpio', count: 88, lat: 40.4122, lon: -3.6845,
+    img: 'https://picsum.photos/seed/carp/400/260' },
+  { id: 3, common: 'European Robin', sci: 'Erithacus rubecula', count: 210, lat: 40.4108, lon: -3.6795,
+    img: 'https://picsum.photos/seed/robin/400/260' },
+  { id: 4, common: 'Holm Oak', sci: 'Quercus ilex', count: 340, lat: 40.4146, lon: -3.6852,
+    img: 'https://picsum.photos/seed/holmoak/400/260' },
+  { id: 5, common: 'Iberian Wall Lizard', sci: 'Podarcis hispanicus', count: 56, lat: 40.4098, lon: -3.6828,
+    img: 'https://picsum.photos/seed/lizard/400/260' },
+];
+function gbifUrl(s) { return 'https://www.gbif.org/species/search?q=' + encodeURIComponent(s.sci); }
+const RETIRO_CENTER = [40.4137, -3.6826];
+
+const VARIANTS = ['overlay', 'sidebar'];
+const LABELS = {
+  overlay: 'overlay — naive widened port (the trap)',
+  sidebar: 'sidebar — real desktop treatment',
+};
+
+function currentVariant() {
+  const v = new URLSearchParams(location.search).get('variant');
+  return VARIANTS.includes(v) ? v : 'overlay';
+}
+function setVariant(v) {
+  const url = new URL(location.href);
+  url.searchParams.set('variant', v);
+  history.replaceState(null, '', url);
+  render(v);
+}
+
+function navHtml() {
+  return `
+    <div class="nav">
+      <span class="nav__brand">🌿 Nature Quest</span>
+      <div class="area-chip"><span>Retiro Park</span><span>▾</span></div>
+    </div>`;
+}
+
+let map = null;
+function destroyMap() { if (map) { map.remove(); map = null; } }
+function baseMap(el) {
+  map = L.map(el, { zoomControl: false }).setView(RETIRO_CENTER, 15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
+  return map;
+}
+function numberedIcon(num, active) {
+  return L.divIcon({
+    html: `<div class="marker-num${active ? ' active' : ''}">${num}</div>`,
+    className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+  });
+}
+
+// ═══════════════ VARIANT overlay ═══════════════
+function renderOverlay() {
+  document.getElementById('app').innerHTML = `
+    ${navHtml()}
+    <div class="overlay-callout">⚠ Same Variant A pattern, just widened and re-centered — still an absolutely-positioned overlay docked over the map, not part of the page layout. Most of a 1280px-wide screen sits empty behind it.</div>
+    <div class="overlay-map-wrap"><div class="overlay-map-el" id="mapO"></div></div>
+    <div class="sheetO" id="sheetO">
+      <div class="sheetO__header">${SPECIES.length} species found</div>
+      <div class="sheetO__list" id="sheetO-list"></div>
+    </div>`;
+  const m = baseMap('mapO');
+  const markers = {};
+  SPECIES.forEach((s) => {
+    markers[s.id] = L.marker([s.lat, s.lon], { icon: numberedIcon(s.id, false) }).addTo(m);
+    markers[s.id].on('click', () => expandRow(s.id));
+  });
+  const list = document.getElementById('sheetO-list');
+  list.innerHTML = rowsHtml('sheetO');
+  function expandRow(id) {
+    const wasExpanded = list.querySelector(`.sheetO__row[data-id="${id}"]`).classList.contains('expanded');
+    list.querySelectorAll('.sheetO__row').forEach((r) => r.classList.remove('expanded'));
+    Object.values(markers).forEach((mk, i) => mk.setIcon(numberedIcon(SPECIES[i].id, false)));
+    if (!wasExpanded) {
+      list.querySelector(`.sheetO__row[data-id="${id}"]`).classList.add('expanded');
+      markers[id].setIcon(numberedIcon(id, true));
+    }
+  }
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.sheetO__row');
+    if (row) expandRow(Number(row.dataset.id));
+  });
+}
+
+// ═══════════════ VARIANT sidebar ═══════════════
+function renderSidebar() {
+  document.getElementById('app').innerHTML = `
+    ${navHtml()}
+    <div class="layoutS">
+      <div class="sidebarS">
+        <div class="sidebarS__header">${SPECIES.length} species found</div>
+        <div class="sidebarS__list" id="sidebarS-list"></div>
+      </div>
+      <div class="mapS-wrap"><div class="mapS-el" id="mapS"></div></div>
+    </div>`;
+  const m = baseMap('mapS');
+  const markers = {};
+  SPECIES.forEach((s) => {
+    markers[s.id] = L.marker([s.lat, s.lon], { icon: numberedIcon(s.id, false) }).addTo(m);
+    markers[s.id].on('click', () => expandRow(s.id));
+  });
+  const list = document.getElementById('sidebarS-list');
+  list.innerHTML = rowsHtml('sidebarS');
+  function expandRow(id) {
+    const wasExpanded = list.querySelector(`.sidebarS__row[data-id="${id}"]`).classList.contains('expanded');
+    list.querySelectorAll('.sidebarS__row').forEach((r) => r.classList.remove('expanded'));
+    Object.values(markers).forEach((mk, i) => mk.setIcon(numberedIcon(SPECIES[i].id, false)));
+    if (!wasExpanded) {
+      list.querySelector(`.sidebarS__row[data-id="${id}"]`).classList.add('expanded');
+      markers[id].setIcon(numberedIcon(id, true));
+      list.querySelector(`.sidebarS__row[data-id="${id}"]`).scrollIntoView({ block: 'nearest' });
+    }
+  }
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.sidebarS__row');
+    if (row) expandRow(Number(row.dataset.id));
+  });
+}
+
+function rowsHtml(prefix) {
+  return SPECIES.map((s) => `
+    <button type="button" class="${prefix}__row" data-id="${s.id}">
+      <img class="${prefix}__thumb" src="${s.img}" alt=""/>
+      <span class="${prefix}__name"><b>${s.common}</b><span class="sci-name">${s.sci}</span></span>
+      <span class="count-badge">${s.count}</span>
+      <span class="${prefix}__chevron">›</span>
+    </button>
+    <div class="${prefix}__detail" data-detail="${s.id}">
+      <img src="${s.img}" alt=""/>
+      <div class="${prefix}__actions">
+        <a class="pill-btn" href="${gbifUrl(s)}" target="_blank" rel="noopener">View on GBIF ↗</a>
+        <label class="toggle-pill"><input type="checkbox"/> Show all sightings</label>
+      </div>
+    </div>`).join('');
+}
+
+function render(v) {
+  destroyMap();
+  document.getElementById('proto-label').textContent = LABELS[v];
+  if (v === 'overlay') renderOverlay();
+  if (v === 'sidebar') renderSidebar();
+  setTimeout(() => { if (map) map.invalidateSize(); }, 50);
+}
+
+document.getElementById('proto-prev').addEventListener('click', () => {
+  const i = VARIANTS.indexOf(currentVariant());
+  setVariant(VARIANTS[(i - 1 + VARIANTS.length) % VARIANTS.length]);
+});
+document.getElementById('proto-next').addEventListener('click', () => {
+  const i = VARIANTS.indexOf(currentVariant());
+  setVariant(VARIANTS[(i + 1) % VARIANTS.length]);
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') document.getElementById('proto-prev').click();
+  if (e.key === 'ArrowRight') document.getElementById('proto-next').click();
+});
+
+render(currentVariant());
+</script>
+</body>
+</html>
