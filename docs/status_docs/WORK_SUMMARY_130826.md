@@ -61,3 +61,33 @@ Reduce exclusive reliance on Claude, evaluate cost efficiency across providers. 
 - Constraints transparency in the UI (observations since 2023 only, 5 species per query, GBIF-only data source).
 - "Show all sightings" was explicitly dropped, not deferred with a plan — if revisited later, this session's payload/rendering-cost trade-off discussion is the starting point (capping/sampling per species, not a flat point-count assumption).
 - The permanent eval suite (`tests/evals/test_full_pipeline_eval.py`) does not yet cover the enrichment pipeline — only the throwaway smoke script and the extended `e2e_web_smoke_test.py` check do. Worth a real decision on whether a permanent eval test is warranted here.
+
+## Session 2 — Wikipedia image URL trust hotfix
+
+Separate topic from the rest of this file: user asked whether the Wikipedia/GBIF URLs rendered by the app could be redirected in production to sites/materials outside their control. Investigated via a code-search subagent, confirmed one real gap, fixed it as a hotfix branched off `main`, and merged the result back into this branch (`explore_audio_ai_narrative_and_open_router`).
+
+### What was built
+
+- **`app/backend/services/wikipedia_client.py`**: `fetch_species_image` now validates the `thumbnail.source`/`originalimage.source` URL from Wikipedia's summary API response against a new `TRUSTED_IMAGE_HOST = "upload.wikimedia.org"` constant (`_is_trusted_image_url`, checks `https` scheme + exact hostname via `urllib.parse.urlparse`) before returning it — an untrusted/malformed URL now returns `None` instead of being passed through.
+- **`app/frontend/src/components/ResultsPanel.tsx`**: added the same check (`isTrustedImageUrl`, same host/scheme logic via `new URL()`) as a second, independent layer before rendering `<img src={s.image_url}>` — defense in depth, per explicit user request, so the frontend doesn't blindly trust the backend API response either.
+- **Tests updated/added, TDD (RED confirmed before implementing each layer):**
+  - `app/backend/tests/test_wikipedia_client.py`: existing fixtures switched from `example.com` to `upload.wikimedia.org`; three new tests cover rejecting an untrusted host, rejecting `http://` (non-https), for both `thumbnail` and `originalimage` fields.
+  - `app/frontend/src/components/ResultsPanel.test.tsx`: existing fixture switched to `upload.wikimedia.org`; new test confirms an untrusted `image_url` falls back to the existing "No image available" UI rather than rendering the `<img>`.
+- All 110 backend tests and 64 frontend tests pass. `tests/e2e_web_smoke_test.py` run headed against real local dev servers and live GBIF/Wikipedia data: 41/41 checks passed, including a live "Show me some birds" query confirming real `upload.wikimedia.org` URLs still render correctly (the fix doesn't false-positive on legitimate images).
+- Committed on branch `hotfix_validate_wikipedia_image_host` (branched off local `main`), pushed and merged into `main` by the user as PR #19 (commit `87ea10d`). Then merged from `main` back into `explore_audio_ai_narrative_and_open_router` (merge commit `00e0bbe`), so this branch now carries the fix.
+
+### What was explored / learnt
+
+- Traced every Wikipedia/GBIF URL construction site in `app/` (backend + frontend) via a code-search subagent. **GBIF species links** (`ResultsPanel.tsx`: `` `https://www.gbif.org/species/${s.species_key}` ``) and the **Wikipedia summary API call** (`wikipedia_client.py`: `f"{WIKIPEDIA_SUMMARY_URL}/{quote(title)}"`) were already safe — domain hardcoded, only a numeric ID or a quoted species name fills the path, so third-party data can't redirect the link to another domain.
+- The one real gap was the **species image URL**: `wikipedia_client.fetch_species_image` took the *entire* URL (including host) verbatim from Wikipedia's REST API JSON response and passed it straight through to `<img src>` with no validation — a compromised/spoofed upstream response could have pointed the app at an arbitrary domain, not just a path within a trusted one.
+- Verified live (`curl` against `en.wikipedia.org/api/rest_v1/page/summary/Red_fox`) that both `thumbnail.source` and `originalimage.source` are always served from `upload.wikimedia.org` before hardcoding that as the trusted host — didn't just assume the `wikimedia.org` domain family.
+- Confirmed the correct fix location is the backend, not just the frontend: the untrusted data enters the system at the point the backend calls Wikipedia's API, so validating there protects any future consumer of the `/api/query` response, not just this one React component. Frontend check added afterward as an explicit additional layer, not a replacement.
+
+### Decisions and trade-offs
+
+- **Decision:** Validate the Wikipedia image URL's host against an exact-match allowlist (`upload.wikimedia.org`) in both the backend (at the point the untrusted API response is consumed) and the frontend (at the point it's rendered). **Why:** backend validation protects the trust boundary where third-party data enters the system and any consumer of the API; frontend validation is defense-in-depth per explicit user request, given the depth of the investigation already done. **Trade-off:** none significant — a `upload.wikimedia.org` becoming stale (Wikimedia changing image-hosting domains) would silently degrade to "no image" rather than error, which is an acceptable failure mode for a non-critical enrichment field.
+- **Decision:** No comments added explaining the new validation logic. **Why:** explicit user feedback mid-session — comments weren't already a convention in this file for this kind of addition, and the existing `USER_AGENT` comment in `wikipedia_client.py` was removed as noise when the user reviewed the diff.
+
+### Next steps
+
+- Nothing new added to the backlog by this hotfix — it was scoped, built, tested, and shipped within this session. The existing next-steps list above (starting with "Scope and prototype AI audio narration") is unaffected and still the priority order going forward.
