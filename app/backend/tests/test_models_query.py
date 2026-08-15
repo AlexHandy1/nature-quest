@@ -34,7 +34,7 @@ def test_retiro_polygon_is_well_under_area_cap():
 
 
 def test_polygon_exceeding_area_cap_raises_validation_error():
-    # ~55km x 55km bounding box, far above the 25 km^2 cap
+    # ~55km x 55km bounding box, above the 25 km^2 cap
     oversized_polygon = (
         "POLYGON((-4.0 40.0,-3.5 40.0,-3.5 40.5,-4.0 40.5,-4.0 40.0))"
     )

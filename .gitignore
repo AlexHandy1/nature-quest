@@ -5,8 +5,8 @@ __pycache__/
 prototypes/logs/*
 !prototypes/logs/.gitkeep
 prototypes/osm_sample*.json
-prototypes/artifacts/*.mp3
-prototypes/artifacts/*.wav
+*.mp3
+*.wav
 .env
 *.tfvars
 tests/.smoke_test_output/

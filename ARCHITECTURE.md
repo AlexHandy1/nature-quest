@@ -1,27 +1,14 @@
 # Architecture
 
-A current, whole-system map. For the detailed "why" behind any decision here, follow the linked ADR/spec rather than expecting the reasoning restated in this file.
+A current, whole-system map of what's built and how it works today — not a roadmap. For the detailed "why" behind any decision here, follow the linked ADR/spec rather than expecting the reasoning restated in this file. Product scope, phasing, and what's planned or deferred live in `docs/prds/`, `docs/specs/`, and `docs/status_docs/`, not here.
 
-## What's live vs. what's not
+## Overview
 
-**Phase 1 (production foundation)** and **Slice 2 (LLM guardrails + first GBIF query)** are both built and **deployed**. The landing page's primary interaction is now `MapView`: free text → LLM taxon resolution (real Anthropic call) → GBIF species list, behind per-IP rate limiting and a daily LLM-call budget guardrail, with the Anthropic API key fetched explicitly from Secret Manager at container startup (REQ-005) — never a plain env var in production. Structured operational logging (REQ-017) and consent-gated PostHog observability (REQ-018/019, client- and server-side) are both live. Full detail: `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md`.
+Nature Quest is a FastAPI backend + Vite/React frontend that turns a natural-language request and a drawn search area into a GBIF-backed nature walk. `MapView` is the whole product surface: a user draws or accepts a default search area, submits free text, and gets back a route-ordered species list, each enriched with a common name, photo, and GBIF link.
 
-**Slice 3 (multi-taxon query + clustering + route ordering)** is **built and deployed**. The query pipeline handles mixed-taxa requests (e.g. "birds and plants") and lay terms with no single GBIF rank (e.g. "fish", "reptiles") — the LLM resolves to a *list* of taxon filters, each resolved and fetched independently, then merged via quota/round-robin — see `docs/decisions/ADR-011-multi-taxon-query-resolution-strategy.md`. Each species' hotspot is an NxN density-cluster (not a plain average), and the response's species list is nearest-neighbour route order from the search area's centroid, via `services/waypoints.py`.
+Request path: free text → LLM taxon resolution (Anthropic) → per-taxon GBIF occurrence lookup → nearest-neighbour route ordering → species enrichment (common name + Wikipedia image) → response rendered as map markers plus a results panel. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
 
-**Slice 9 (draw-your-own-area)** is **built and deployed**. `/api/query`'s `polygon` field is required (no backend default/fixed-area fallback); the frontend always sends an explicit WKT polygon, either the fixed Retiro constant or a user-drawn one. The frontend's actual area-selection UX diverges materially from the slice's original spec — a persistent, always-changeable widget (`AreaControl`) replaced a one-time popup/funnel, and Leaflet-draw's own native controls replaced a custom "Confirm Area" button — see `docs/decisions/ADR-012-area-selection-persistent-widget-not-popup-funnel.md`. Automated end-to-end coverage for the drawing flow itself was not achieved (see `tests/e2e_web_smoke_test.py`'s "known gaps" comment) — manual verification only.
-
-**Species detail enrichment (common name, image, GBIF link)** is **built and deployed**. Each of the final ~5 selected species is enriched with a GBIF vernacular name and a Wikipedia article image (`services/species_enrichment.py`) before the response is sent; the frontend's `ResultsPanel` renders this as an accordion (tap/click a row to expand photo + GBIF link), with the same interaction model on both a desktop sidebar and a mobile bottom-dock overlay — see `docs/decisions/ADR-013-species-image-source-wikipedia-not-gbif-media.md` for why the image comes from Wikipedia rather than GBIF's own occurrence photos.
-
-**Still outstanding from Slice 2's original scope**: basic GCP uptime/error-rate alerting (REQ-025-027) — not yet built. A *different* alert was built first instead: a real-time email on every `/api/query` submission (`infra/monitoring.tf` — log-based metric + alert policy), a deliberate, explicitly-scoped short-term deviation that will not scale past near-zero traffic — see `docs/decisions/ADR-010-realtime-per-query-alerting.md`. `POST /api/interest`, `InterestSubmission`, and `InterestForm.tsx` (dormant since `CON-001`) have since been deleted entirely, along with their tests and the CI/CD smoke-test check that POSTed to `/api/interest`.
-
-**REQ-019's implementation deviates from the spec's original design**: the spec specifies OpenTelemetry (`AnthropicInstrumentor` + `PostHogSpanProcessor`); the actual build uses `posthog.ai.anthropic.Anthropic`, a wrapper client — see `docs/decisions/ADR-009-posthog-ai-observability-wrapper-client.md` for why.
-
-The fuller NL-query pipeline beyond Slice 2's scope (waypoint ordering, route generation, narrative, map rendering) is **not built** — it was validated as a throwaway prototype (`prototypes/`, untouched, never deployed) and is later PRD slices, not yet started. Don't assume anything under `app/` implements the full prototype pipeline — Slice 2 only goes as far as a species list.
-
-Within Phase 1 itself, two requirements from the original spec are **deliberately deferred**, not missing by oversight:
-- **Cloud Armor + load balancer** (Cloud Run `max_instance_count=2` used as an interim cost-creep guardrail instead) — see `docs/decisions/ADR-007-analytics-consent-abuse-guardrails.md`'s implementation notes.
-
-Full requirement-level detail and status: `docs/specs/spec-infrastructure-production-foundation-300726.md` (search for `[DEFERRED]`).
+Narrative generation (spoken/written per-waypoint field-guide text) is not implemented in `app/` — it was validated separately as a throwaway prototype (`prototypes/`, untouched, never deployed; see `prototypes/README.md`).
 
 ## Components
 
@@ -158,8 +145,6 @@ The dev server (`npm run dev`) proxies `/api` and `/health` to `localhost:8000` 
 
 Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN` env var), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account, a Secret Manager secret (`anthropic-api-key`, IAM-bound to that service account — value set out-of-band, never in Terraform), Cloud Monitoring (`monitoring.tf` — an email notification channel, a log-based metric counting `query_outcome` log lines, and an alert policy firing on every one, per `ADR-010`), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
 
-### CI/CD (`.github/workflows/ci-cd.yml`)
-
 ## Request flow
 
 ```
@@ -178,8 +163,6 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     └─ everything else → static/ (built frontend)
 ```
 
-Note: `/healthz` is a **reserved path on Cloud Run** — Google's front-end intercepts it before it reaches any container. The health-check endpoint is `/health`. See `docs/decisions/ADR-005-iac-terraform-cicd-github-actions.md`'s implementation note if this comes up again.
-
 ## Deploy flow
 
 ```
@@ -195,17 +178,3 @@ Merge to main → same checks again, then:
 Authentication uses Workload Identity Federation — no static GCP keys anywhere. The trust is scoped twice, not just once: the GitHub Actions workflow only runs the deploy job `if: push to main`, **and** GCP's own WIF provider independently rejects any token whose claims aren't `repository == AlexHandy1/nature-quest && ref == refs/heads/main` (`infra/wif.tf`) — so even a modified workflow file on a fork PR couldn't obtain deploy credentials.
 
 `terraform apply` (Secret Manager, Cloud Run config) is a separate manual step, not part of CI/CD — see `infra/README.md`. If GitHub Actions itself is unavailable (a GitHub platform incident, not a repo config issue), `infra/manual_deploy.sh` reproduces the build+deploy jobs from a local machine, tagged by git SHA the same way CI tags images, so it composes cleanly with normal CI deploys rather than colliding with them.
-
-## Where to go deeper
-
-| Question | Look here |
-|---|---|
-| Why was X chosen over Y? | `docs/decisions/ADR-*.md` |
-| Exact requirements/acceptance criteria for Phase 1 | `docs/specs/spec-infrastructure-production-foundation-300726.md` |
-| Exact requirements/acceptance criteria for Slice 2 (LLM guardrails, GBIF query) | `docs/specs/spec-tool-llm-guardrails-gbif-query-040826.md` |
-| Original design + built-vs-diverged detail for Slice 9 (draw-your-own-area) | `docs/specs/spec-tool-draw-your-own-area-100826.md`, `docs/decisions/ADR-012-area-selection-persistent-widget-not-popup-funnel.md` |
-| Why species images come from Wikipedia, not GBIF occurrence photos | `docs/decisions/ADR-013-species-image-source-wikipedia-not-gbif-media.md` |
-| What's the product vision, phases, personas? | `docs/prds/nature-quest-prd-300726.md` |
-| What happened in a past session? | `docs/status_docs/WORK_SUMMARY_*.md` (date order) |
-| How was the pipeline concept validated? | `prototypes/README.md` |
-| How do I run this locally / deploy it? | root `README.md`, `infra/README.md` |
