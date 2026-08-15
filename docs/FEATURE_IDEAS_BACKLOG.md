@@ -24,6 +24,10 @@ Explore WebGL for a genuinely 3D, game-like map experience (vs. the current 2D L
 
 Let a user share a link to a generated walk (species, waypoints, narrative) so someone else can open it directly, rather than every visitor having to submit their own NL query first. Surfaced during the invalid-query-handling design session (280726) while weighing stateless vs. server-side-cached designs for the new `/gbif-species-query` validation endpoint — a stateless, client-round-tripped design was chosen for that endpoint because this codebase has no server-side session state yet, but a shareable-link feature would be a legitimate future reason to introduce it. Appeal: a link is a low-friction way for one user's good walk to reach other people, potentially driving wider shared usage/virality rather than the product staying single-player only.
 
+## Let users ask and learn more, and refine their walk
+
+The pipeline currently stops at a species list and a walk, with no way to go deeper. A natural next step is follow-up questions about a species, and refining the walk from there.
+
 ## Path to a fully autonomous software factory (CI/CD)
 
 Longer-term direction: move toward AI agents writing, reviewing, testing, and deploying without human intervention. The current production-foundation spec (`docs/specs/spec-infrastructure-production-foundation-300726.md`) deliberately keeps a human in the loop for now; these are the specific things to revisit once the basics are working and the MVP is built, not before:

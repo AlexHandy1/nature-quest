@@ -391,6 +391,13 @@ button:hover {
     order: 5;
   }
 
+  .area-control {
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 100%;
+    border-radius: 12px;
+  }
+
   .map-view {
     display: block;
   }

@@ -22,7 +22,7 @@ test('shows nothing for a valid small polygon', () => {
   expect(screen.queryByText(/too large/i)).not.toBeInTheDocument()
 })
 
-test('shows an inline message when the shape exceeds the 25 km^2 cap', () => {
+test('shows an inline message when the shape exceeds the 50 km^2 cap', () => {
   render(
     <AreaSizeWarning
       vertices={[
