@@ -495,7 +495,7 @@ if __name__ == "__main__":
 #   - Choosing "Draw your own area" and drawing a valid custom polygon.
 #   - The drawn polygon auto-confirming (no separate "Confirm" button — the
 #     app relies on Leaflet-draw's own CREATED event).
-#   - The 25 km^2 area-too-large rejection and its inline warning message.
+#   - The 50 km^2 area-too-large rejection and its inline warning message.
 #   - Editing an already-drawn shape via Leaflet's native edit (pencil)
 #     control (the EDITED-event auto-confirm/re-validate path).
 #   - Deleting a drawn shape via Leaflet's native delete (trash) control.

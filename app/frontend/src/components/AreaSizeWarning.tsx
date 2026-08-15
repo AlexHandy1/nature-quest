@@ -11,7 +11,7 @@ function AreaSizeWarning({ vertices }: AreaSizeWarningProps) {
 
   return (
     <p className="area-size-warning">
-      That area is too large — please delete it and draw a smaller shape (max 25 km²).
+      That area is too large — please delete it and draw a smaller shape (max 50 km²).
     </p>
   )
 }
