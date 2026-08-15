@@ -1,12 +1,18 @@
 # Nature Quest
 
-Turn public biodiversity data into navigable nature walks.
+Nature Quest aims to make it easier and more fun to find interesting nature nearby and get out and experience it, by turning natural-language requests ("Show me some birds and plants!") into guided nature walks grounded in real species observations, for any drawn area in the world.
 
-Given a location and a natural-language request (e.g. "show me some birds", "I want to see fish and insects"), Nature Quest dynamically selects the species currently present that match, designs a guided walk route through their recorded sighting hotspots, and generates a narrated field guide grounded in real observation data.
+**Live**: https://nature-quest-production-465dsuxpnq-ew.a.run.app
 
-**Live**: https://nature-quest-production-465dsuxpnq-ew.a.run.app — draw a search area **anywhere in the world** on the map (or use the default Retiro Park, Madrid area), then submit a free-text request (e.g. "show me some birds") to get back a real species list and walking route for that area.
+![Nature Quest example walk](docs/images/basic_example_for_readme.png)
 
 ## Running it locally
+
+**Prerequisites:**
+- Python 3.13
+- Node 22
+- An [Anthropic API key](https://console.anthropic.com/) — required; `POST /api/query` makes a real LLM call
+- (Optional) a PostHog project token — only needed to test server-side PostHog capture (`consent=True`)
 
 Two servers, in separate terminals:
 
@@ -28,11 +34,13 @@ The frontend dev server proxies `/api` and `/health` to the backend (`vite.confi
 
 ## Deploying
 
-Merging to `main` deploys automatically via GitHub Actions (Workload Identity Federation, no static keys — see `docs/decisions/ADR-005`). For one-off manual deploys before/outside CI, see `infra/README.md`.
+Merging to `main` deploys automatically via GitHub Actions (Workload Identity Federation, no static keys — see `docs/decisions/ADR-005`). For one-off manual deploys before/outside CI, see `infra/README.md`. `main` is branch-protected (no direct pushes, merges require maintainer approval), and only the maintainer holds GCP deploy credentials.
+
+Exploring deployment/infra yourself additionally needs: Docker, the `gcloud` CLI, the `gh` CLI, and Terraform (for infra changes) — plus GCP credentials with access to the project, which only the maintainer currently holds.
 
 ## Finding your way around
 
-- **`ARCHITECTURE.md`** — the current, whole-system map: components, request flow, deploy flow, what's live vs. deferred. Start here.
+- **`ARCHITECTURE.md`** — the current, whole-system map: components, request flow, deploy flow. Start here.
 - **`docs/decisions/`** — ADRs, the "why" behind significant technical decisions.
 - **`docs/specs/`** — technical specs for each slice of work, precise enough to build from.
 - **`docs/prds/`** — product requirements: vision, phases, personas.
