@@ -6,7 +6,7 @@ import httpx
 
 GBIF_OCCURRENCE_SEARCH_URL = "https://api.gbif.org/v1/occurrence/search"
 GBIF_SPECIES_URL = "https://api.gbif.org/v1/species"
-# Fixed boundary for Retiro Park, Madrid — this slice's only supported area.
+
 GBIF_POLYGON = (
     "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.67912 40.4076,"
     "-3.676 40.41148,-3.68002 40.42163,-3.68876 40.4199))"
