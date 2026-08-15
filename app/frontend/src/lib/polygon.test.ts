@@ -48,7 +48,7 @@ test('accepts a valid small polygon', () => {
   expect(validatePolygonPoints(points)).toEqual({ valid: true })
 })
 
-test('rejects a polygon exceeding the 50 km^2 area cap', () => {
+test('rejects a polygon exceeding the 25 km^2 area cap', () => {
   // ~55km x 55km bounding box, far above the cap
   const points: [number, number][] = [
     [40.0, -4.0],

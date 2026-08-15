@@ -6,7 +6,7 @@ from services.gbif_client import parse_polygon_vertices
 
 MAX_QUERY_LENGTH = 300
 MIN_POLYGON_VERTICES = 3
-MAX_POLYGON_AREA_KM2 = 50.0
+MAX_POLYGON_AREA_KM2 = 25.0
 KM_PER_DEGREE_LAT = 111.0
 
 
