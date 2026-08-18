@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>PROTOTYPE — narration eval harness</title>
+<style>
+  body { font-family: sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #222; }
+  #banner { display: inline-block; background: #ffd700; padding: 3px 12px; border-radius: 4px;
+    font-size: 11px; font-weight: bold; margin-bottom: 16px; }
+  .columns { display: flex; gap: 24px; flex-wrap: wrap; }
+  .column { flex: 1; min-width: 360px; border: 1px solid #ddd; border-radius: 8px; padding: 16px 20px; }
+  .column h2 { font-size: 15px; margin-top: 0; }
+  .stats { font-size: 12px; color: #555; background: #f6f6f6; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; }
+  .stats div { margin: 2px 0; }
+  p { line-height: 1.6; }
+  .sources { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #ddd; }
+  .sources h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; margin: 0 0 6px; }
+  .sources ul { padding-left: 20px; margin: 0; font-size: 12px; }
+  .wiki-title { color: #666; font-size: 12px; }
+  .missing { color: #b00; font-size: 12px; }
+  table.checks { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  table.checks td { padding: 4px 6px; border-bottom: 1px solid #eee; vertical-align: top; }
+  table.checks td.status { font-weight: bold; white-space: nowrap; }
+  tr.pass td.status { color: #1a7f37; }
+  tr.fail td.status { color: #b00; }
+  .reasoning { margin-top: 10px; font-size: 12px; color: #444; background: #f6f6f6; border-radius: 6px; padding: 8px 12px; }
+  .reasoning strong { display: block; font-size: 11px; text-transform: uppercase; color: #666; margin-bottom: 4px; }
+  .eval-section { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #ddd; }
+  .eval-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; margin: 0 0 6px; }
+  .cost-table { margin-top: 24px; font-size: 13px; border-collapse: collapse; width: 100%; }
+  .cost-table td, .cost-table th { padding: 6px 10px; border-bottom: 1px solid #eee; text-align: right; }
+  .cost-table th:first-child, .cost-table td:first-child { text-align: left; }
+  .cost-table tr.total td { font-weight: bold; border-top: 2px solid #333; }
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — narration eval harness (baseline vs. Wikipedia-grounded)</div>
+
+<div class="columns">
+  <div class="column">
+    <h2>Baseline (names + locations only)</h2>
+    <div class="stats">
+      <div>narrative generation: 3.0s</div>
+      <div>tokens: in=379 out=186</div>
+      <div>generation cost: $0.00131</div>
+      <div>length: 831 chars</div>
+    </div>
+    <p>We begin our journey through Madrid&#x27;s urban wetlands, where nature thrives amid the city&#x27;s pulse. Here, the striking Eurasian Magpie commands attention with its iridescent plumage, a clever opportunist of European parks. Moving deeper into this verdant corridor, listen for the unmistakable calls of the Iberian Green Woodpecker, a jewel found only on the Iberian Peninsula, as it drums against ancient bark. As we approach the water&#x27;s edge, an unexpected sight emerges, the Egyptian Goose, far from its African homeland, has established itself here. Gliding alongside, the elegant Black Swan introduces an exotic grace to these Spanish waters. Finally, we encounter the familiar Mallard, that steadfast companion of European wetlands, completing our circuit through this remarkable tapestry where continents and cultures converge.</p>
+    <div class="eval-section">
+      <h3>Eval results (3/5 passed)</h3>
+      <table class="checks"><tr class="pass"><td>length</td><td class="status">PASS</td><td>831 chars (max 1000)</td></tr><tr class="pass"><td>no_time_refs</td><td class="status">PASS</td><td>none found</td></tr><tr class="pass"><td>no_dash_pauses</td><td class="status">PASS</td><td>none found</td></tr><tr class="fail"><td>faithfulness</td><td class="status">FAIL</td><td>major: [&#x27;the Egyptian Goose, far from its African homeland, has established itself here&#x27;, &#x27;the elegant Black Swan introduces an exotic grace to these Spanish waters&#x27;]</td></tr><tr class="fail"><td>no_habitat_claims</td><td class="status">FAIL</td><td>major: [&quot;Madrid&#x27;s urban wetlands&quot;]</td></tr></table>
+      <div class="reasoning"><strong>Judge reasoning (claude-haiku-4-5-20251001)</strong>The narrative claims Egyptian Geese and Black Swans are established in Madrid&#x27;s waters, but the extracts only say these species were introduced to Europe generally, with no specific mention of Madrid or Spain. The narrative also describes the area as &quot;Madrid&#x27;s urban wetlands&quot; throughout, but no extract explicitly supports that Madrid has wetlands; only that mallards live in wetlands generally, and we cannot infer from that alone that this specific Madrid walk occurs in wetlands rather than urban parks.</div>
+    </div>
+  </div>
+
+  <div class="column">
+    <h2>Wikipedia-grounded</h2>
+    <div class="stats">
+      <div>wikipedia fetch (5 lookups): 0.7s</div>
+      <div>narrative generation: 2.8s</div>
+      <div>tokens: in=1189 out=195</div>
+      <div>generation cost: $0.00216</div>
+      <div>length: 917 chars</div>
+    </div>
+    <p>We venture through the landscapes of central Spain, where temperate Europe meets ancient history. Our first encounter reveals the Eurasian magpie, a striking resident of northern Eurasia whose black and white plumage marks it as a member of the crow family. Moving closer, listen carefully, the Iberian green woodpecker announces itself through sibilant, hiss-like calls. This medium-sized woodpecker belongs exclusively to the Iberian peninsula, distinguished by minimal black markings on its head. Near the water&#x27;s edge, we discover the Egyptian goose, an African species that has been introduced across Europe as an ornamental bird, echoing representations in ancient Egyptian art. Here too glide the black swan and the mallard, the former a monogamous breeder from Australia with its distinctive red bill, the latter a social dabbler that inhabits wetlands throughout temperate regions across multiple continents.</p>
+    <div class="eval-section">
+      <h3>Eval results (5/5 passed)</h3>
+      <table class="checks"><tr class="pass"><td>length</td><td class="status">PASS</td><td>917 chars (max 1000)</td></tr><tr class="pass"><td>no_time_refs</td><td class="status">PASS</td><td>none found</td></tr><tr class="pass"><td>no_dash_pauses</td><td class="status">PASS</td><td>none found</td></tr><tr class="pass"><td>faithfulness</td><td class="status">PASS</td><td>minor (not failed): [&#x27;the Iberian green woodpecker announces itself through sibilant, hiss-like calls&#x27;, &#x27;the former a monogamous breeder from Australia with its distinctive red bill&#x27;]</td></tr><tr class="pass"><td>no_habitat_claims</td><td class="status">PASS</td><td>minor (not failed): [&#x27;the mallard, the latter a social dabbler that inhabits wetlands throughout temperate regions across multiple continents&#x27;]</td></tr></table>
+      <div class="reasoning"><strong>Judge reasoning (claude-haiku-4-5-20251001)</strong>The narrative is largely faithful to the sources. The &quot;sibilant, hiss-like calls&quot; description is supported by the extract but marked minor because it paraphrases the extract&#x27;s description rather than directly stating observed behavior at this walk. The black swan description is supported but marked minor for stylistic compression—the extract specifies it &quot;breeds mainly in the southeast and southwest regions of Australia&quot; rather than being simply &quot;from Australia,&quot; though the core facts are correct. The mallard habitat claim combines supported facts (wetlands, temperate regions, social) but the extract specifies &quot;temperate and subtropical Americas, Eurasia, and North Africa&quot; as breeding range rather than confirming it &quot;inhabits wetlands throughout temperate regions across multiple continents&quot; as a general statement, making it a minor issue since the claim is roughly consistent with extract information but slightly overgeneralized.</div>
+    </div>
+    <div class="sources">
+      <h3>Wikipedia sources used</h3>
+      <ul><li><a href="https://en.wikipedia.org/wiki/Eurasian_magpie" target="_blank" rel="noopener">Eurasian Magpie</a> — <span class="wiki-title">Eurasian magpie</span></li><li><a href="https://en.wikipedia.org/wiki/Iberian_green_woodpecker" target="_blank" rel="noopener">Iberian Green Woodpecker</a> — <span class="wiki-title">Iberian green woodpecker</span></li><li><a href="https://en.wikipedia.org/wiki/Egyptian_goose" target="_blank" rel="noopener">Egyptian Goose</a> — <span class="wiki-title">Egyptian goose</span></li><li><a href="https://en.wikipedia.org/wiki/Black_swan" target="_blank" rel="noopener">Black Swan</a> — <span class="wiki-title">Black swan</span></li><li><a href="https://en.wikipedia.org/wiki/Mallard" target="_blank" rel="noopener">Mallard</a> — <span class="wiki-title">Mallard</span></li></ul>
+    </div>
+  </div>
+</div>
+
+<table class="cost-table">
+  <tr><th>Cost group</th><th>Time</th><th>Cost</th></tr>
+  <tr><td>Generation (Haiku x2 + wikipedia fetch)</td>
+      <td>6.5s</td>
+      <td>$0.00347</td></tr>
+  <tr><td>Eval judging (claude-haiku-4-5-20251001 x2)</td>
+      <td>6.7s</td>
+      <td>$0.00762</td></tr>
+  <tr class="total"><td>Total</td>
+      <td>13.2s</td>
+      <td>$0.01110</td></tr>
+</table>
+
+</body>
+</html>
