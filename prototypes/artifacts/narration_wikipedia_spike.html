@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<title>PROTOTYPE — Wikipedia-grounded narrative spike</title>
+<style>
+  body { font-family: sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #222; }
+  #banner { display: inline-block; background: #ffd700; padding: 3px 12px; border-radius: 4px;
+    font-size: 11px; font-weight: bold; margin-bottom: 16px; }
+  .columns { display: flex; gap: 24px; flex-wrap: wrap; }
+  .column { flex: 1; min-width: 320px; border: 1px solid #ddd; border-radius: 8px; padding: 16px 20px; }
+  .column h2 { font-size: 15px; margin-top: 0; }
+  .stats { font-size: 12px; color: #555; background: #f6f6f6; border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; }
+  .stats div { margin: 2px 0; }
+  p { line-height: 1.6; }
+  .sources { margin-top: 18px; padding-top: 12px; border-top: 1px dashed #ddd; }
+  .sources h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; margin: 0 0 6px; }
+  .sources ul { padding-left: 20px; margin: 0; font-size: 12px; }
+  .wiki-title { color: #666; font-size: 12px; }
+  .missing { color: #b00; font-size: 12px; }
+  .delta { margin-top: 24px; font-size: 13px; background: #eef6ff; border-radius: 6px; padding: 10px 14px; }
+  .delta strong { color: #1a5fb4; }
+</style>
+</head>
+<body>
+<div id="banner">PROTOTYPE — baseline vs. Wikipedia-grounded narrative</div>
+
+<div class="columns">
+  <div class="column">
+    <h2>Baseline (names + locations only)</h2>
+    <div class="stats">
+      <div>narrative generation: 3.2s</div>
+      <div>tokens: in=381 out=211</div>
+      <div>estimated cost: $0.00144</div>
+      <div>length: 913 chars</div>
+    </div>
+    <p>We begin our journey through the wetlands of central Spain, where an impressive Eurasian Magpie surveys the landscape from its perch, its distinctive black and white plumage catching the light. Notice the iridescent sheen on its wings—a master of intelligence and cunning. Moving deeper into the parkland, listen carefully for the distinctive call of the Iberian Green Woodpecker, a species found nowhere else on Earth. Its emerald plumage blends remarkably with the dappled shade as it works the bark. Now we approach the water's edge, where an Egyptian Goose rests—a striking visitor from Africa, increasingly at home in European wetlands. Gliding nearby, a Black Swan moves with unexpected grace, its ebony form mirrored in still water. Finally, our journey concludes with the humble Mallard, that most familiar of ducks, reminding us that wonder exists even in the most common encounters of the natural world.</p>
+  </div>
+
+  <div class="column">
+    <h2>Wikipedia-grounded</h2>
+    <div class="stats">
+      <div>wikipedia fetch (5 lookups): 1.0s</div>
+      <div>narrative generation: 3.8s</div>
+      <div>total: 4.7s</div>
+      <div>tokens: in=1005 out=214</div>
+      <div>estimated cost: $0.00208</div>
+      <div>length: 985 chars</div>
+    </div>
+    <p>Welcome to Madrid's wetlands, where the familiar mingles with the exotic. Our journey begins with the striking Eurasian magpie, that clever corvid dressed in crisp black and white. Watch how it moves with intelligence and purpose — members of the crow family renowned for their wit.</p><p>Just nearby, listen carefully for the Iberian green woodpecker, a medium-sized carpenter of the trees found only on the Iberian Peninsula. Its call is distinctive, almost hiss-like, a sound that reveals its presence even when hidden among the branches.</p><p>As we approach the water, we encounter something unexpected: the Egyptian goose, an African visitor now thriving here in Europe, thanks to its popularity in ornamental collections. And there — a magnificent black swan from distant Australia, a monogamous partner tending its young with dedicated care.</p><p>Finally, dabbling contentedly in the shallows, the humble mallard — that gregarious wild duck found across continents, making these waters home.</p>
+    <div class="sources">
+      <h3>Wikipedia sources used</h3>
+      <ul>
+        <li><a href="https://en.wikipedia.org/wiki/Eurasian_magpie" target="_blank" rel="noopener">Eurasian Magpie</a> — <span class="wiki-title">Eurasian magpie</span></li><li><a href="https://en.wikipedia.org/wiki/Iberian_green_woodpecker" target="_blank" rel="noopener">Iberian Green Woodpecker</a> — <span class="wiki-title">Iberian green woodpecker</span></li><li><a href="https://en.wikipedia.org/wiki/Egyptian_goose" target="_blank" rel="noopener">Egyptian Goose</a> — <span class="wiki-title">Egyptian goose</span></li><li><a href="https://en.wikipedia.org/wiki/Black_swan" target="_blank" rel="noopener">Black Swan</a> — <span class="wiki-title">Black swan</span></li><li><a href="https://en.wikipedia.org/wiki/Mallard" target="_blank" rel="noopener">Mallard</a> — <span class="wiki-title">Mallard</span></li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="delta">
+  <strong>Added by Wikipedia grounding:</strong> +1.5s, $+0.00064
+</div>
+
+</body>
+</html>

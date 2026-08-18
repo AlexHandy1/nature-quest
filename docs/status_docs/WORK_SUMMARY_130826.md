@@ -41,14 +41,53 @@ Direct continuation of the previous session's mobile UX punch list (item 0: mobi
 
 ## Next steps
 
-Everything from `WORK_SUMMARY_120826.md`'s Session 2 next-steps list that wasn't picked up this session remains open:
-1. Add `<meta name="theme-color">` to `app/frontend/index.html` (item 1, header colour inconsistency diagnosis).
-2. Fix `.area-control`'s mobile overflow (item 2/3) — confirmed live last session, not yet ported to `AreaControl.tsx`/`index.css`.
-3. Live-verify drawing/geolocation touch targets (items 4/5) — still only code-level reasoning, never re-confirmed by interaction.
-4. Constraints transparency in the UI (observations since 2023 only, 5 species per query, GBIF-only data source).
-5. Review raising the area cap from 25 km² to at least 50 km².
-6. Two undecided candidate directions from two sessions ago: narrative-guide-as-audio, or LLM/AI infrastructure flexibility (OpenRouter etc.) — neither chosen yet.
+**Priority order, explicit (user's call, end of session):** start with (2) below. (1) is committed to ship in the next production push regardless of what else lands. (3) is scoped but not yet prioritized against the others.
 
-New from this session:
-7. "Show all sightings" was explicitly dropped, not deferred with a plan — if revisited later, the payload/rendering-cost trade-off discussion in this session's transcript is the starting point (capping/sampling per species, not a flat point-count assumption).
-8. The permanent eval suite (`tests/evals/test_full_pipeline_eval.py`) does not yet cover the enrichment pipeline — only the throwaway smoke script and the extended `e2e_web_smoke_test.py` check do. Worth a real decision on whether a permanent eval test is warranted here (explicitly deferred mid-session, not decided either way).
+### 1. Outstanding UX tweaks — going in the next prod push
+- **Mobile top nav/AreaControl overflow — still reproducing live.** Flagged and confirmed live twice now (`WORK_SUMMARY_120826.md` items 2/3), not yet fixed. Root cause already diagnosed: `.area-control` (`index.css`) has no `max-width`/`flex-wrap` of its own.
+- **Colour mismatch between mobile and desktop — still happening.** Diagnosed last session as likely a missing `<meta name="theme-color">` in `app/frontend/index.html` (confirmed the header's own CSS is identical at both breakpoints via computed-style checks — the mismatch is probably the browser/OS chrome, not the in-page header). Not yet fixed.
+- **Review raising the drawn-area cap from 25 km² to up to 50 km²** — called out in the original spec as a revisitable starting guardrail.
+- **Tidy up common name / scientific name layout in the results panel row** — `ResultsPanel.tsx`'s `.results-panel__row` is `flex-wrap: wrap`, so the scientific-name span sometimes wraps onto its own second line and reads as clunky/disordered rather than a clean primary/secondary pairing. Needs a real layout pass (e.g. stack them vertically on purpose rather than letting flex-wrap decide), not just a CSS nudge.
+
+### 2. Scope and prototype AI audio narration — start here
+Candidate direction logged since `WORK_SUMMARY_120826.md`: generate a per-species narrative (from selected species + a Wikipedia extract — the same summary payload `wikipedia_client.fetch_species_image` already pulls, extract field just needs surfacing) then a text-to-speech pass ([Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) named as a candidate model) to produce an audio walking-guide track. Not yet scoped or prototyped — likely wants a `/grill-me` pass before building.
+
+### 3. Scope OpenRouter / broader AI model flexibility
+Reduce exclusive reliance on Claude, evaluate cost efficiency across providers. Not yet scoped.
+
+### Also carried forward, not yet addressed
+- **Reliability bug (not a security vulnerability — reclassified after `/security-review`, see `tests/.security_review_output/20260813_174437/report.md`):** `gbif_client.fetch_common_name` and `wikipedia_client._fetch_summary` both call `response.json()` outside their `httpx.HTTPError` try/except, so a 200 response with malformed JSON from GBIF or Wikipedia raises an uncaught `JSONDecodeError`. Since `routers/query.py` calls `enrich_species()` with no try/except and there's no generic exception handler in `main.py`, this would 500 the entire `/api/query` response over a hiccup in what's meant to be a secondary enrichment step, discarding an already-successful core pipeline result. Fix: widen both to also catch `ValueError` (or move `response.json()` inside the existing try block) so a third-party hiccup degrades to "no common name / no image" instead of failing the whole query.
+- Live-verify drawing/geolocation touch targets — still only code-level reasoning, never re-confirmed by interaction.
+- Constraints transparency in the UI (observations since 2023 only, 5 species per query, GBIF-only data source).
+- "Show all sightings" was explicitly dropped, not deferred with a plan — if revisited later, this session's payload/rendering-cost trade-off discussion is the starting point (capping/sampling per species, not a flat point-count assumption).
+- The permanent eval suite (`tests/evals/test_full_pipeline_eval.py`) does not yet cover the enrichment pipeline — only the throwaway smoke script and the extended `e2e_web_smoke_test.py` check do. Worth a real decision on whether a permanent eval test is warranted here.
+
+## Session 2 — Wikipedia image URL trust hotfix
+
+Separate topic from the rest of this file: user asked whether the Wikipedia/GBIF URLs rendered by the app could be redirected in production to sites/materials outside their control. Investigated via a code-search subagent, confirmed one real gap, fixed it as a hotfix branched off `main`, and merged the result back into this branch (`explore_audio_ai_narrative_and_open_router`).
+
+### What was built
+
+- **`app/backend/services/wikipedia_client.py`**: `fetch_species_image` now validates the `thumbnail.source`/`originalimage.source` URL from Wikipedia's summary API response against a new `TRUSTED_IMAGE_HOST = "upload.wikimedia.org"` constant (`_is_trusted_image_url`, checks `https` scheme + exact hostname via `urllib.parse.urlparse`) before returning it — an untrusted/malformed URL now returns `None` instead of being passed through.
+- **`app/frontend/src/components/ResultsPanel.tsx`**: added the same check (`isTrustedImageUrl`, same host/scheme logic via `new URL()`) as a second, independent layer before rendering `<img src={s.image_url}>` — defense in depth, per explicit user request, so the frontend doesn't blindly trust the backend API response either.
+- **Tests updated/added, TDD (RED confirmed before implementing each layer):**
+  - `app/backend/tests/test_wikipedia_client.py`: existing fixtures switched from `example.com` to `upload.wikimedia.org`; three new tests cover rejecting an untrusted host, rejecting `http://` (non-https), for both `thumbnail` and `originalimage` fields.
+  - `app/frontend/src/components/ResultsPanel.test.tsx`: existing fixture switched to `upload.wikimedia.org`; new test confirms an untrusted `image_url` falls back to the existing "No image available" UI rather than rendering the `<img>`.
+- All 110 backend tests and 64 frontend tests pass. `tests/e2e_web_smoke_test.py` run headed against real local dev servers and live GBIF/Wikipedia data: 41/41 checks passed, including a live "Show me some birds" query confirming real `upload.wikimedia.org` URLs still render correctly (the fix doesn't false-positive on legitimate images).
+- Committed on branch `hotfix_validate_wikipedia_image_host` (branched off local `main`), pushed and merged into `main` by the user as PR #19 (commit `87ea10d`). Then merged from `main` back into `explore_audio_ai_narrative_and_open_router` (merge commit `00e0bbe`), so this branch now carries the fix.
+
+### What was explored / learnt
+
+- Traced every Wikipedia/GBIF URL construction site in `app/` (backend + frontend) via a code-search subagent. **GBIF species links** (`ResultsPanel.tsx`: `` `https://www.gbif.org/species/${s.species_key}` ``) and the **Wikipedia summary API call** (`wikipedia_client.py`: `f"{WIKIPEDIA_SUMMARY_URL}/{quote(title)}"`) were already safe — domain hardcoded, only a numeric ID or a quoted species name fills the path, so third-party data can't redirect the link to another domain.
+- The one real gap was the **species image URL**: `wikipedia_client.fetch_species_image` took the *entire* URL (including host) verbatim from Wikipedia's REST API JSON response and passed it straight through to `<img src>` with no validation — a compromised/spoofed upstream response could have pointed the app at an arbitrary domain, not just a path within a trusted one.
+- Verified live (`curl` against `en.wikipedia.org/api/rest_v1/page/summary/Red_fox`) that both `thumbnail.source` and `originalimage.source` are always served from `upload.wikimedia.org` before hardcoding that as the trusted host — didn't just assume the `wikimedia.org` domain family.
+- Confirmed the correct fix location is the backend, not just the frontend: the untrusted data enters the system at the point the backend calls Wikipedia's API, so validating there protects any future consumer of the `/api/query` response, not just this one React component. Frontend check added afterward as an explicit additional layer, not a replacement.
+
+### Decisions and trade-offs
+
+- **Decision:** Validate the Wikipedia image URL's host against an exact-match allowlist (`upload.wikimedia.org`) in both the backend (at the point the untrusted API response is consumed) and the frontend (at the point it's rendered). **Why:** backend validation protects the trust boundary where third-party data enters the system and any consumer of the API; frontend validation is defense-in-depth per explicit user request, given the depth of the investigation already done. **Trade-off:** none significant — a `upload.wikimedia.org` becoming stale (Wikimedia changing image-hosting domains) would silently degrade to "no image" rather than error, which is an acceptable failure mode for a non-critical enrichment field.
+- **Decision:** No comments added explaining the new validation logic. **Why:** explicit user feedback mid-session — comments weren't already a convention in this file for this kind of addition, and the existing `USER_AGENT` comment in `wikipedia_client.py` was removed as noise when the user reviewed the diff.
+
+### Next steps
+
+- Nothing new added to the backlog by this hotfix — it was scoped, built, tested, and shipped within this session. The existing next-steps list above (starting with "Scope and prototype AI audio narration") is unaffected and still the priority order going forward.
