@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { test, expect, vi } from 'vitest'
+import { test, expect, vi, beforeEach } from 'vitest'
 import ResultsPanel from './ResultsPanel'
 
 const SPECIES = [
@@ -35,6 +35,14 @@ const UNTRUSTED_IMAGE_SPECIES = [
 ]
 
 function noop() {}
+
+function jsonResponse(body: unknown) {
+  return { ok: true, status: 200, json: () => Promise.resolve(body) }
+}
+
+beforeEach(() => {
+  URL.createObjectURL = vi.fn(() => 'blob:mock-audio-url')
+})
 
 test('lists each species scientific name and observation count in route order', () => {
   render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
@@ -110,4 +118,29 @@ test('shows a no-image fallback when the image url is not from a trusted wikimed
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
   expect(screen.getByText(/no image available/i)).toBeInTheDocument()
+})
+
+test('narration resets to "Create narrative" when the species list changes to a new walk', async () => {
+  const user = userEvent.setup()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(jsonResponse({ narrative: 'First walk narrative.', audio: btoa('bytes') }))
+  )
+  const { rerender } = render(
+    <ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />
+  )
+
+  await user.click(screen.getByRole('button', { name: /create narrative/i }))
+  await screen.findByRole('button', { name: /^play$/i })
+
+  const NEW_WALK_SPECIES = [
+    { species: 'Alopochen aegyptiaca', count: 12, kingdom: 'Animalia', hotspot_lat: 40.44, hotspot_lon: -3.68 },
+  ]
+  rerender(
+    <ResultsPanel species={NEW_WALK_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />
+  )
+
+  expect(screen.getByRole('button', { name: /create narrative/i })).toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /^play$/i })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /show transcript/i })).not.toBeInTheDocument()
 })
