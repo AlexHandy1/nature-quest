@@ -54,6 +54,20 @@ def test_resolved_narration_returns_narrative_and_base64_audio():
     mock_log.assert_called_once_with("resolved", distinct_id="anon-1")
 
 
+def test_narration_declined_by_model_returns_422_with_no_tts_call():
+    with (
+        patch("routers.narration.generate_narrative", return_value=None),
+        patch("routers.narration.synthesize_speech") as mock_tts,
+        patch("routers.narration.log_narration_outcome") as mock_log,
+    ):
+        response = client.post("/api/narrate", json=_narrate_body())
+
+    assert response.status_code == 422
+    assert response.json()["status"] == "narration_declined"
+    mock_tts.assert_not_called()
+    mock_log.assert_called_once_with("declined", distinct_id="anon-1")
+
+
 def test_tts_failure_returns_502():
     with (
         patch("routers.narration.generate_narrative", return_value="A walk through the park."),

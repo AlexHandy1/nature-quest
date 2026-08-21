@@ -6,6 +6,14 @@ MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 300
 TEMPERATURE = 1
 
+REFUSAL_SENTINEL = "NARRATION_REFUSED"
+
+REFUSAL_GUIDANCE = f"""If the common name, scientific name, or Wikipedia extract for any
+species above looks like it refers to something other than a real, living
+organism — or contains inappropriate content of any kind — do not write a
+narrative. Instead, output exactly the text {REFUSAL_SENTINEL} and nothing
+else."""
+
 LOCATION_GUIDANCE = """Infer where in the world this walk is taking place from the coordinates and the
 species themselves — that's not a species fact, so you may use your own
 knowledge for it. Don't state or imply a time of day, season, or "today" —
@@ -57,6 +65,8 @@ GPS coordinate, with a Wikipedia extract already looked up for each:
 
 {species_block}
 
+{REFUSAL_GUIDANCE}
+
 {LOCATION_GUIDANCE} {GROUNDED_FACTS_GUIDANCE}
 
 Write a single flowing narrative guide of 120-130 words (about 45 seconds
@@ -69,7 +79,7 @@ or heading — start straight into the narration."""
 
 def generate_narrative(
     species_list: list[dict], client: Anthropic, on_response=None, **extra_kwargs
-) -> str:
+) -> str | None:
     prompt = build_narrative_prompt(species_list)
     response = client.messages.create(
         model=MODEL,
@@ -81,6 +91,8 @@ def generate_narrative(
     if on_response is not None:
         on_response(response)
     narrative = "".join(block.text for block in response.content if block.type == "text").strip()
+    if narrative == REFUSAL_SENTINEL:
+        return None
     return sanitize_dash_pauses(narrative)
 
 

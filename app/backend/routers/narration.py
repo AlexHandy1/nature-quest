@@ -19,6 +19,7 @@ router = APIRouter()
 
 TTS_UNAVAILABLE_MESSAGE = "We couldn't generate audio for this walk right now — try again shortly."
 DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please try again tomorrow."
+NARRATION_DECLINED_MESSAGE = "We couldn't generate a narrative for this walk."
 
 
 def _resolve_openrouter_api_key() -> str | None:
@@ -52,6 +53,13 @@ def narrate(request: Request, body: NarrateRequest):
 
     species_list = [s.model_dump() for s in body.species]
     narrative, usage = _generate_narrative(species_list, body.distinctId, body.consent)
+
+    if narrative is None:
+        log_narration_outcome("declined", distinct_id=body.distinctId, **usage)
+        return JSONResponse(
+            status_code=422,
+            content={"status": "narration_declined", "message": NARRATION_DECLINED_MESSAGE},
+        )
 
     try:
         audio_bytes = synthesize_speech(narrative, api_key=_resolve_openrouter_api_key())

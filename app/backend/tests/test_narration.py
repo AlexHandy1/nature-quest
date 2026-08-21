@@ -2,7 +2,7 @@ import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from services.narration import generate_narrative, sanitize_dash_pauses
+from services.narration import REFUSAL_SENTINEL, generate_narrative, sanitize_dash_pauses
 
 
 def _species(common_name="Eurasian Magpie", species="Pica pica", hotspot_lat=40.4148, hotspot_lon=-3.6846, extract="A common corvid."):
@@ -84,6 +84,23 @@ def test_generate_narrative_passes_extra_kwargs_through_to_the_create_call():
     generate_narrative([_species()], client, posthog_distinct_id="anon-1")
 
     assert client.messages.create.call_args.kwargs["posthog_distinct_id"] == "anon-1"
+
+
+def test_generate_narrative_returns_none_when_the_model_refuses():
+    client = _mock_client(REFUSAL_SENTINEL)
+
+    narrative = generate_narrative([_species()], client)
+
+    assert narrative is None
+
+
+def test_generate_narrative_instructs_the_model_to_refuse_non_organism_or_inappropriate_content():
+    client = _mock_client("A walk through the park.")
+
+    generate_narrative([_species()], client)
+
+    sent_prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert REFUSAL_SENTINEL in sent_prompt
 
 
 def test_sanitize_dash_pauses_replaces_em_dash_with_comma():
