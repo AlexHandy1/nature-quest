@@ -44,7 +44,7 @@ def build_narrative_prompt(species_list: list[dict]) -> str:
         extract_text = sp["extract"] or "(no Wikipedia article found)"
         lines.append(
             f"{i}. {sp['common_name']} ({sp['species']}) at "
-            f"({sp['lat']:.4f}, {sp['lon']:.4f})\n"
+            f"({sp['hotspot_lat']:.4f}, {sp['hotspot_lon']:.4f})\n"
             f"   Wikipedia extract: {extract_text}"
         )
     species_block = "\n".join(lines)

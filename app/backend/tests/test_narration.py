@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 from services.narration import generate_narrative, sanitize_dash_pauses
 
 
-def _species(common_name="Eurasian Magpie", species="Pica pica", lat=40.4148, lon=-3.6846, extract="A common corvid."):
-    return {"common_name": common_name, "species": species, "lat": lat, "lon": lon, "extract": extract}
+def _species(common_name="Eurasian Magpie", species="Pica pica", hotspot_lat=40.4148, hotspot_lon=-3.6846, extract="A common corvid."):
+    return {"common_name": common_name, "species": species, "hotspot_lat": hotspot_lat, "hotspot_lon": hotspot_lon, "extract": extract}
 
 
 def _mock_client(narrative_text: str) -> MagicMock:

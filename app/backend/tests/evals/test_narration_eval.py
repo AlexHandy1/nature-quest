@@ -16,32 +16,32 @@ JUDGE_MAX_TOKENS = 800
 
 # Same fixed Retiro Park sample walk as prototypes/scripts/narration_eval_spike.py.
 RETIRO_BIRDS_WALK = [
-    {"common_name": "Eurasian Magpie", "species": "Pica pica", "lat": 40.414848, "lon": -3.684565},
-    {"common_name": "Iberian Green Woodpecker", "species": "Picus sharpei", "lat": 40.413755, "lon": -3.684227},
-    {"common_name": "Egyptian Goose", "species": "Alopochen aegyptiaca", "lat": 40.414395, "lon": -3.682108},
-    {"common_name": "Black Swan", "species": "Cygnus atratus", "lat": 40.413864, "lon": -3.681692},
-    {"common_name": "Mallard", "species": "Anas platyrhynchos", "lat": 40.415567, "lon": -3.683259},
+    {"common_name": "Eurasian Magpie", "species": "Pica pica", "hotspot_lat": 40.414848, "hotspot_lon": -3.684565},
+    {"common_name": "Iberian Green Woodpecker", "species": "Picus sharpei", "hotspot_lat": 40.413755, "hotspot_lon": -3.684227},
+    {"common_name": "Egyptian Goose", "species": "Alopochen aegyptiaca", "hotspot_lat": 40.414395, "hotspot_lon": -3.682108},
+    {"common_name": "Black Swan", "species": "Cygnus atratus", "hotspot_lat": 40.413864, "hotspot_lon": -3.681692},
+    {"common_name": "Mallard", "species": "Anas platyrhynchos", "hotspot_lat": 40.415567, "hotspot_lon": -3.683259},
 ]
 
 # Fish and turtles observed in Retiro's lake (Estanque Grande) — carp
 # presence confirmed live via GBIF in PLANNING_INTENT_QUERY_210726.md;
 # the others are well-documented residents of the same lake.
 RETIRO_FISH_AND_TURTLES_WALK = [
-    {"common_name": "Common Carp", "species": "Cyprinus carpio", "lat": 40.415100, "lon": -3.683600},
-    {"common_name": "Red-eared Slider", "species": "Trachemys scripta", "lat": 40.415300, "lon": -3.683900},
-    {"common_name": "Goldfish", "species": "Carassius auratus", "lat": 40.414900, "lon": -3.683400},
-    {"common_name": "Koi", "species": "Cyprinus rubrofuscus", "lat": 40.415500, "lon": -3.683200},
-    {"common_name": "European Pond Turtle", "species": "Emys orbicularis", "lat": 40.414700, "lon": -3.684100},
+    {"common_name": "Common Carp", "species": "Cyprinus carpio", "hotspot_lat": 40.415100, "hotspot_lon": -3.683600},
+    {"common_name": "Red-eared Slider", "species": "Trachemys scripta", "hotspot_lat": 40.415300, "hotspot_lon": -3.683900},
+    {"common_name": "Goldfish", "species": "Carassius auratus", "hotspot_lat": 40.414900, "hotspot_lon": -3.683400},
+    {"common_name": "Koi", "species": "Cyprinus rubrofuscus", "hotspot_lat": 40.415500, "hotspot_lon": -3.683200},
+    {"common_name": "European Pond Turtle", "species": "Emys orbicularis", "hotspot_lat": 40.414700, "hotspot_lon": -3.684100},
 ]
 
 # A different continent/climate, to check the grounded-prompt guidance
 # generalises beyond a single Retiro Park sample.
 CENTRAL_PARK_NYC_WALK = [
-    {"common_name": "Eastern Gray Squirrel", "species": "Sciurus carolinensis", "lat": 40.782865, "lon": -73.965355},
-    {"common_name": "American Robin", "species": "Turdus migratorius", "lat": 40.781500, "lon": -73.966800},
-    {"common_name": "Red-tailed Hawk", "species": "Buteo jamaicensis", "lat": 40.783600, "lon": -73.968100},
-    {"common_name": "Mute Swan", "species": "Cygnus olor", "lat": 40.779400, "lon": -73.970700},
-    {"common_name": "Canada Goose", "species": "Branta canadensis", "lat": 40.780200, "lon": -73.969200},
+    {"common_name": "Eastern Gray Squirrel", "species": "Sciurus carolinensis", "hotspot_lat": 40.782865, "hotspot_lon": -73.965355},
+    {"common_name": "American Robin", "species": "Turdus migratorius", "hotspot_lat": 40.781500, "hotspot_lon": -73.966800},
+    {"common_name": "Red-tailed Hawk", "species": "Buteo jamaicensis", "hotspot_lat": 40.783600, "hotspot_lon": -73.968100},
+    {"common_name": "Mute Swan", "species": "Cygnus olor", "hotspot_lat": 40.779400, "hotspot_lon": -73.970700},
+    {"common_name": "Canada Goose", "species": "Branta canadensis", "hotspot_lat": 40.780200, "hotspot_lon": -73.969200},
 ]
 
 SAMPLE_WALKS = {
