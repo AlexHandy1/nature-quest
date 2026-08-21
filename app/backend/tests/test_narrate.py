@@ -39,6 +39,51 @@ def test_more_than_five_species_returns_422():
     assert response.status_code == 422
 
 
+def test_common_name_over_max_length_returns_422_with_no_llm_or_tts_call():
+    body = _narrate_body()
+    body["species"][0]["common_name"] = "a" * 501
+
+    with (
+        patch("routers.narration.generate_narrative") as mock_generate,
+        patch("routers.narration.synthesize_speech") as mock_tts,
+    ):
+        response = client.post("/api/narrate", json=body)
+
+    assert response.status_code == 422
+    mock_generate.assert_not_called()
+    mock_tts.assert_not_called()
+
+
+def test_scientific_name_over_max_length_returns_422_with_no_llm_or_tts_call():
+    body = _narrate_body()
+    body["species"][0]["species"] = "a" * 501
+
+    with (
+        patch("routers.narration.generate_narrative") as mock_generate,
+        patch("routers.narration.synthesize_speech") as mock_tts,
+    ):
+        response = client.post("/api/narrate", json=body)
+
+    assert response.status_code == 422
+    mock_generate.assert_not_called()
+    mock_tts.assert_not_called()
+
+
+def test_extract_over_max_length_returns_422_with_no_llm_or_tts_call():
+    body = _narrate_body()
+    body["species"][0]["extract"] = "a" * 2001
+
+    with (
+        patch("routers.narration.generate_narrative") as mock_generate,
+        patch("routers.narration.synthesize_speech") as mock_tts,
+    ):
+        response = client.post("/api/narrate", json=body)
+
+    assert response.status_code == 422
+    mock_generate.assert_not_called()
+    mock_tts.assert_not_called()
+
+
 def test_resolved_narration_returns_narrative_and_base64_audio():
     with (
         patch("routers.narration.generate_narrative", return_value="A walk through the park."),
