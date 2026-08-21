@@ -2,7 +2,11 @@ import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
-from services.narration import REFUSAL_SENTINEL, generate_narrative, sanitize_dash_pauses
+from services.narration import (
+    REFUSAL_SENTINEL,
+    generate_narrative,
+    sanitize_dash_pauses,
+)
 
 
 def _species(common_name="Eurasian Magpie", species="Pica pica", hotspot_lat=40.4148, hotspot_lon=-3.6846, extract="A common corvid."):

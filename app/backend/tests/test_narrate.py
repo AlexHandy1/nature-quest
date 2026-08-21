@@ -1,4 +1,5 @@
 import base64
+import os
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -123,6 +124,23 @@ def test_tts_failure_returns_502():
 
     assert response.status_code == 502
     assert response.json()["status"] == "tts_unavailable"
+    mock_log.assert_called_once_with("tts_unavailable", distinct_id="anon-1")
+
+
+def test_missing_openrouter_api_key_returns_502_with_no_tts_call():
+    with (
+        patch("routers.narration.generate_narrative", return_value="A walk through the park."),
+        patch("routers.narration.resolve_openrouter_api_key", return_value=None),
+        patch.dict("os.environ", {}, clear=False),
+        patch("routers.narration.synthesize_speech") as mock_tts,
+        patch("routers.narration.log_narration_outcome") as mock_log,
+    ):
+        os.environ.pop("OPENROUTER_API_KEY", None)
+        response = client.post("/api/narrate", json=_narrate_body())
+
+    assert response.status_code == 502
+    assert response.json()["status"] == "tts_unavailable"
+    mock_tts.assert_not_called()
     mock_log.assert_called_once_with("tts_unavailable", distinct_id="anon-1")
 
 

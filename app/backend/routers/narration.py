@@ -22,11 +22,14 @@ DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please t
 NARRATION_DECLINED_MESSAGE = "We couldn't generate a narrative for this walk."
 
 
-def _resolve_openrouter_api_key() -> str | None:
-    return resolve_openrouter_api_key() or os.environ.get("OPENROUTER_API_KEY")
+def _resolve_openrouter_api_key() -> str:
+    key = resolve_openrouter_api_key() or os.environ.get("OPENROUTER_API_KEY")
+    if key is None:
+        raise RuntimeError("OPENROUTER_API_KEY is not configured")
+    return key
 
 
-def _generate_narrative(species_list: list[dict], distinct_id: str, consent: bool) -> tuple[str, dict]:
+def _generate_narrative(species_list: list[dict], distinct_id: str, consent: bool) -> tuple[str | None, dict]:
     client = ai_observability.build_client(
         consent=consent, distinct_id=distinct_id, api_key=resolve_anthropic_api_key()
     )
