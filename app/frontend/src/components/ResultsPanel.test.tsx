@@ -37,7 +37,7 @@ const UNTRUSTED_IMAGE_SPECIES = [
 function noop() {}
 
 test('lists each species scientific name and observation count in route order', () => {
-  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} />)
+  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   const items = screen.getAllByRole('listitem')
   expect(items).toHaveLength(2)
@@ -48,20 +48,20 @@ test('lists each species scientific name and observation count in route order', 
 })
 
 test('renders nothing when there are no species', () => {
-  const { container } = render(<ResultsPanel species={[]} expandedSpecies={null} onToggleSpecies={noop} />)
+  const { container } = render(<ResultsPanel species={[]} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   expect(container).toBeEmptyDOMElement()
 })
 
 test('shows the common name as the primary label with scientific name secondary', () => {
-  render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} />)
+  render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   expect(screen.getByText('Common Blackbird')).toBeInTheDocument()
   expect(screen.getByText('Turdus merula')).toBeInTheDocument()
 })
 
 test('falls back to the scientific name alone when no common name was found', () => {
-  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} />)
+  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   const items = screen.getAllByRole('listitem')
   expect(items[0]).toHaveTextContent('Turdus merula')
@@ -70,7 +70,7 @@ test('falls back to the scientific name alone when no common name was found', ()
 test('clicking a row calls onToggleSpecies with that species', async () => {
   const user = userEvent.setup()
   const onToggle = vi.fn()
-  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={onToggle} />)
+  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={onToggle} distinctId="anon-1" />)
 
   await user.click(screen.getByRole('button', { name: /turdus merula/i }))
 
@@ -79,7 +79,7 @@ test('clicking a row calls onToggleSpecies with that species', async () => {
 
 test('shows image and a GBIF link only for the expanded species', () => {
   render(
-    <ResultsPanel species={ENRICHED_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} />
+    <ResultsPanel species={ENRICHED_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
   )
 
   const image = screen.getByRole('img', { name: /common blackbird/i })
@@ -90,14 +90,14 @@ test('shows image and a GBIF link only for the expanded species', () => {
 })
 
 test('does not show detail for a species that is not the expanded one', () => {
-  render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} />)
+  render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
   expect(screen.queryByRole('link', { name: /gbif/i })).not.toBeInTheDocument()
 })
 
 test('shows a no-image fallback when the expanded species has no image', () => {
-  render(<ResultsPanel species={SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} />)
+  render(<ResultsPanel species={SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />)
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
   expect(screen.getByText(/no image available/i)).toBeInTheDocument()
@@ -105,7 +105,7 @@ test('shows a no-image fallback when the expanded species has no image', () => {
 
 test('shows a no-image fallback when the image url is not from a trusted wikimedia host', () => {
   render(
-    <ResultsPanel species={UNTRUSTED_IMAGE_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} />
+    <ResultsPanel species={UNTRUSTED_IMAGE_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
   )
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()

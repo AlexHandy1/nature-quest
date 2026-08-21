@@ -1,9 +1,11 @@
 import type { Species } from './MapView'
+import NarrationControl from './NarrationControl'
 
 type ResultsPanelProps = {
   species: Species[]
   expandedSpecies: string | null
   onToggleSpecies: (species: string) => void
+  distinctId: string
 }
 
 const TRUSTED_IMAGE_HOST = 'upload.wikimedia.org'
@@ -17,14 +19,17 @@ function isTrustedImageUrl(url: string): boolean {
   }
 }
 
-function ResultsPanel({ species, expandedSpecies, onToggleSpecies }: ResultsPanelProps) {
+function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }: ResultsPanelProps) {
   if (species.length === 0) {
     return null
   }
 
   return (
     <div className="results-panel">
-      <h2>Your walk</h2>
+      <div className="results-panel__header">
+        <h2>Your walk</h2>
+        <NarrationControl species={species} distinctId={distinctId} />
+      </div>
       <ol>
         {species.map((s) => {
           const isExpanded = expandedSpecies === s.species
