@@ -40,6 +40,7 @@ export type Species = {
   species_key?: number | null
   common_name?: string | null
   image_url?: string | null
+  extract?: string | null
 }
 
 function MapRecenter({ center }: { center: [number, number] }) {
@@ -178,6 +179,7 @@ function MapView() {
           species={species}
           expandedSpecies={expandedSpecies}
           onToggleSpecies={toggleExpandedSpecies}
+          distinctId={getDistinctId()}
         />
       </div>
     </div>

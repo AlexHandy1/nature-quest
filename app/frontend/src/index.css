@@ -295,8 +295,52 @@ button:hover {
   font-family: var(--display);
   font-size: var(--fs-md);
   font-weight: 600;
-  margin: 0 0 10px;
+  margin: 0;
   color: var(--text-h);
+}
+
+.results-panel__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 10px;
+  margin-bottom: 10px;
+}
+
+.narration-control__button {
+  padding: 6px 12px;
+  font-size: var(--fs-xs);
+}
+
+.narration-control__error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--error);
+}
+
+.narration-control__transcript-row {
+  flex-basis: 100%;
+}
+
+.narration-control__transcript-toggle {
+  padding: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.narration-control__transcript-toggle:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.narration-control__transcript {
+  margin: 6px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text);
 }
 
 .results-panel ol {

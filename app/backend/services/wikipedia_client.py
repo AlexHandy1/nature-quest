@@ -8,20 +8,23 @@ USER_AGENT = "nature-quest/0.1"
 REQUEST_TIMEOUT = 30.0
 
 
-def fetch_species_image(common_name: str | None, scientific_name: str) -> str | None:
-    """Looks up a species' Wikipedia article image, trying the common name
-    first (more likely to match the article title humans would search for)
-    and falling back to the scientific name if that article doesn't exist
-    or is a disambiguation page."""
+def fetch_species_summary(common_name: str | None, scientific_name: str) -> dict:
+    """Looks up a species' Wikipedia article image and extract, trying the
+    common name first (more likely to match the article title humans would
+    search for) and falling back to the scientific name if that article
+    doesn't exist or is a disambiguation page."""
     summary = _fetch_summary(common_name) if common_name else None
     if summary is None:
         summary = _fetch_summary(scientific_name)
     if summary is None:
-        return None
+        return {"image_url": None, "extract": None}
     thumbnail = summary.get("thumbnail") or {}
     original = summary.get("originalimage") or {}
     image_url = thumbnail.get("source") or original.get("source")
-    return image_url if _is_trusted_image_url(image_url) else None
+    return {
+        "image_url": image_url if _is_trusted_image_url(image_url) else None,
+        "extract": summary.get("extract"),
+    }
 
 
 def _is_trusted_image_url(url: str | None) -> bool:

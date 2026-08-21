@@ -9,7 +9,7 @@ prototypes/osm_sample*.json
 *.wav
 .env
 *.tfvars
-tests/.smoke_test_output/
-tests/.security_review_output/
+**/tests/.smoke_test_output/
+**/tests/.security_review_output/
 node_modules/
 .vite/

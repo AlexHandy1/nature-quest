@@ -59,3 +59,22 @@ def log_species_enriched(query: str, distinct_id: str, species: list[dict]) -> N
         "species_enriched",
         extra={"query": query, "distinct_id": distinct_id, "species": species},
     )
+
+
+def log_narration_outcome(
+    outcome: str,
+    distinct_id: str | None = None,
+    guardrail: str | None = None,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> None:
+    query_logger.info(
+        "narration_outcome",
+        extra={
+            "outcome": outcome,
+            "distinct_id": distinct_id,
+            "guardrail": guardrail,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+        },
+    )

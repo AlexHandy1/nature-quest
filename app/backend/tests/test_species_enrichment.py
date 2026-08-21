@@ -9,38 +9,44 @@ def _species(species="Turdus merula", species_key=2495414, **extra):
     return {"species": species, "species_key": species_key, "count": 5, **extra}
 
 
-def test_adds_common_name_and_image_url_to_each_species():
+def test_adds_common_name_image_url_and_extract_to_each_species():
     with (
         patch("services.species_enrichment.fetch_common_name", return_value="Common Blackbird"),
-        patch("services.species_enrichment.fetch_species_image", return_value="https://example.com/blackbird.jpg"),
+        patch(
+            "services.species_enrichment.fetch_species_summary",
+            return_value={"image_url": "https://example.com/blackbird.jpg", "extract": "A common garden bird."},
+        ),
     ):
         enriched = enrich_species([_species()])
 
     assert enriched[0]["common_name"] == "Common Blackbird"
     assert enriched[0]["image_url"] == "https://example.com/blackbird.jpg"
+    assert enriched[0]["extract"] == "A common garden bird."
     # Original fields untouched.
     assert enriched[0]["species"] == "Turdus merula"
     assert enriched[0]["count"] == 5
 
 
-def test_looks_up_the_image_using_the_resolved_common_name():
+def test_looks_up_the_summary_using_the_resolved_common_name():
     with (
         patch("services.species_enrichment.fetch_common_name", return_value="Common Blackbird"),
-        patch("services.species_enrichment.fetch_species_image") as mock_image,
+        patch("services.species_enrichment.fetch_species_summary") as mock_summary,
     ):
+        mock_summary.return_value = {"image_url": None, "extract": None}
         enrich_species([_species(species="Turdus merula")])
 
-    mock_image.assert_called_once_with("Common Blackbird", "Turdus merula")
+    mock_summary.assert_called_once_with("Common Blackbird", "Turdus merula")
 
 
-def test_looks_up_the_image_with_no_common_name_when_none_was_found():
+def test_looks_up_the_summary_with_no_common_name_when_none_was_found():
     with (
         patch("services.species_enrichment.fetch_common_name", return_value=None),
-        patch("services.species_enrichment.fetch_species_image") as mock_image,
+        patch("services.species_enrichment.fetch_species_summary") as mock_summary,
     ):
+        mock_summary.return_value = {"image_url": None, "extract": None}
         enrich_species([_species(species="Turdus merula")])
 
-    mock_image.assert_called_once_with(None, "Turdus merula")
+    mock_summary.assert_called_once_with(None, "Turdus merula")
 
 
 def test_preserves_input_order_even_when_the_first_species_finishes_last():
@@ -52,7 +58,7 @@ def test_preserves_input_order_even_when_the_first_species_finishes_last():
 
     with (
         patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_image", return_value=None),
+        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
     ):
         enriched = enrich_species([_species(species="First", species_key=1), _species(species="Second", species_key=2)])
 
@@ -67,7 +73,7 @@ def test_enriches_species_concurrently_not_sequentially():
 
     with (
         patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_image", return_value=None),
+        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
     ):
         start = time.monotonic()
         enrich_species([_species(species_key=i) for i in range(3)])
@@ -92,7 +98,7 @@ def test_caps_concurrent_enrichment_at_three():
 
     with (
         patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_image", return_value=None),
+        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
     ):
         enrich_species([_species(species_key=i) for i in range(6)])
 

@@ -8,7 +8,7 @@ Nature Quest is a FastAPI backend + Vite/React frontend that turns a natural-lan
 
 Request path: free text → LLM taxon resolution (Anthropic) → per-taxon GBIF occurrence lookup → nearest-neighbour route ordering → species enrichment (common name + Wikipedia image) → response rendered as map markers plus a results panel. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
 
-Narrative generation (spoken/written per-waypoint field-guide text) is not implemented in `app/` — it was validated separately as a throwaway prototype (`prototypes/`, untouched, never deployed; see `prototypes/README.md`).
+Audio narration (spoken per-waypoint field-guide text) is a secondary, optional action available once a walk has resolved: a "Create narrative" control inline in the results panel triggers `POST /api/narrate`, which grounds a short narrative in each species' Wikipedia extract, generates it (Anthropic), synthesizes it to audio (OpenRouter/Kokoro-82M), and returns both in one response. See ADR-014 for the data-flow and response-shape reasoning.
 
 ## Components
 
@@ -32,11 +32,20 @@ routers/query.py           POST /api/query (Slice 2, extended Slice 3) — rate-
                              any filter that fails to resolve as unresolvedGroups) → GBIF fetch
                              across all resolved filters → 4-outcome response, structured log line
                              on every branch (REQ-017)
+routers/narration.py       POST /api/narrate — rate-limited (same mechanism as /api/query, separate
+                             daily budget, see ADR-014); validate (exactly TOP_SPECIES_COUNT species,
+                             bounded field lengths) → daily budget → generate narrative (consent-gated
+                             observed/plain Anthropic client, same pattern as query.py's
+                             _resolve_taxon_filters) → refusal check (declined outcome, no TTS call)
+                             → TTS synthesis (tts_unavailable on provider failure) → {narrative,
+                             audio: base64} response, structured log line on every branch
 models/query.py            QueryRequest (Pydantic) — query, distinctId, consent (default False),
                              polygon (required WKT string, no backend default — REQ-012). A
                              field_validator enforces a minimum vertex count and a maximum bounding
                              area (Slice 9), reusing gbif_client.parse_polygon_vertices rather than
                              duplicating WKT-parsing logic
+models/narration.py         NarrateRequest (Pydantic) — species (exactly TOP_SPECIES_COUNT
+                             SpeciesInput entries, each field length-bounded), distinctId, consent
 services/
   logging_client.py        log_query_outcome() plus per-pipeline-stage log lines (log_query_submitted
                              — now also takes the submitted polygon, REQ-015 — log_llm_taxon_filters_resolved,
@@ -69,24 +78,38 @@ services/
                              GBIF vernacularNames, majority-vote across English-tagged names (not
                              first-match — GBIF has no preferred-name flag and mixes in rare
                              abbreviations, see ADR-013)
-  wikipedia_client.py       fetch_species_image(common_name, scientific_name) — Wikipedia summary API,
-                             common name first then scientific name fallback on a missing/disambiguation
-                             article. See ADR-013 for why Wikipedia over GBIF's own occurrence photos.
-  species_enrichment.py     enrich_species(species_list) — adds common_name + image_url to each of the
-                             final selected species (not every candidate scanned during ranking),
-                             concurrently across species (capped at 3, same pattern as elsewhere)
+  wikipedia_client.py       fetch_species_summary(common_name, scientific_name) — Wikipedia summary
+                             API, common name first then scientific name fallback on a missing/
+                             disambiguation article; returns {image_url, extract} in one fetch (the
+                             extract feeds narration grounding, ADR-014). See ADR-013 for why
+                             Wikipedia over GBIF's own occurrence photos.
+  species_enrichment.py     enrich_species(species_list) — adds common_name + image_url/extract to
+                             each of the final selected species (not every candidate scanned during
+                             ranking), concurrently across species (capped at 3, same pattern as
+                             elsewhere)
+  narration.py              generate_narrative(species_list, client, on_response=None,
+                             **extra_kwargs) — grounds a short narrative in each species' Wikipedia
+                             extract (GROUNDED_FACTS_GUIDANCE), includes a content-safety refusal path
+                             (returns None on refusal — see ADR-014), sanitizes TTS-unfriendly dash
+                             pauses deterministically after generation
+  tts.py                    synthesize_speech(text, api_key, voice) — OpenRouter/Kokoro-82M
+                             text-to-speech, mp3 response_format. resolve_api_key() mirrors
+                             anthropic_client.py's Secret Manager pattern for OPENROUTER_API_KEY
   waypoints.py              order_waypoints(species, center_lat, center_lon) — pure nearest-neighbour
                              route ordering from a center point (Slice 3); no I/O
   rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
                              from the still-unconsumed request body for REQ-017's log line, since
-                             slowapi intercepts before FastAPI's own body parsing)
+                             slowapi intercepts before FastAPI's own body parsing; branches by request
+                             path so a rate-limited /api/narrate call logs narration_outcome rather
+                             than a query event)
   query_budget.py           Global daily LLM-call counter, threading.Lock-guarded, date-based reset
+  narration_budget.py       Same shape as query_budget.py, independent counter — see ADR-014
 static/                    Built frontend assets, copied in at Docker build time — not in git
 ```
 
 One structural rule: any future router must be registered in `create_app()` **before** the static-file mount — the mount matches every remaining path, so a route added after it would be unreachable. Noted inline in `main.py`.
 
-Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls) and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end GBIF pipeline case for both a single filter and a mixed-taxa pair (verified against real GBIF data via independent `species/match` calls, not production's own resolver), and an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`.
+Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls), `OPENROUTER_API_KEY` (real TTS calls), and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state — narration_budget.py's counter gets the same treatment). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF/Wikipedia/OpenRouter calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end GBIF pipeline case for both a single filter and a mixed-taxa pair (verified against real GBIF data via independent `species/match` calls, not production's own resolver), an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`, narration quality checks (length/timing/dash-pause/all-species-mentioned programmatic checks plus an LLM-judged faithfulness/habitat-claim pass, parametrized across three sample walks, plus a live content-safety refusal check — see ADR-014), and a narrative-to-audio check asserting the TTS response is valid, plausibly-sized audio.
 
 ### Frontend (`app/frontend/`)
 
@@ -132,6 +155,12 @@ src/components/ResultsPanel.tsx   Species list (common name primary, scientific 
                                      on desktop; bottom-dock overlay with the same accordion behavior on
                                      mobile (index.css's 700px breakpoint). Renders nothing until a
                                      resolved outcome.
+src/components/NarrationControl.tsx Inline control in ResultsPanel's header row, next to "Your walk"
+                                     (wraps to its own line on mobile). Cycles idle ("Create
+                                     narrative") -> loading -> a play/pause control once audio is
+                                     ready; decodes the base64 response into a Blob and plays it via
+                                     a hidden <audio> element. Transcript stays hidden behind a
+                                     separate "Show transcript" toggle, never shown by default.
 src/components/ConsentBanner.tsx  Accept/reject, persists choice in localStorage, gates PostHog
 src/lib/posthog.ts                init (opt-out-by-default), optIn/optOut, getDistinctId(), hasConsent(),
                                      trackEvent(), exported CONSENT_KEY
@@ -143,7 +172,7 @@ The dev server (`npm run dev`) proxies `/api` and `/health` to `localhost:8000` 
 
 ### Infrastructure (`infra/`)
 
-Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN` env var), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account, a Secret Manager secret (`anthropic-api-key`, IAM-bound to that service account — value set out-of-band, never in Terraform), Cloud Monitoring (`monitoring.tf` — an email notification channel, a log-based metric counting `query_outcome` log lines, and an alert policy firing on every one, per `ADR-010`), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
+Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN` env var), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account, Secret Manager secrets (`anthropic-api-key`, `openrouter-api-key` — both IAM-bound to that service account, values set out-of-band, never in Terraform), Cloud Monitoring (`monitoring.tf` — an email notification channel, a log-based metric counting `query_outcome` log lines, and an alert policy firing on every one, per `ADR-010`), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
 
 ## Request flow
 
@@ -159,6 +188,13 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     │    → services/species_enrichment.py
                                                     │      (services/gbif_client.py vernacularNames +
                                                     │      services/wikipedia_client.py, final species only)
+                                                    │    → services/logging_client.py (structured log line)
+                                                    ├─ POST /api/narrate → routers/narration.py
+                                                    │    → services/ai_observability.py (consent-gated
+                                                    │      client selection) → services/narration.py
+                                                    │      (Anthropic API, real key from Secret Manager)
+                                                    │    → services/tts.py (OpenRouter API, real key
+                                                    │      from Secret Manager)
                                                     │    → services/logging_client.py (structured log line)
                                                     └─ everything else → static/ (built frontend)
 ```
