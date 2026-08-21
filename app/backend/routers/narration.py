@@ -6,12 +6,14 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from models.narration import NarrateRequest
-from services.anthropic_client import build_client
+from services import ai_observability
+from services.anthropic_client import resolve_api_key as resolve_anthropic_api_key
 from services.logging_client import log_narration_outcome
 from services.narration import generate_narrative
 from services.narration_budget import try_consume_daily_budget
 from services.rate_limiter import limiter
-from services.tts import resolve_api_key, synthesize_speech
+from services.tts import resolve_api_key as resolve_openrouter_api_key
+from services.tts import synthesize_speech
 
 router = APIRouter()
 
@@ -20,7 +22,22 @@ DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please t
 
 
 def _resolve_openrouter_api_key() -> str | None:
-    return resolve_api_key() or os.environ.get("OPENROUTER_API_KEY")
+    return resolve_openrouter_api_key() or os.environ.get("OPENROUTER_API_KEY")
+
+
+def _generate_narrative(species_list: list[dict], distinct_id: str, consent: bool) -> tuple[str, dict]:
+    client = ai_observability.build_client(
+        consent=consent, distinct_id=distinct_id, api_key=resolve_anthropic_api_key()
+    )
+    extra_kwargs = {"posthog_distinct_id": distinct_id} if consent else {}
+    usage: dict = {}
+
+    def _capture_usage(response) -> None:
+        usage["input_tokens"] = response.usage.input_tokens
+        usage["output_tokens"] = response.usage.output_tokens
+
+    narrative = generate_narrative(species_list, client, on_response=_capture_usage, **extra_kwargs)
+    return narrative, usage
 
 
 @router.post("/api/narrate")
@@ -34,18 +51,18 @@ def narrate(request: Request, body: NarrateRequest):
         )
 
     species_list = [s.model_dump() for s in body.species]
-    narrative = generate_narrative(species_list, build_client())
+    narrative, usage = _generate_narrative(species_list, body.distinctId, body.consent)
 
     try:
         audio_bytes = synthesize_speech(narrative, api_key=_resolve_openrouter_api_key())
     except RuntimeError:
-        log_narration_outcome("tts_unavailable", distinct_id=body.distinctId)
+        log_narration_outcome("tts_unavailable", distinct_id=body.distinctId, **usage)
         return JSONResponse(
             status_code=502,
             content={"status": "tts_unavailable", "message": TTS_UNAVAILABLE_MESSAGE},
         )
 
-    log_narration_outcome("resolved", distinct_id=body.distinctId)
+    log_narration_outcome("resolved", distinct_id=body.distinctId, **usage)
     return {
         "narrative": narrative,
         "audio": base64.b64encode(audio_bytes).decode("ascii"),

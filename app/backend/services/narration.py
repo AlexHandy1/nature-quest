@@ -67,14 +67,19 @@ narrated prose, not a list. Do not use markdown, and do not include a title
 or heading — start straight into the narration."""
 
 
-def generate_narrative(species_list: list[dict], client: Anthropic) -> str:
+def generate_narrative(
+    species_list: list[dict], client: Anthropic, on_response=None, **extra_kwargs
+) -> str:
     prompt = build_narrative_prompt(species_list)
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
         messages=[{"role": "user", "content": prompt}],
+        **extra_kwargs,
     )
+    if on_response is not None:
+        on_response(response)
     narrative = "".join(block.text for block in response.content if block.type == "text").strip()
     return sanitize_dash_pauses(narrative)
 

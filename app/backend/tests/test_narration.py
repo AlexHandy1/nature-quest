@@ -69,6 +69,23 @@ def test_generate_narrative_uses_full_temperature_for_creative_variety():
     assert client.messages.create.call_args.kwargs["temperature"] == 1
 
 
+def test_generate_narrative_invokes_on_response_with_the_raw_response():
+    client = _mock_client("A walk through the park.")
+    seen = []
+
+    generate_narrative([_species()], client, on_response=seen.append)
+
+    assert seen == [client.messages.create.return_value]
+
+
+def test_generate_narrative_passes_extra_kwargs_through_to_the_create_call():
+    client = _mock_client("A walk through the park.")
+
+    generate_narrative([_species()], client, posthog_distinct_id="anon-1")
+
+    assert client.messages.create.call_args.kwargs["posthog_distinct_id"] == "anon-1"
+
+
 def test_sanitize_dash_pauses_replaces_em_dash_with_comma():
     assert sanitize_dash_pauses("The magpie glides—then lands.") == "The magpie glides, then lands."
 

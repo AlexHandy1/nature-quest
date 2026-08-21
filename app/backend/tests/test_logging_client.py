@@ -111,13 +111,17 @@ def test_log_species_enriched_logs_the_enriched_species(caplog):
 
 def test_log_narration_outcome_logs_the_resolved_outcome(caplog):
     with caplog.at_level("INFO"):
-        log_narration_outcome(outcome="resolved", distinct_id="anon-123")
+        log_narration_outcome(
+            outcome="resolved", distinct_id="anon-123", input_tokens=400, output_tokens=150
+        )
 
     record = caplog.records[0]
     assert record.message == "narration_outcome"
     assert record.outcome == "resolved"
     assert record.distinct_id == "anon-123"
     assert record.guardrail is None
+    assert record.input_tokens == 400
+    assert record.output_tokens == 150
 
 
 def test_log_narration_outcome_logs_which_guardrail_fired(caplog):
