@@ -88,6 +88,7 @@ def test_extract_over_max_length_returns_422_with_no_llm_or_tts_call():
 def test_resolved_narration_returns_narrative_and_base64_audio():
     with (
         patch("routers.narration.generate_narrative", return_value="A walk through the park."),
+        patch("routers.narration._resolve_openrouter_api_key", return_value="test-key"),
         patch("routers.narration.synthesize_speech", return_value=b"fake-mp3-bytes"),
         patch("routers.narration.log_narration_outcome") as mock_log,
     ):
@@ -117,6 +118,7 @@ def test_narration_declined_by_model_returns_422_with_no_tts_call():
 def test_tts_failure_returns_502():
     with (
         patch("routers.narration.generate_narrative", return_value="A walk through the park."),
+        patch("routers.narration._resolve_openrouter_api_key", return_value="test-key"),
         patch("routers.narration.synthesize_speech", side_effect=RuntimeError("boom")),
         patch("routers.narration.log_narration_outcome") as mock_log,
     ):
