@@ -1,3 +1,4 @@
+import re
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -48,6 +49,24 @@ def test_generate_narrative_notes_a_missing_wikipedia_article_in_the_prompt():
 
     sent_prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "no Wikipedia article found" in sent_prompt
+
+
+def test_generate_narrative_instructs_the_model_to_mention_every_species():
+    client = _mock_client("A walk through the park.")
+
+    generate_narrative([_species(), _species(common_name="Mallard", species="Anas platyrhynchos")], client)
+
+    sent_prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
+    normalized = re.sub(r"\s+", " ", sent_prompt.lower())
+    assert "mention every one of the 2 species" in normalized
+
+
+def test_generate_narrative_uses_full_temperature_for_creative_variety():
+    client = _mock_client("A walk through the park.")
+
+    generate_narrative([_species()], client)
+
+    assert client.messages.create.call_args.kwargs["temperature"] == 1
 
 
 def test_sanitize_dash_pauses_replaces_em_dash_with_comma():

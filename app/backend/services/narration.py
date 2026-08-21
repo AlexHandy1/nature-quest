@@ -4,6 +4,7 @@ from anthropic import Anthropic
 
 MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 300
+TEMPERATURE = 1
 
 LOCATION_GUIDANCE = """Infer where in the world this walk is taking place from the coordinates and the
 species themselves — that's not a species fact, so you may use your own
@@ -27,7 +28,14 @@ the coordinates is fine on its own. When a fact is about where a species is
 or isn't found, name the actual place from the extract
 (e.g. "the Iberian peninsula") — a vague absolute like "found nowhere else
 on Earth" with no place named could be misread as this one walk's exact spot
-being the species' entire range."""
+being the species' entire range. Never use unqualified absolute-scope words
+like "worldwide," "everywhere," or "across the globe" for a species' range
+unless the extract itself states that scope — a specific list of
+regions/countries is not "worldwide." Similarly, never describe a species as
+native/found "in this region" or "right here" when the extract's actual
+range is broader than the walk's local area — name the actual region from
+the extract (e.g. "the Western Palearctic") instead of implying the walk's
+location is the whole range."""
 
 
 def build_narrative_prompt(species_list: list[dict]) -> str:
@@ -52,9 +60,11 @@ GPS coordinate, with a Wikipedia extract already looked up for each:
 {LOCATION_GUIDANCE} {GROUNDED_FACTS_GUIDANCE}
 
 Write a single flowing narrative guide of 120-130 words (about 45 seconds
-spoken aloud) for a walker following this route. Write continuous narrated
-prose, not a list. Do not use markdown, and do not include a title or
-heading — start straight into the narration."""
+spoken aloud) for a walker following this route. Mention every one of the
+{len(species_list)} species by name somewhere in the narrative — do not
+summarize, group, or omit any of them, even briefly. Write continuous
+narrated prose, not a list. Do not use markdown, and do not include a title
+or heading — start straight into the narration."""
 
 
 def generate_narrative(species_list: list[dict], client: Anthropic) -> str:
@@ -62,6 +72,7 @@ def generate_narrative(species_list: list[dict], client: Anthropic) -> str:
     response = client.messages.create(
         model=MODEL,
         max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
         messages=[{"role": "user", "content": prompt}],
     )
     narrative = "".join(block.text for block in response.content if block.type == "text").strip()
