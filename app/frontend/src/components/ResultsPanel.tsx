@@ -28,7 +28,11 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
     <div className="results-panel">
       <div className="results-panel__header">
         <h2>Your walk</h2>
-        <NarrationControl species={species} distinctId={distinctId} />
+        <NarrationControl
+          key={species.map((s) => s.species).join('|')}
+          species={species}
+          distinctId={distinctId}
+        />
       </div>
       <ol>
         {species.map((s) => {
