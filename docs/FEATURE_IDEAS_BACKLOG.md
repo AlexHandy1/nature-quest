@@ -58,3 +58,11 @@ Broaden what the eval and smoke-test suites cover beyond the current query → s
   - **Map drawing**: assert the generated route, waypoints, and species markers actually render on the map (correct positions, ordering, clustering behaviour), not just that the underlying data is produced.
   - **Audio assessment**: now that AI audio accompaniment is built, assert audio is generated per waypoint/species, plays back, and matches the narrative text.
 - **Narration assessment — low-observation cases**: add more evaluations to cover low-observation scenarios (sparse taxa, thin areas, fallback-year guards), where the narrative has less real data to draw on and is potentially more likely to hallucinate, over-claim, or produce generic filler.
+
+## App clean-up and simplification refactor
+
+A dedicated pass to reduce accumulated inconsistency and incidental complexity across the backend, separate from feature work. Not a rewrite — targeted consolidation once there's enough of the codebase to see the patterns.
+
+- **Review `services/` for over-fragmentation and missing abstractions**: several service modules have grown independently and likely share structure that isn't factored out — e.g. the repeated explicit Secret-Manager-fetch `resolve_api_key()` pattern (`anthropic_client.py`, `tts.py`), the consent-gated observability-client construction, and the LLM-call → parse → normalise-usage → callback shape. Identify what genuinely wants a shared helper vs. what's better left duplicated.
+- **Fix mixed naming conventions**: "client" is used inconsistently — some modules named `*_client.py` are thin SDK wrappers, others hold call-site logic, prompt/schema constants, and parsing. Settle on a convention for what a "client" module is (and what to call the others — `*_service.py`, plain domain name, etc.) and rename to match. Surfaced while writing `spec-architecture-openrouter-taxon-resolution-280826.md`, which adds `services/openrouter_taxon_client.py` alongside the existing `anthropic_client.py` and `tts.py` and inherits the same ambiguity.
+- **General incidental-complexity sweep**: dead code, one-caller indirection, inconsistent error-handling posture (some call sites have explicit `*_unavailable` outcome branches, others fall through to a generic 500), and doc/naming drift against `ARCHITECTURE.md`.
