@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Model comparison — taxon resolution</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e6e8ec;
+    --dim: #8b909c;
+    --green: #3ecf8e;
+    --red: #e05a5a;
+    --accent: #5b8def;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  .free-text-row { display: flex; gap: 8px; }
+  input[type="text"] {
+    flex: 1;
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .seed-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .seed-btn {
+    background: #232733;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 9px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .seed-btn:hover { border-color: var(--accent); }
+  #run-all-seeded { margin-top: 10px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 8px;
+    vertical-align: top;
+    text-align: left;
+  }
+  th { background: #1d212b; color: var(--dim); font-weight: 600; }
+  .model-name { font-weight: 600; white-space: nowrap; }
+  .filters { font-family: ui-monospace, monospace; font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  .error { color: var(--red); font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.pass { background: rgba(62,207,142,0.15); color: var(--green); }
+  .badge.fail { background: rgba(224,90,90,0.15); color: var(--red); }
+  .badge.na { background: rgba(139,144,156,0.15); color: var(--dim); }
+  .elapsed { color: var(--dim); font-size: 11px; }
+  .query-block { margin-bottom: 24px; }
+  .query-heading { font-size: 13px; margin-bottom: 6px; }
+  .query-heading .expected { color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px; }
+  .loading { color: var(--dim); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<h1>Model comparison — taxon resolution</h1>
+<div class="subtitle">
+  OpenRouter candidates only (Gemini 3.7 Flash / GLM 5.3 Flash / Gemini 2.5 Flash Lite / DeepSeek V4 Flash) against
+  production's ground truth. Haiku excluded — it's the known-passing baseline, not a useful comparison column here.
+  No GBIF calls — LLM output only. Cost per query is OpenRouter's real reported cost, not an estimate.
+</div>
+
+<div class="panel">
+  <div class="free-text-row">
+    <input type="text" id="free-text-input" placeholder="Type a custom query, e.g. 'show me birds and mushrooms'" />
+    <button id="run-free-text">Run</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div><strong>Seeded eval queries</strong> <span class="subtitle" style="margin:0;">(from test_taxon_resolution_eval.py — expected filters shown, pass/fail auto-checked)</span></div>
+  <div class="seed-grid" id="seed-grid"></div>
+  <button id="run-all-seeded">Run all seeded queries</button>
+</div>
+
+<div id="results"></div>
+
+<script>
+const resultsEl = document.getElementById('results');
+const seedGrid = document.getElementById('seed-grid');
+let seededQueries = [];
+
+async function loadSeeded() {
+  const res = await fetch('/api/seeded-queries');
+  seededQueries = await res.json();
+  seedGrid.innerHTML = '';
+  seededQueries.forEach((sq, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'seed-btn';
+    btn.textContent = sq.query;
+    btn.onclick = () => runQuery(sq.query, sq.expected);
+    seedGrid.appendChild(btn);
+  });
+}
+
+function renderBadge(passed) {
+  if (passed === null || passed === undefined) return '<span class="badge na">—</span>';
+  return passed ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>';
+}
+
+function renderBlock(query, expected) {
+  const block = document.createElement('div');
+  block.className = 'query-block';
+  const expectedText = expected === null || expected === undefined
+    ? '(no ground truth — free text)'
+    : JSON.stringify(expected);
+  block.innerHTML = `
+    <div class="query-heading"><strong>${escapeHtml(query)}</strong> &nbsp; <span class="expected">expected: ${escapeHtml(expectedText)}</span></div>
+    <div class="loading">Running against all candidate models…</div>
+  `;
+  resultsEl.prepend(block);
+  return block;
+}
+
+function formatCost(cost) {
+  if (cost === null || cost === undefined) return '<span class="elapsed">n/a</span>';
+  return `$${cost.toFixed(6)}`;
+}
+
+function renderTable(block, results) {
+  let rows = results.map(r => `
+    <tr>
+      <td class="model-name">${escapeHtml(r.model)}<br/><span class="elapsed">${r.elapsed_s}s</span></td>
+      <td>${renderBadge(r.passed)}</td>
+      <td class="filters">${formatCost(r.cost_usd)}</td>
+      <td class="filters">${escapeHtml(JSON.stringify(r.taxon_filters, null, 0))}</td>
+      <td class="error">${r.error ? escapeHtml(r.error) : ''}</td>
+    </tr>
+  `).join('');
+  block.innerHTML = block.querySelector('.query-heading').outerHTML + `
+    <table>
+      <thead><tr><th>Model</th><th>Result</th><th>Cost/query</th><th>taxon_filters</th><th>error</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function runQuery(query, expected) {
+  const block = renderBlock(query, expected);
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query, expected: expected ?? null}),
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') {
+      block.innerHTML = `<div class="error">${escapeHtml(data.message || 'error')}</div>`;
+      return;
+    }
+    renderTable(block, data.results);
+  } catch (e) {
+    block.innerHTML = `<div class="error">${escapeHtml(String(e))}</div>`;
+  }
+}
+
+document.getElementById('run-free-text').onclick = () => {
+  const q = document.getElementById('free-text-input').value.trim();
+  if (q) runQuery(q, null);
+};
+document.getElementById('free-text-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('run-free-text').click();
+});
+
+document.getElementById('run-all-seeded').onclick = async () => {
+  for (const sq of seededQueries) {
+    await runQuery(sq.query, sq.expected);
+  }
+};
+
+loadSeeded();
+</script>
+
+</body>
+</html>
