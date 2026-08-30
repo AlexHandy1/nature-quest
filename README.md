@@ -1,6 +1,6 @@
 # Nature Quest
 
-Nature Quest aims to make it easier and more fun to find interesting nature nearby and get out and experience it, by turning natural-language requests ("Show me some birds and plants!") into guided nature walks grounded in real species observations, for any drawn area in the world.
+Nature Quest aims to make it easier and more fun to find interesting nature nearby and get out and experience it, by turning natural-language requests ("Show me some birds and plants!") into guided nature walks grounded in real species observations, for any drawn area in the world. Each walk comes with an AI-generated audio narrative guide, so you can listen to the story of what you're seeing hands-free as you walk the route.
 
 **Live**: https://nature-quest-production-465dsuxpnq-ew.a.run.app
 
