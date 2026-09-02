@@ -1,16 +1,23 @@
 import pytest
 
-from services.anthropic_client import (
+from routers.query import _resolve_openrouter_api_key
+from services.ai_observability import build_openrouter_client
+from services.anthropic_client import TAXON_GUIDANCE
+from services.openrouter_taxon_client import (
     MODEL,
-    QUERY_SCHEMA_TOOL,
-    TAXON_GUIDANCE,
-    build_client,
+    QUERY_SCHEMA_TOOL_OPENAI as QUERY_SCHEMA_TOOL,
     resolve_taxon_filters,
 )
 
 
+def _build_client():
+    return build_openrouter_client(
+        consent=False, distinct_id="eval-suite", api_key=_resolve_openrouter_api_key()
+    )
+
+
 def _resolve(query: str) -> list[dict]:
-    taxon_filters = resolve_taxon_filters(query, build_client())
+    taxon_filters = resolve_taxon_filters(query, _build_client())
     print(
         f"[eval] resolve_taxon_filters\n"
         f"  model={MODEL!r}\n"

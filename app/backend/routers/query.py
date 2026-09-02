@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -38,9 +39,13 @@ MAX_TAXON_FILTERS = 10
 MAX_CONCURRENT_GBIF_REQUESTS = 3
 
 
+def _resolve_openrouter_api_key() -> str | None:
+    return resolve_openrouter_api_key() or os.environ.get("OPENROUTER_API_KEY")
+
+
 def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
     client = ai_observability.build_openrouter_client(
-        consent=consent, distinct_id=distinct_id, api_key=resolve_openrouter_api_key()
+        consent=consent, distinct_id=distinct_id, api_key=_resolve_openrouter_api_key()
     )
     extra_kwargs = {"posthog_distinct_id": distinct_id} if consent else {}
     usage: dict = {}
