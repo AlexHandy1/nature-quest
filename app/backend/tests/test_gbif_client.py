@@ -405,6 +405,41 @@ def test_returns_no_species_when_gbif_has_zero_occurrences():
     assert species_list == []
 
 
+def test_occurrence_requests_time_out_after_15_seconds():
+    # GBIF's occurrence API has been through spells of 45-60s responses. A 15s
+    # per-request timeout fails fast enough to show a clear "GBIF is slow" message
+    # instead of a 90s+ hang that reads like an app bug.
+    with patch("services.gbif_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {
+            "count": 0,
+            "results": [],
+            "endOfRecords": True,
+        }
+
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+    assert mock_get.call_args_list
+    for call in mock_get.call_args_list:
+        assert call.kwargs["timeout"] == 15.0
+
+
+def test_pagination_is_abandoned_once_the_fetch_deadline_is_exceeded():
+    # Even when individual requests stay under the per-request timeout, a slow
+    # GBIF day means the sequential paged calls stack up. A hard wall-clock
+    # deadline on a filter's fetch stops a single query hanging for minutes.
+    def slow_search(_params):
+        time.sleep(0.05)
+        return {"results": [_occurrence("Turdus merula", 40.41, -3.68)], "endOfRecords": True}
+
+    with (
+        patch("services.gbif_client.GBIF_FETCH_DEADLINE_SECONDS", 0.01),
+        patch("services.gbif_client._gbif_search", side_effect=slow_search),
+        pytest.raises(GbifUnavailableError),
+    ):
+        fetch_top_species([{"taxon_rank": "class", "taxon_key": 212}])
+
+
 def test_raises_when_gbif_fails_after_all_retries():
     with (
         patch("services.gbif_client._request_occurrence_page", return_value=None),
@@ -437,7 +472,7 @@ def test_fetch_common_name_prefers_the_english_vernacular_name():
 
     assert name == "Common Blackbird"
     mock_get.assert_called_once_with(
-        "https://api.gbif.org/v1/species/2495414/vernacularNames", timeout=30.0
+        "https://api.gbif.org/v1/species/2495414/vernacularNames", timeout=15.0
     )
 
 
