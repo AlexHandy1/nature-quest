@@ -255,6 +255,27 @@ test('shows no markers on an unresolved outcome', async () => {
   expect(screen.queryByTestId('marker')).not.toBeInTheDocument()
 })
 
+test('renders the GBIF status link and no markers on a gbif_unavailable outcome', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(502, {
+        status: 'gbif_unavailable',
+        message: 'Our species data comes from GBIF, and their service is responding slowly.',
+      })
+    )
+  )
+
+  render(<MapView />)
+  await submit('birds')
+
+  const link = await screen.findByRole('link', { name: /gbif.*status/i })
+  expect(link).toHaveAttribute('href', 'https://status.gbif.org')
+  expect(screen.getByText(/backup data sources/i)).toBeInTheDocument()
+  expect(screen.queryByTestId('marker')).not.toBeInTheDocument()
+  expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'gbif_unavailable' })
+})
+
 test('posts query, distinctId, and consent to /api/query', async () => {
   const fetchMock = vi.fn().mockResolvedValue(
     jsonResponse(200, { status: 'unresolved', message: 'no match' })
