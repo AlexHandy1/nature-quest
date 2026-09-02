@@ -24,10 +24,25 @@ using Claude Code on the web in autonomous/cloud mode. Captures the caveats work
 - The eval tier (`pytest -m eval`) is excluded by default (`pytest.ini`: `addopts = -m "not eval"`), so the prompt
   has to explicitly instruct the agent to run it — otherwise an autonomous agent has no reason to know the
   eval suites (the actual acceptance-criteria gate, REQ-013/AC-004) even exist as a separate opt-in step.
+- **Lesson learned mid-build**: switching network access to Custom to add `openrouter.ai`/PostHog's host silently
+  dropped the Trusted defaults (`pypi.org`, `files.pythonhosted.org`, etc.) — Custom mode *replaces* the default
+  allowlist unless you also check "Also include default list of common package managers" in the environment
+  editor. First attempt stalled and failed on `pip install openai==2.53.0` with a 403 from `pypi.org` as a result.
+  Also confirmed the fix isn't hot-reloaded into an already-running session — the environment's network policy is
+  baked in at VM provisioning time, so a stalled session must be abandoned (not retried) and a fresh session
+  started against the corrected environment. The prompt below adds an early reachability check for exactly this
+  reason: fail fast in seconds, not mid-setup.
 
 ## The prompt
 
 ```
+Before doing anything else: run `curl -sI https://pypi.org` and `curl -sI https://openrouter.ai`
+to confirm both are reachable from this environment. If either fails (403, timeout, DNS
+failure, or any non-2xx/3xx), STOP immediately and tell me — don't retry more than once,
+don't attempt to work around it (no --trusted-host, no vendored packages, no alternate
+index). A network/config-level block needs to be fixed in the environment settings, not
+worked around from inside the session.
+
 Implement the spec at docs/specs/spec-architecture-openrouter-taxon-resolution-280826.md in full.
 Read the whole spec first, plus ARCHITECTURE.md and any READMEs it points to, before writing code.
 
