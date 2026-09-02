@@ -6,7 +6,6 @@ from fastapi.responses import JSONResponse
 
 from models.query import QueryRequest
 from services import ai_observability
-from services.anthropic_client import resolve_api_key, resolve_taxon_filters
 from services.gbif_client import (
     GbifUnavailableError,
     fetch_top_species,
@@ -20,10 +19,12 @@ from services.logging_client import (
     log_species_selected,
     log_waypoints_ordered,
 )
+from services.openrouter_taxon_client import resolve_taxon_filters
 from services.query_budget import try_consume_daily_budget
 from services.rate_limiter import limiter
 from services.species_enrichment import enrich_species
 from services.taxon_resolution import resolve_taxon_key
+from services.tts import resolve_api_key as resolve_openrouter_api_key
 from services.waypoints import order_waypoints
 
 router = APIRouter()
@@ -38,15 +39,15 @@ MAX_CONCURRENT_GBIF_REQUESTS = 3
 
 
 def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple[list[dict], dict]:
-    client = ai_observability.build_client(
-        consent=consent, distinct_id=distinct_id, api_key=resolve_api_key()
+    client = ai_observability.build_openrouter_client(
+        consent=consent, distinct_id=distinct_id, api_key=resolve_openrouter_api_key()
     )
     extra_kwargs = {"posthog_distinct_id": distinct_id} if consent else {}
     usage: dict = {}
 
     def _capture_usage(response) -> None:
-        usage["input_tokens"] = response.usage.input_tokens
-        usage["output_tokens"] = response.usage.output_tokens
+        usage["input_tokens"] = response.usage.prompt_tokens
+        usage["output_tokens"] = response.usage.completion_tokens
 
     taxon_filters = resolve_taxon_filters(
         query, client, on_response=_capture_usage, **extra_kwargs
