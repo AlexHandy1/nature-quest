@@ -40,3 +40,47 @@ Result at session end: `pytest -m eval tests/evals/test_taxon_resolution_eval.py
 - Push the 8 local commits and open the PR (this repo's CI only triggers on `pull_request` or `push` to `main`, confirmed by reading `.github/workflows/ci-cd.yml` — nothing fires from working the branch itself).
 - Revoke/rotate the scoped OpenRouter API key used in the cloud environment now that the build is done.
 - Consider adding retry backoff to `gbif_client.py::_gbif_search` at some point — not required by this spec, but the no-backoff gap was directly observed causing a real (if intermittent) eval failure this session.
+
+---
+
+## Session 2 — GBIF slow/unavailable signposting hotfix
+
+Branch `investigate_gbif_availability_issues`. Triggered by: the live deployed app returning only `gbif_unavailable` for every query.
+
+### What was built
+
+Root cause first: reproduced the exact GBIF calls from `gbif_client.py`/`taxon_resolution.py` with `curl`. GBIF's `occurrence/search` was returning **HTTP 200 with valid data but taking 45–64s per request** (confirmed against `status.gbif.org`: "Occurrence API: Degraded Performance", scheduled maintenance **1–5 Sept 2026** for search-cluster upgrades). App's `REQUEST_TIMEOUT = 30.0` × 3 attempts → 90s+ hang → `GbifUnavailableError`. **Not an app bug, not a full GBIF outage.** Cloud Run `/api/query` latency logs (project `nature-quest-504414`): healthy requests 1–8s, occasional 9–16s, one 50s outlier historically; today's failures logged at 33s / 95s / 98s. GBIF recovered mid-session (local `fetch_top_species` probe for birds/Retiro returned in 2.2s).
+
+Five commits, all TDD (RED→GREEN per behaviour):
+
+- **`458cf7c`** — `services/gbif_client.py`: `REQUEST_TIMEOUT` 30s → **15s**; new `GBIF_FETCH_DEADLINE_SECONDS = 40.0`, enforced by a `time.monotonic()` check at the top of `_fetch_occurrences`'s pagination loop (raises `GbifUnavailableError`). Caps a single filter's probe+pagination so slow-but-under-timeout pages can't stack into minutes.
+- **`9ca689d`** — `services/taxon_resolution.py`: `_fetch_species_match` now wraps `httpx.HTTPError` → `GbifUnavailableError` (imported from `gbif_client`). Previously a slow/failing `species/match` propagated a raw httpx error out of the router as a 500. `timeout=5.0` unchanged.
+- **`48ccbe9`** — `routers/query.py`: catches `GbifUnavailableError` from `_resolve_taxon_keys` (was an unhandled 500), returns the same 502 `gbif_unavailable`. New helper `_gbif_unavailable_response(body, usage, failed_step, started_at)`. `GBIF_UNAVAILABLE_MESSAGE` reworded to name GBIF as the cause and say it isn't a Nature Quest problem. `services/logging_client.py::log_query_outcome` gains `failed_step` (`"taxon_match"` / `"occurrence_search"`) and `elapsed_ms` kwargs, logged on the `gbif_unavailable` branch so recovery is visible.
+- **`d0eec80`** — `app/frontend/src/components/QueryPanel.tsx`: loading copy now names GBIF ("Searching GBIF for species in your area…") and escalates to "GBIF … is slow to respond right now — hanging on…" after 6s (`SLOW_GBIF_AFTER_MS`, `useState`+`useEffect` timer). `gbif_unavailable` outcome renders a dedicated `<p>` with the backend message + an `<a href="https://status.gbif.org" target="_blank" rel="noopener noreferrer">` link + "we're also working on backup data sources" note — kept in a branch *separate from* the generic `outcome !== 'resolved'` branch (which now also excludes `gbif_unavailable`) so it renders exactly once.
+- **`0d26f05`** — `ARCHITECTURE.md`: updated the `taxon_resolution.py`, `gbif_client.py`, and `QueryPanel.tsx` entries.
+
+Verification: backend `pytest` **166 pass** (+4 new), ruff + mypy clean. Frontend `npx vitest run` **87 pass** (QueryPanel 23, MapView 14, incl. a MapView integration test that a 502 `gbif_unavailable` response renders the status link), `tsc -b` + `oxlint` clean. `scratchpad/gbif_probe.py` kept for re-running the live `fetch_top_species` check.
+
+### What was explored / learnt
+
+- **Dead end — restructuring `fetch_top_species` concurrency.** First attempt at the deadline swapped `executor.map(_fetch_and_rank, ...)` for raw `executor.submit` + `concurrent.futures.wait(timeout=...)` + `executor.shutdown(wait=False, cancel_futures=True)`. This broke test isolation: a previously-mocked test in `test_gbif_client.py` leaked a **real** GBIF call (observed paginating to `offset=10800` against `api.gbif.org`), which hung 120s+ during the slow spell and was killed. Baseline suite had run `162 passed in 5.98s` with no hang, so the regression was mine. Reverted the restructure entirely; kept only the constant changes. Chose **Option A** instead: a deadline check inside `_fetch_occurrences`'s existing sequential pagination loop — no change to the thread pool, `executor.map`, or routing. Small, bounded, testable with a patched `_gbif_search` + tiny patched deadline (no network).
+- **`test_full_pipeline_eval.py` (`pytest -m eval`, real OpenRouter + real GBIF): 2 pass, 2 fail — neither failure caused by this hotfix.**
+  - `test_birds_query...` and `test_birds_and_plants_query...` **pass** — confirms the real GBIF pipeline still works end-to-end under the 15s timeout + 40s deadline.
+  - `test_fish_birds_and_insects...sorts...` — failed once on GBIF **`HTTP 429 Too Many Requests`** (`classKey=121`) from the ~10-filter concurrent fan-out burst; **passed on isolated retry**. Pre-existing rate-limit path (`_gbif_search` non-200 → `None` → immediate retry, no backoff), unchanged by this hotfix. Same no-backoff gap noted in Session 1.
+  - `test_reptiles_and_fish...sorts...` — three consecutive runs gave `ValueError: OpenRouter response did not include a tool call`, then `TypeError: 'NoneType' object is not subscriptable`, then **PASS**. Non-determinism in the **OpenRouter taxon-resolution step** (`google/gemini-3.7-flash`) on the hardest prompt (11-group reptiles+fish expansion), *before GBIF is touched*. Unrelated to anything changed here; same class of Gemini multi-group flakiness that commits `40da65f` / `052678d` were tuning.
+- Status link target: `https://status.gbif.org` was verified to return real status content; `https://www.gbif.org/health-status` returned 403 to the fetch tool, so the verified URL was used.
+
+### Decisions and trade-offs
+
+- **Decision:** `REQUEST_TIMEOUT` 15s (not 8s), keep `MAX_RETRIES = 2`. **Why:** the 6s progressive "GBIF is slow" message already covers the "looks like an app bug" window, so there's no need to sacrifice slow-but-healthy days; 8s risked clipping the rare legit 15s tail latencies seen in the logs. **Trade-off:** worst case is now ~45s per `_gbif_search` (15s × 3 attempts) before `GbifUnavailableError` — bounded, and further bounded per-filter by the 40s deadline.
+- **Decision:** Deadline as an in-loop `time.monotonic()` check inside `_fetch_occurrences` (Option A), not a restructure of `fetch_top_species`'s concurrency. **Why:** hotfix scope — no risk to the thread pool / routing / other call paths; ~3 lines; testable without real network. **Trade-off:** the budget is per-filter, not a single global wall-clock — but filters run concurrently via `executor.map`, so effective wall-clock is ≈ the per-filter budget anyway.
+- **Decision:** Fast-fail with a clear message over raising the timeout to ~75s to serve degraded-but-working results. **Why:** early-preview product, low traffic — a snappy honest error beats a 75s spinner. **Trade-off:** during a genuine multi-day GBIF slow spell the app serves *zero* walks rather than slow ones.
+- **Decision:** Dedicated frontend render branch for `gbif_unavailable`, excluded from the generic outcome-message branch. **Why:** the generic branch (`outcome !== 'resolved'`) would otherwise also match and double-render the message. **Trade-off:** one more conditional in `QueryPanel`; covered by a "renders exactly once" test.
+
+### Next steps
+
+- User to `git commit`/`push` the branch and open the PR themselves (not done in-session by request). CI only fires on `pull_request` / `push` to `main`.
+- After GBIF's 5 Sept maintenance window closes, sanity-check recovery; decide whether to keep `REQUEST_TIMEOUT = 15s` permanently (likely fine) or restore 30s.
+- Log the `test_reptiles_and_fish_query...` OpenRouter non-determinism as its own known issue (observed ~1-in-2 fail rate today) — relates to the `40da65f` TAXON_GUIDANCE tuning line of work, not GBIF.
+- Still open from Session 1 and re-confirmed today: no retry backoff in `gbif_client.py::_gbif_search`; caused the 429 eval flake again. Tracked under `docs/FEATURE_IDEAS_BACKLOG.md` "Rearchitect GBIF data dependency".
+- Optional follow-ups discussed but out of hotfix scope: env-var-toggled incident banner, cache-last-successful-walk stale serving, a canned Retiro fallback species list, client-side `AbortController` on the `/api/query` fetch.

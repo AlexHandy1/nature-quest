@@ -66,7 +66,7 @@ function QueryPanel({ query, onQueryChange, loading, result, onSubmit }: QueryPa
       {loading && (
         <p className="form-message nav-bar__message">
           {gbifSlow
-            ? 'GBIF (our species data source) is slow to respond right now — hanging on…'
+            ? 'GBIF (our species data source) is slow to respond right now — please wait a bit longer…'
             : 'Searching GBIF for species in your area…'}
         </p>
       )}
