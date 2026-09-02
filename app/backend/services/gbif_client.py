@@ -1,4 +1,5 @@
 import math
+import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,7 +16,11 @@ YEAR_RANGE = "2023,2026"
 FALLBACK_YEAR = "2026"
 SCALE_GUARD_THRESHOLD = 1000
 MAX_RETRIES = 2
-REQUEST_TIMEOUT = 30.0
+REQUEST_TIMEOUT = 15.0
+# Hard wall-clock cap on a single filter's occurrence fetch (probe + pagination).
+# The per-request timeout alone doesn't bound this: on a slow-but-not-timing-out
+# GBIF day the sequential paged calls stack up into a multi-minute hang.
+GBIF_FETCH_DEADLINE_SECONDS = 40.0
 TOP_SPECIES_COUNT = 5
 MAX_CONCURRENT_GBIF_REQUESTS = 3
 DEFAULT_GRID_N = 5
@@ -99,12 +104,15 @@ def _select_species_across_groups(groups: list[list[dict]], target_total: int) -
 
 
 def _fetch_occurrences(extra_params: dict, polygon: str) -> list[dict]:
+    started = time.monotonic()
     probe = _gbif_search({**_base_params(YEAR_RANGE, polygon), "limit": 0, **extra_params})
     year = FALLBACK_YEAR if probe.get("count", 0) > SCALE_GUARD_THRESHOLD else YEAR_RANGE
 
     results = []
     offset = 0
     while True:
+        if time.monotonic() - started > GBIF_FETCH_DEADLINE_SECONDS:
+            raise GbifUnavailableError("GBIF occurrence/search exceeded the fetch deadline")
         data = _gbif_search(
             {**_base_params(year, polygon), "limit": 300, "offset": offset, **extra_params}
         )

@@ -1,7 +1,7 @@
 import threading
 import time
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from fastapi.testclient import TestClient
 
@@ -454,8 +454,47 @@ def test_gbif_failure_after_retries_returns_502():
         )
 
     assert response.status_code == 502
+    body = response.json()
+    assert body["status"] == "gbif_unavailable"
+    # The message must attribute the problem to GBIF, not leave it reading like
+    # a Nature Quest bug.
+    assert "GBIF" in body["message"]
+    assert "Nature Quest" in body["message"]
+    mock_log.assert_called_once_with(
+        "birds",
+        "gbif_unavailable",
+        distinct_id="anon-1",
+        failed_step="occurrence_search",
+        elapsed_ms=ANY,
+    )
+
+
+def test_gbif_failure_during_taxon_key_resolution_returns_502():
+    with (
+        patch(
+            "routers.query._resolve_taxon_filters",
+            return_value=([{"taxonRank": "class", "taxonValue": "Aves"}], {}),
+        ),
+        patch(
+            "routers.query.resolve_taxon_key",
+            side_effect=GbifUnavailableError(),
+        ),
+        patch("routers.query.log_query_outcome") as mock_log,
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-1", "polygon": RETIRO_POLYGON},
+        )
+
+    assert response.status_code == 502
     assert response.json()["status"] == "gbif_unavailable"
-    mock_log.assert_called_once_with("birds", "gbif_unavailable", distinct_id="anon-1")
+    mock_log.assert_called_once_with(
+        "birds",
+        "gbif_unavailable",
+        distinct_id="anon-1",
+        failed_step="taxon_match",
+        elapsed_ms=ANY,
+    )
 
 
 def test_daily_budget_exhausted_returns_429_with_no_llm_call():

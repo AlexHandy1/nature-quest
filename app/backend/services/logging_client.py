@@ -11,6 +11,8 @@ def log_query_outcome(
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     gbif_result_count: int | None = None,
+    failed_step: str | None = None,
+    elapsed_ms: int | None = None,
 ) -> None:
     query_logger.info(
         "query_outcome",
@@ -22,6 +24,8 @@ def log_query_outcome(
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
             "gbif_result_count": gbif_result_count,
+            "failed_step": failed_step,
+            "elapsed_ms": elapsed_ms,
         },
     )
 

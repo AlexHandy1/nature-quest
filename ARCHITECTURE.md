@@ -93,13 +93,19 @@ services/
                              events regardless of base_url — filter/group PostHog insights for this call
                              site by $ai_model or $ai_base_url instead. See ADR-009.
   taxon_resolution.py      resolve_taxon_key() — live GBIF species/match only, no local cache (see
-                             ADR-011); called once per filter, sequentially, by routers/query.py
+                             ADR-011); called once per filter, sequentially, by routers/query.py. A
+                             failing/slow species/match request raises GbifUnavailableError (imported
+                             from gbif_client) so the router returns gbif_unavailable, not a raw 500
   gbif_client.py            fetch_top_species(taxon_filters, polygon) — one occurrence/search call per
                              filter, ranked per group, merged via quota/round-robin
                              (_select_species_across_groups, see ADR-011); the caller (routers/query.py)
                              always passes an explicit polygon now (Slice 9) — GBIF_POLYGON remains as
                              the Retiro constant/default-parameter value, not a fallback the router
-                             relies on. Also: parse_polygon_vertices/polygon_centroid (shared WKT
+                             relies on. REQUEST_TIMEOUT is 15s per call (was 30s) so a slow GBIF fails
+                             fast, and GBIF_FETCH_DEADLINE_SECONDS caps a single filter's
+                             probe+pagination so slow-but-not-timing-out pages can't stack into a
+                             multi-minute request — both raise GbifUnavailableError. Also:
+                             parse_polygon_vertices/polygon_centroid (shared WKT
                              parsing, used by both this module and models/query.py's validator),
                              per-species NxN density-cluster hotspot (_cluster_species_hotspot,
                              Slice 3), scale-guard, retry, ranking, fetch_common_name(species_key) —
@@ -172,7 +178,11 @@ src/lib/polygon.ts                Pure helpers: pointsToWkt/wktToPoints (Leaflet
 src/components/QueryPanel.tsx     Query form + loading/non-resolved-outcome message, rendered inline
                                      inside nav-bar (not its own floating/docked panel). No message is
                                      shown on a resolved outcome — the markers/route/results panel
-                                     already communicate success.
+                                     already communicate success. The loading message names GBIF and
+                                     escalates to a "GBIF is slow" line after 6s (SLOW_GBIF_AFTER_MS);
+                                     the gbif_unavailable outcome gets a dedicated block with a
+                                     status.gbif.org link, kept separate from the generic
+                                     outcome-message branch so it renders once.
 src/components/ResultsPanel.tsx   Species list (common name primary, scientific name secondary,
                                      observation count) in route order. Each row is an accordion —
                                      click/tap to expand a photo + GBIF species-page link

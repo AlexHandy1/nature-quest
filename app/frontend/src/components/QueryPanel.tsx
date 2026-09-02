@@ -1,3 +1,8 @@
+import { useEffect, useState } from 'react'
+
+const SLOW_GBIF_AFTER_MS = 6000
+const GBIF_STATUS_URL = 'https://status.gbif.org'
+
 export type Outcome =
   | 'resolved'
   | 'unresolved'
@@ -29,6 +34,17 @@ type QueryPanelProps = {
 }
 
 function QueryPanel({ query, onQueryChange, loading, result, onSubmit }: QueryPanelProps) {
+  const [gbifSlow, setGbifSlow] = useState(false)
+
+  useEffect(() => {
+    if (!loading) {
+      setGbifSlow(false)
+      return
+    }
+    const timer = setTimeout(() => setGbifSlow(true), SLOW_GBIF_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [loading])
+
   return (
     <>
       <form className="nav-bar__query" onSubmit={onSubmit}>
@@ -47,8 +63,23 @@ function QueryPanel({ query, onQueryChange, loading, result, onSubmit }: QueryPa
           {loading ? 'Searching…' : 'Create walk'}
         </button>
       </form>
-      {loading && <p className="form-message nav-bar__message">Generating your walk…</p>}
-      {result && !loading && result.outcome !== 'resolved' && (
+      {loading && (
+        <p className="form-message nav-bar__message">
+          {gbifSlow
+            ? 'GBIF (our species data source) is slow to respond right now — please wait a bit longer…'
+            : 'Searching GBIF for species in your area…'}
+        </p>
+      )}
+      {result && !loading && result.outcome === 'gbif_unavailable' && (
+        <p className="form-message nav-bar__message form-message--error">
+          {result.message}{' '}
+          <a href={GBIF_STATUS_URL} target="_blank" rel="noopener noreferrer">
+            Check GBIF's status
+          </a>
+          . We're also working on backup data sources for when this happens.
+        </p>
+      )}
+      {result && !loading && result.outcome !== 'resolved' && result.outcome !== 'gbif_unavailable' && (
         <p className={`form-message nav-bar__message form-message--${VARIANT_BY_OUTCOME[result.outcome]}`}>
           {result.message}
         </p>
