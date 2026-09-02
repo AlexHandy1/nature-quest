@@ -1,5 +1,9 @@
 from unittest.mock import MagicMock, patch
 
+import httpx
+import pytest
+
+from services.gbif_client import GbifUnavailableError
 from services.taxon_resolution import resolve_taxon_key
 
 
@@ -45,6 +49,20 @@ def test_no_match_is_unresolved():
         key = resolve_taxon_key("class", "Nonsenseia")
 
     assert key is None
+
+
+def test_a_failing_species_match_request_raises_gbif_unavailable():
+    # A slow or failing GBIF species/match is the same class of problem as a
+    # failing occurrence/search — it must surface as GBIF-unavailable so the
+    # router returns a clear "it's GBIF, not us" response, not a raw 500.
+    with (
+        patch(
+            "services.taxon_resolution.httpx.get",
+            side_effect=httpx.ReadTimeout("gbif is slow"),
+        ),
+        pytest.raises(GbifUnavailableError),
+    ):
+        resolve_taxon_key("class", "Aves")
 
 
 def test_queries_gbif_species_match_with_the_name_and_uppercase_rank():
