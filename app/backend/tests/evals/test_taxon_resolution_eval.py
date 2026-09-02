@@ -5,7 +5,7 @@ from services.ai_observability import build_openrouter_client
 from services.anthropic_client import TAXON_GUIDANCE
 from services.openrouter_taxon_client import (
     MODEL,
-    QUERY_SCHEMA_TOOL_OPENAI as QUERY_SCHEMA_TOOL,
+    QUERY_SCHEMA_TOOL_OPENAI,
     resolve_taxon_filters,
 )
 
@@ -22,7 +22,7 @@ def _resolve(query: str) -> list[dict]:
         f"[eval] resolve_taxon_filters\n"
         f"  model={MODEL!r}\n"
         f"  system={TAXON_GUIDANCE!r}\n"
-        f"  tools={[QUERY_SCHEMA_TOOL]!r}\n"
+        f"  tools={[QUERY_SCHEMA_TOOL_OPENAI]!r}\n"
         f"  input={query!r}\n"
         f"  output={taxon_filters!r}"
     )

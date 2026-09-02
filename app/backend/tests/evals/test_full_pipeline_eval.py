@@ -7,7 +7,7 @@ from services.anthropic_client import TAXON_GUIDANCE
 from services.gbif_client import GBIF_POLYGON, fetch_top_species
 from services.openrouter_taxon_client import (
     MODEL,
-    QUERY_SCHEMA_TOOL_OPENAI as QUERY_SCHEMA_TOOL,
+    QUERY_SCHEMA_TOOL_OPENAI,
     resolve_taxon_filters,
 )
 from services.taxon_resolution import GBIF_SPECIES_MATCH_URL
@@ -25,7 +25,7 @@ def _resolve_filters(query: str) -> list[dict]:
         f"[eval] resolve_taxon_filters\n"
         f"  model={MODEL!r}\n"
         f"  system={TAXON_GUIDANCE!r}\n"
-        f"  tools={[QUERY_SCHEMA_TOOL]!r}\n"
+        f"  tools={[QUERY_SCHEMA_TOOL_OPENAI]!r}\n"
         f"  input={query!r}\n"
         f"  output={taxon_filters!r}"
     )

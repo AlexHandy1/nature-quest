@@ -115,14 +115,14 @@ def test_raises_when_the_model_does_not_call_the_tool():
         usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         resolve_taxon_filters("I want to see birds", client)
 
 
 def test_raises_when_the_tool_call_arguments_are_not_valid_json():
     client = _mock_client("not valid json")
 
-    with pytest.raises(Exception):
+    with pytest.raises(json.JSONDecodeError):
         resolve_taxon_filters("I want to see birds", client)
 
 

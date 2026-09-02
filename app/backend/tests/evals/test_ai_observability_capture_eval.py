@@ -5,7 +5,9 @@ import pytest
 from routers.query import _resolve_openrouter_api_key
 from services import ai_observability
 from services.anthropic_client import resolve_api_key, resolve_taxon_filters
-from services.openrouter_taxon_client import resolve_taxon_filters as resolve_taxon_filters_openrouter
+from services.openrouter_taxon_client import (
+    resolve_taxon_filters as resolve_taxon_filters_openrouter,
+)
 
 REQUIRES_POSTHOG = pytest.mark.skipif(
     "POSTHOG_PROJECT_TOKEN" not in os.environ,
