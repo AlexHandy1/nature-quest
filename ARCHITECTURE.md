@@ -6,7 +6,7 @@ A current, whole-system map of what's built and how it works today — not a roa
 
 Nature Quest is a FastAPI backend + Vite/React frontend that turns a natural-language request and a drawn search area into a GBIF-backed nature walk. `MapView` is the whole product surface: a user draws or accepts a default search area, submits free text, and gets back a route-ordered species list, each enriched with a common name, photo, and GBIF link.
 
-Request path: free text → LLM taxon resolution (Anthropic) → per-taxon GBIF occurrence lookup → nearest-neighbour route ordering → species enrichment (common name + Wikipedia image) → response rendered as map markers plus a results panel. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
+Request path: free text → LLM taxon resolution (OpenRouter, model-agnostic client — currently `google/gemini-3.7-flash`) → per-taxon GBIF occurrence lookup → nearest-neighbour route ordering → species enrichment (common name + Wikipedia image) → response rendered as map markers plus a results panel. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
 
 Audio narration (spoken per-waypoint field-guide text) is a secondary, optional action available once a walk has resolved: a "Create narrative" control inline in the results panel triggers `POST /api/narrate`, which grounds a short narrative in each species' Wikipedia extract, generates it (Anthropic), synthesizes it to audio (OpenRouter/Kokoro-82M), and returns both in one response. See ADR-014 for the data-flow and response-shape reasoning.
 
@@ -56,14 +56,39 @@ services/
                              optional on_response callback + **extra_kwargs passthrough) — returns a
                              list of {taxonRank, taxonValue}, empty if no signal. System prompt
                              directly teaches two multi-entry lay-term expansions (fish, reptiles) —
-                             see ADR-011. build_client(), resolve_api_key() (Secret Manager on Cloud
-                             Run via K_SERVICE check, local ANTHROPIC_API_KEY env var otherwise),
-                             _fetch_api_key_from_secret_manager()
+                             see ADR-011 — plus a non-standard rule forcing Testudines to class rank
+                             (not the biologically-conventional order), needed to keep a
+                             model-agnostic taxon-resolution prompt correct across providers. Still
+                             the single source of truth for TAXON_GUIDANCE/QUERY_SCHEMA_TOOL (imported,
+                             not copied, by openrouter_taxon_client.py) and retained, unused by
+                             routers/query.py, as narration.py's own Anthropic call site plus a manual,
+                             tested rollback path for taxon resolution (swap the constant/import back —
+                             see the OpenRouter spec). build_client(), resolve_api_key() (Secret Manager
+                             on Cloud Run via K_SERVICE check, local ANTHROPIC_API_KEY env var
+                             otherwise), _fetch_api_key_from_secret_manager()
+  openrouter_taxon_client.py Model-agnostic taxon-resolution client used by routers/query.py today —
+                             MODEL constant (google/gemini-3.7-flash; the only place a model name
+                             appears — swapping providers/models is a one-constant change plus
+                             re-running the taxon-resolution/full-pipeline eval suites, no other code
+                             changes), QUERY_SCHEMA_TOOL_OPENAI (built once at import from
+                             anthropic_client.py's QUERY_SCHEMA_TOOL, OpenAI tool-calling shape),
+                             resolve_taxon_filters() — same signature as anthropic_client.py's function,
+                             calls client.chat.completions.create() with forced tool choice, parses
+                             taxonFilters out of the tool-call JSON, raises rather than silently
+                             returning [] on a missing/malformed tool call.
   ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
                              anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
                              wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
-                             capture) when consent=True. Lazily builds/reuses a singleton PostHog client
-                             from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. See ADR-009.
+                             capture) when consent=True; still used by narration.py's Anthropic call
+                             site. build_openrouter_client(consent, distinct_id, api_key) — same
+                             consent-gating shape, pointed at OpenRouter (base_url=
+                             https://openrouter.ai/api/v1): a plain openai.OpenAI when consent=False, or
+                             posthog.ai.openai.OpenAI when consent=True — used by routers/query.py's
+                             taxon resolution. Both branches share one lazily-built singleton PostHog
+                             client from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. Note:
+                             posthog.ai.openai.OpenAI always stamps $ai_provider: "openai" on captured
+                             events regardless of base_url — filter/group PostHog insights for this call
+                             site by $ai_model or $ai_base_url instead. See ADR-009.
   taxon_resolution.py      resolve_taxon_key() — live GBIF species/match only, no local cache (see
                              ADR-011); called once per filter, sequentially, by routers/query.py
   gbif_client.py            fetch_top_species(taxon_filters, polygon) — one occurrence/search call per
@@ -109,7 +134,7 @@ static/                    Built frontend assets, copied in at Docker build time
 
 One structural rule: any future router must be registered in `create_app()` **before** the static-file mount — the mount matches every remaining path, so a route added after it would be unreachable. Noted inline in `main.py`.
 
-Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real LLM calls), `OPENROUTER_API_KEY` (real TTS calls), and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state — narration_budget.py's counter gets the same treatment). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF/Wikipedia/OpenRouter calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end GBIF pipeline case for both a single filter and a mixed-taxa pair (verified against real GBIF data via independent `species/match` calls, not production's own resolver), an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`, narration quality checks (length/timing/dash-pause/all-species-mentioned programmatic checks plus an LLM-judged faithfulness/habitat-claim pass, parametrized across three sample walks, plus a live content-safety refusal check — see ADR-014), and a narrative-to-audio check asserting the TTS response is valid, plausibly-sized audio.
+Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real narration/rollback LLM calls), `OPENROUTER_API_KEY` (real taxon-resolution LLM calls and real TTS calls), and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state — narration_budget.py's counter gets the same treatment). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF/Wikipedia/OpenRouter calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end GBIF pipeline case for both a single filter and a mixed-taxa pair (verified against real GBIF data via independent `species/match` calls, not production's own resolver), an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`, narration quality checks (length/timing/dash-pause/all-species-mentioned programmatic checks plus an LLM-judged faithfulness/habitat-claim pass, parametrized across three sample walks, plus a live content-safety refusal check — see ADR-014), and a narrative-to-audio check asserting the TTS response is valid, plausibly-sized audio.
 
 ### Frontend (`app/frontend/`)
 
@@ -181,8 +206,10 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     ├─ GET /health → routers/health.py
                                                     ├─ POST /api/query → routers/query.py
                                                     │    → services/ai_observability.py (consent-gated
-                                                    │      client selection) → services/anthropic_client.py
-                                                    │      (Anthropic API, real key from Secret Manager)
+                                                    │      client selection) → services/openrouter_taxon_client.py
+                                                    │      (OpenRouter API, google/gemini-3.7-flash, real
+                                                    │      key from Secret Manager — services/anthropic_client.py
+                                                    │      stays available as a manual, tested rollback)
                                                     │    → services/taxon_resolution.py (GBIF species/match)
                                                     │    → services/gbif_client.py (GBIF occurrence/search)
                                                     │    → services/species_enrichment.py
