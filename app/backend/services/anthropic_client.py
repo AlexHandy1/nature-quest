@@ -25,6 +25,14 @@ filters by calling produce_gbif_query.
     order-rank Perciformes, Cypriniformes, Scorpaeniformes, Gadiformes,
     Clupeiformes, Salmoniformes, plus class-rank Elasmobranchii (sharks
     and rays) — most ray-finned fish have no single GBIF class.
+- IMPORTANT, non-standard rule specific to this app's GBIF setup: whenever
+  "Testudines" is the taxonValue — whether the request says "turtles",
+  "tortoises", "terrapins", or is part of a broader "reptiles" request —
+  taxonRank MUST always be "class", never "order". This overrides normal
+  biological convention (where Testudines is usually an order); GBIF's
+  backbone taxonomy has no single "Reptilia" class, so this app queries
+  Testudines at class rank on purpose. Do not use order for Testudines
+  under any circumstances.
 - If the request has no clear taxonomic signal, return an empty list.
   Do not guess.
 """

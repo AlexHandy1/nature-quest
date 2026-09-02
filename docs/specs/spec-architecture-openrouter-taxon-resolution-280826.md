@@ -4,7 +4,7 @@ version: 1.1
 date_created: 2026-08-28
 last_updated: 2026-08-30
 tags: [architecture]
-status: Design complete, not yet built
+status: Built. The §9/§2 cost rationale ("62.5% cheaper," "~3.5x cheaper on one observed call") was revised during implementation — real measured cost came in around 2x the cited figures, still cheaper than Haiku but by a smaller margin. See docs/decisions/ADR-015.
 sources:
   - production: app/backend/services/anthropic_client.py, app/backend/services/ai_observability.py, app/backend/services/tts.py, app/backend/routers/query.py, app/backend/services/logging_client.py, app/backend/services/rate_limiter.py, app/backend/tests/test_query_consent_wiring.py, app/backend/tests/test_query.py, app/backend/tests/evals/test_taxon_resolution_eval.py, app/backend/tests/evals/test_full_pipeline_eval.py, app/backend/tests/evals/test_ai_observability_capture_eval.py, app/backend/requirements.txt, infra/secret_manager.tf
   - prototype: prototypes/scripts/model_comparison_spike.py, prototypes/scripts/server_model_comparison.py, prototypes/web/index_model_comparison.html
