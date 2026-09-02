@@ -1,4 +1,5 @@
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -32,7 +33,10 @@ router = APIRouter()
 
 UNRESOLVED_MESSAGE = "Sorry, we couldn't match that to a category we support yet — try something like 'birds' or 'plants'."
 NO_RESULTS_MESSAGE = "We understood your request, but didn't find anything for it here right now."
-GBIF_UNAVAILABLE_MESSAGE = "We're having trouble reaching nature data right now — try again shortly."
+GBIF_UNAVAILABLE_MESSAGE = (
+    "Our species data comes from GBIF, and their service is responding slowly right now "
+    "— this isn't a problem with Nature Quest. Please try again shortly."
+)
 DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please try again tomorrow."
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 MAX_TAXON_FILTERS = 10
@@ -60,6 +64,23 @@ def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple
     return taxon_filters, usage
 
 
+def _gbif_unavailable_response(
+    body: QueryRequest, usage: dict, failed_step: str, started_at: float
+) -> JSONResponse:
+    log_query_outcome(
+        body.query,
+        "gbif_unavailable",
+        distinct_id=body.distinctId,
+        failed_step=failed_step,
+        elapsed_ms=int((time.monotonic() - started_at) * 1000),
+        **usage,
+    )
+    return JSONResponse(
+        status_code=502,
+        content={"status": "gbif_unavailable", "message": GBIF_UNAVAILABLE_MESSAGE},
+    )
+
+
 @router.post("/api/query")
 @limiter.limit("10/minute")
 def submit_query(request: Request, body: QueryRequest):
@@ -84,7 +105,11 @@ def submit_query(request: Request, body: QueryRequest):
         taxon_filters[:MAX_TAXON_FILTERS],
         taxon_filters[MAX_TAXON_FILTERS:],
     )
-    resolved, unresolved_groups = _resolve_taxon_keys(in_budget)
+    gbif_started = time.monotonic()
+    try:
+        resolved, unresolved_groups = _resolve_taxon_keys(in_budget)
+    except GbifUnavailableError:
+        return _gbif_unavailable_response(body, usage, "taxon_match", gbif_started)
     unresolved_groups += [f["taxonValue"] for f in over_budget]
     if not resolved:
         log_query_outcome(body.query, "unresolved", distinct_id=body.distinctId, **usage)
@@ -96,11 +121,7 @@ def submit_query(request: Request, body: QueryRequest):
             polygon=body.polygon,
         )
     except GbifUnavailableError:
-        log_query_outcome(body.query, "gbif_unavailable", distinct_id=body.distinctId, **usage)
-        return JSONResponse(
-            status_code=502,
-            content={"status": "gbif_unavailable", "message": GBIF_UNAVAILABLE_MESSAGE},
-        )
+        return _gbif_unavailable_response(body, usage, "occurrence_search", gbif_started)
 
     log_species_selected(body.query, body.distinctId, species)
 
