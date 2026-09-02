@@ -75,7 +75,10 @@ services/
                              resolve_taxon_filters() — same signature as anthropic_client.py's function,
                              calls client.chat.completions.create() with forced tool choice, parses
                              taxonFilters out of the tool-call JSON, raises rather than silently
-                             returning [] on a missing/malformed tool call.
+                             returning [] on a missing/malformed tool call. No explicit `provider`
+                             routing preference is set, so OpenRouter's default "Balanced" mode picks
+                             the backend/tier per call — real measured cost came in ~2x the original
+                             prototyping estimate as a result; see ADR-015.
   ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
                              anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
                              wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
