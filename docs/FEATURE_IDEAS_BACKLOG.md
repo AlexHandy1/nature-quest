@@ -66,3 +66,7 @@ A dedicated pass to reduce accumulated inconsistency and incidental complexity a
 - **Review `services/` for over-fragmentation and missing abstractions**: several service modules have grown independently and likely share structure that isn't factored out — e.g. the repeated explicit Secret-Manager-fetch `resolve_api_key()` pattern (`anthropic_client.py`, `tts.py`), the consent-gated observability-client construction, and the LLM-call → parse → normalise-usage → callback shape. Identify what genuinely wants a shared helper vs. what's better left duplicated.
 - **Fix mixed naming conventions**: "client" is used inconsistently — some modules named `*_client.py` are thin SDK wrappers, others hold call-site logic, prompt/schema constants, and parsing. Settle on a convention for what a "client" module is (and what to call the others — `*_service.py`, plain domain name, etc.) and rename to match. Surfaced while writing `spec-architecture-openrouter-taxon-resolution-280826.md`, which adds `services/openrouter_taxon_client.py` alongside the existing `anthropic_client.py` and `tts.py` and inherits the same ambiguity.
 - **General incidental-complexity sweep**: dead code, one-caller indirection, inconsistent error-handling posture (some call sites have explicit `*_unavailable` outcome branches, others fall through to a generic 500), and doc/naming drift against `ARCHITECTURE.md`.
+
+## GCP setup
+
+Review changing Cloud Run 0 instances default starting point to limit cold start issue. 
