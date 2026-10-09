@@ -4,6 +4,7 @@ __pycache__/
 .DS_Store
 prototypes/logs/*
 !prototypes/logs/.gitkeep
+prototypes/scratch/
 prototypes/osm_sample*.json
 *.mp3
 *.wav
