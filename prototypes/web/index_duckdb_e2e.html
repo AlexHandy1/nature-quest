@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — prototypes/web/index_duckdb_e2e.html
+Backed by server_duckdb_e2e.py. Single page, no state machine: fixed Retiro
+Park map (no draw tool — see duckdb_e2e_prototype.py's docstring for why),
+a query box, and on submit a polygon outline + route polyline + numbered
+markers + a results list (scientific name, kingdom, count — no common
+names/images, batch job not built yet).
+
+Question this answers: does the DuckDB-backed local-index pipeline work
+end-to-end from a real NL query to a rendered map? Throwaway. Do not
+promote to production.
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — DuckDB end-to-end query</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  #app { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+  #map { position: absolute; inset: 0; }
+
+  #query-bar {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(255,255,255,.96); border-radius: 10px; padding: 10px 14px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25); display: flex; gap: 8px; align-items: center;
+    max-width: 90vw;
+  }
+  #query-bar input {
+    width: 320px; max-width: 50vw; font-size: 14px; padding: 7px 10px;
+    border: 1px solid #ccc; border-radius: 6px;
+  }
+  #query-bar button {
+    font-size: 13px; padding: 8px 16px; border: none; border-radius: 6px;
+    background: #3f6b4a; color: #fff; cursor: pointer;
+  }
+  #query-bar button:disabled { background: #9ab3a0; cursor: not-allowed; }
+  #status-line {
+    position: absolute; top: 60px; left: 50%; transform: translateX(-50%); z-index: 1000;
+    background: rgba(0,0,0,.75); color: #fff; padding: 6px 14px; border-radius: 6px;
+    font-size: 12.5px; max-width: 80vw; text-align: center; display: none;
+  }
+  #status-line.visible { display: block; }
+  #status-line.error { background: rgba(139,0,0,.85); }
+
+  #results-panel {
+    position: absolute; bottom: 14px; left: 14px; z-index: 1000;
+    background: rgba(255,255,255,.97); border-radius: 10px; padding: 12px 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,.25); max-width: 340px; max-height: 50vh;
+    overflow-y: auto; display: none;
+  }
+  #results-panel.visible { display: block; }
+  #results-panel h2 { font-size: 15px; margin: 0 0 8px; }
+  #results-panel ol { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; }
+  #results-panel .timing { font-size: 11px; color: #666; margin-top: 10px; border-top: 1px solid #eee; padding-top: 8px; }
+
+  .marker-medallion {
+    background: #3f6b4a; color: #fff; border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; font-weight: bold;
+    font-size: 13px; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="query-bar">
+    <input id="query-input" type="text" placeholder='e.g. "birds" or "plants and birds"'/>
+    <button id="query-btn">Search</button>
+  </div>
+  <div id="status-line"></div>
+  <div id="results-panel"></div>
+</div>
+
+<script>
+// Must match duckdb_e2e_prototype.py's RETIRO_POLYGON exactly.
+const RETIRO_POLYGON_POINTS = [
+  [40.4199, -3.68876], [40.40777, -3.689], [40.4076, -3.67912],
+  [40.41148, -3.676], [40.42163, -3.68002], [40.4199, -3.68876],
+];
+const RETIRO_CENTER = [40.4137, -3.6826];
+
+const map = L.map('map').setView(RETIRO_CENTER, 15);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+}).addTo(map);
+L.polygon(RETIRO_POLYGON_POINTS, { color: '#3f6b4a', weight: 2, fillOpacity: 0.08 }).addTo(map);
+
+let markers = [];
+let routeLine = null;
+
+function clearResults() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+}
+
+function showStatus(message, isError) {
+  const el = document.getElementById('status-line');
+  el.textContent = message;
+  el.classList.add('visible');
+  el.classList.toggle('error', !!isError);
+}
+
+function hideStatus() {
+  document.getElementById('status-line').classList.remove('visible');
+}
+
+function renderResults(data) {
+  clearResults();
+  const species = data.species || [];
+
+  if (species.length > 0) {
+    // Draw each distinct geohash cell's real footprint once (not per
+    // species) — several species often share the same highest-count cell,
+    // and this is the actual resolution the aggregated fact table supports,
+    // not a precise sighting point (see this session's UX discussion:
+    // markers were clustering indistinguishably at shared cell centroids).
+    const drawnCells = new Set();
+    species.forEach(s => {
+      if (drawnCells.has(s.cell)) return;
+      drawnCells.add(s.cell);
+      const bounds = [
+        [s.hotspot_lat - s.cell_lat_err, s.hotspot_lon - s.cell_lon_err],
+        [s.hotspot_lat + s.cell_lat_err, s.hotspot_lon + s.cell_lon_err],
+      ];
+      const rect = L.rectangle(bounds, { color: '#3f6b4a', weight: 1.5, fillOpacity: 0.12, dashArray: '4,3' }).addTo(map);
+      markers.push(rect);
+    });
+
+    // Species sharing a cell get spread to distinct points WITHIN that
+    // cell's drawn rectangle, not stacked on its centroid — makes
+    // multiple pins visible without implying more precision than the
+    // rectangle itself already shows. Computed once per species and reused
+    // for BOTH the marker and the route line below, so the dotted 1->5
+    // route still visibly passes through every numbered pin rather than
+    // the (now empty-looking) cell centroids.
+    const speciesByCell = {};
+    species.forEach(s => { (speciesByCell[s.cell] = speciesByCell[s.cell] || []).push(s); });
+
+    const pinPositions = species.map(s => {
+      const siblings = speciesByCell[s.cell];
+      const idx = siblings.indexOf(s);
+      const n = siblings.length;
+      const angle = (2 * Math.PI * idx) / n;
+      const spread = n > 1 ? 0.55 : 0; // fraction of the cell's half-width/half-height
+      return [
+        s.hotspot_lat + spread * s.cell_lat_err * Math.sin(angle),
+        s.hotspot_lon + spread * s.cell_lon_err * Math.cos(angle),
+      ];
+    });
+
+    routeLine = L.polyline(pinPositions, { color: '#5a4f3d', weight: 2.5, dashArray: '8,7' }).addTo(map);
+
+    species.forEach((s, i) => {
+      const icon = L.divIcon({
+        html: `<div class="marker-medallion">${i + 1}</div>`,
+        className: '', iconSize: [28, 28], iconAnchor: [14, 14],
+      });
+      const marker = L.marker(pinPositions[i], { icon })
+        .addTo(map)
+        .bindPopup(`<b>${s.species}</b><br/>${s.kingdom} — ${s.count} observed<br/><i>Hotspot zone — not an exact sighting point</i>`);
+      markers.push(marker);
+    });
+  }
+
+  const panel = document.getElementById('results-panel');
+  if (species.length === 0) {
+    panel.classList.remove('visible');
+    return;
+  }
+
+  const t = data.timings_ms || {};
+  const perFilter = (t.duckdb_per_filter || []).map(ms => `${ms.toFixed(0)}ms`).join(', ');
+  panel.innerHTML = `
+    <h2>Your walk</h2>
+    <ol>
+      ${species.map(s => `<li><i>${s.species}</i> — ${s.kingdom} (${s.count} observed)</li>`).join('')}
+    </ol>
+    <div class="timing">
+      LLM: ${(t.llm || 0).toFixed(0)}ms &middot;
+      DuckDB: ${(t.duckdb_total || 0).toFixed(0)}ms total [${perFilter}] &middot;
+      Pipeline: ${(t.pipeline_total || 0).toFixed(0)}ms
+    </div>
+  `;
+  panel.classList.add('visible');
+}
+
+async function submitQuery() {
+  const input = document.getElementById('query-input');
+  const btn = document.getElementById('query-btn');
+  const query = input.value.trim();
+  if (!query) return;
+
+  btn.disabled = true;
+  hideStatus();
+  showStatus('Querying DuckDB…');
+  document.getElementById('results-panel').classList.remove('visible');
+
+  try {
+    const resp = await fetch('/query', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status === 'error') {
+      showStatus(data.message || 'Something went wrong.', true);
+      clearResults();
+      return;
+    }
+    if (data.status === 'unresolved' || data.status === 'no_results') {
+      showStatus(data.message, true);
+      clearResults();
+      return;
+    }
+    hideStatus();
+    renderResults(data);
+  } catch (err) {
+    showStatus('Could not reach the server: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('query-btn').onclick = submitQuery;
+document.getElementById('query-input').onkeydown = (e) => { if (e.key === 'Enter') submitQuery(); };
+</script>
+</body>
+</html>
