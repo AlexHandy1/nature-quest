@@ -37,7 +37,6 @@ export type Species = {
   hotspot_lat: number
   hotspot_lon: number
   distance_m?: number
-  species_key?: number | null
   common_name?: string | null
   image_url?: string | null
   extract?: string | null

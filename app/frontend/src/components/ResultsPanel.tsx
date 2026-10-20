@@ -57,15 +57,6 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
                   ) : (
                     <div className="results-panel__no-image">No image available</div>
                   )}
-                  {s.species_key != null && (
-                    <a
-                      href={`https://www.gbif.org/species/${s.species_key}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View on GBIF ↗
-                    </a>
-                  )}
                 </div>
               )}
             </li>

@@ -11,7 +11,6 @@ const SPECIES = [
 const ENRICHED_SPECIES = [
   {
     species: 'Turdus merula',
-    species_key: 2495414,
     common_name: 'Common Blackbird',
     image_url: 'https://upload.wikimedia.org/blackbird.jpg',
     count: 42,
@@ -24,7 +23,6 @@ const ENRICHED_SPECIES = [
 const UNTRUSTED_IMAGE_SPECIES = [
   {
     species: 'Turdus merula',
-    species_key: 2495414,
     common_name: 'Common Blackbird',
     image_url: 'https://evil.example.com/blackbird.jpg',
     count: 42,
@@ -85,23 +83,19 @@ test('clicking a row calls onToggleSpecies with that species', async () => {
   expect(onToggle).toHaveBeenCalledWith('Turdus merula')
 })
 
-test('shows image and a GBIF link only for the expanded species', () => {
+test('shows image only for the expanded species', () => {
   render(
     <ResultsPanel species={ENRICHED_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
   )
 
   const image = screen.getByRole('img', { name: /common blackbird/i })
   expect(image).toHaveAttribute('src', 'https://upload.wikimedia.org/blackbird.jpg')
-
-  const link = screen.getByRole('link', { name: /gbif/i })
-  expect(link).toHaveAttribute('href', 'https://www.gbif.org/species/2495414')
 })
 
 test('does not show detail for a species that is not the expanded one', () => {
   render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   expect(screen.queryByRole('img')).not.toBeInTheDocument()
-  expect(screen.queryByRole('link', { name: /gbif/i })).not.toBeInTheDocument()
 })
 
 test('shows a no-image fallback when the expanded species has no image', () => {

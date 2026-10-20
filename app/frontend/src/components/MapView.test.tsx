@@ -193,7 +193,6 @@ test('clicking a marker expands its matching row in the results panel', async ()
         species: [
           {
             species: 'Turdus merula',
-            species_key: 2495414,
             common_name: 'Common Blackbird',
             image_url: 'https://example.com/blackbird.jpg',
             count: 42,
@@ -211,14 +210,11 @@ test('clicking a marker expands its matching row in the results panel', async ()
   await submit('birds')
 
   const [marker] = await screen.findAllByTestId('marker')
-  expect(screen.queryByRole('link', { name: /gbif/i })).not.toBeInTheDocument()
+  expect(screen.queryByText(/no image available/i)).not.toBeInTheDocument()
 
   await user.click(marker)
 
-  expect(screen.getByRole('link', { name: /gbif/i })).toHaveAttribute(
-    'href',
-    'https://www.gbif.org/species/2495414'
-  )
+  expect(screen.getByText(/no image available/i)).toBeInTheDocument()
 })
 
 test('hides the outcome message on a resolved outcome — the results speak for themselves', async () => {
