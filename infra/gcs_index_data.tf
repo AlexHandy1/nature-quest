@@ -47,3 +47,23 @@ resource "google_service_account_iam_member" "operator_can_impersonate_refresh" 
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = var.operator_member
 }
+
+# DuckDB's httpfs extension is cloud-provider-agnostic - it has no concept
+# of GCP's metadata-server/ADC auth, so it needs a credential handed to it
+# directly. A long-lived HMAC key (rather than a short-lived OAuth token
+# the app would have to refresh itself) for the read-only app identity,
+# stored in Secret Manager alongside the other backend secrets
+# (secret_manager.tf) rather than new app-level token-refresh logic.
+resource "google_storage_hmac_key" "app_reads_index_data" {
+  service_account_email = google_service_account.run.email
+}
+
+resource "google_secret_manager_secret_version" "gcs_hmac_key_id" {
+  secret      = google_secret_manager_secret.backend["gcs-index-data-hmac-key-id"].id
+  secret_data = google_storage_hmac_key.app_reads_index_data.access_id
+}
+
+resource "google_secret_manager_secret_version" "gcs_hmac_secret" {
+  secret      = google_secret_manager_secret.backend["gcs-index-data-hmac-secret"].id
+  secret_data = google_storage_hmac_key.app_reads_index_data.secret
+}
