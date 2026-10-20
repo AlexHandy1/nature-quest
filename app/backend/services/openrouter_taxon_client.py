@@ -1,6 +1,6 @@
 import json
 
-from services.anthropic_client import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
+from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 
 MODEL = "google/gemini-3.7-flash"
 REQUEST_TIMEOUT = 30.0

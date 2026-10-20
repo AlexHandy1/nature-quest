@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.anthropic_client import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
+from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 from services.openrouter_taxon_client import (
     MODEL,
     QUERY_SCHEMA_TOOL_OPENAI,

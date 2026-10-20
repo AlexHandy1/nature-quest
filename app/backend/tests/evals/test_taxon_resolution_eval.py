@@ -2,7 +2,7 @@ import pytest
 
 from routers.query import _resolve_openrouter_api_key
 from services.ai_observability import build_openrouter_client
-from services.anthropic_client import TAXON_GUIDANCE
+from services.prompts.taxon_resolution import TAXON_GUIDANCE
 from services.openrouter_taxon_client import (
     MODEL,
     QUERY_SCHEMA_TOOL_OPENAI,
