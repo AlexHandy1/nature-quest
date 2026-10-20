@@ -1,8 +1,8 @@
 import os
 
-import google.auth
 import httpx
-from google.cloud import secretmanager
+
+from services.secret_manager_client import fetch_secret
 
 SECRET_ID = "openrouter-api-key"
 
@@ -14,16 +14,8 @@ REQUEST_TIMEOUT = 60.0
 
 def resolve_api_key() -> str | None:
     if os.environ.get("K_SERVICE"):
-        return _fetch_api_key_from_secret_manager()
+        return fetch_secret(SECRET_ID)
     return None
-
-
-def _fetch_api_key_from_secret_manager() -> str:
-    _, project_id = google.auth.default()
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{SECRET_ID}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
 
 
 def synthesize_speech(text: str, api_key: str, voice: str = DEFAULT_VOICE) -> bytes:

@@ -1,8 +1,8 @@
 import os
 
-import google.auth
 from anthropic import Anthropic
-from google.cloud import secretmanager
+
+from services.secret_manager_client import fetch_secret
 
 MODEL = "claude-haiku-4-5-20251001"
 SECRET_ID = "anthropic-api-key"
@@ -83,16 +83,8 @@ def build_client() -> Anthropic:
 
 def resolve_api_key() -> str | None:
     if os.environ.get("K_SERVICE"):
-        return _fetch_api_key_from_secret_manager()
+        return fetch_secret(SECRET_ID)
     return None
-
-
-def _fetch_api_key_from_secret_manager() -> str:
-    _, project_id = google.auth.default()
-    client = secretmanager.SecretManagerServiceClient()
-    name = f"projects/{project_id}/secrets/{SECRET_ID}/versions/latest"
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("UTF-8")
 
 
 def resolve_taxon_filters(query: str, client, on_response=None, **extra_kwargs) -> list[dict]:
