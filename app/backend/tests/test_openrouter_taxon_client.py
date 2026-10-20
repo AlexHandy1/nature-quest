@@ -22,7 +22,7 @@ def _mock_client(arguments: str) -> MagicMock:
                     tool_calls=[
                         SimpleNamespace(
                             function=SimpleNamespace(
-                                name="produce_gbif_query", arguments=arguments
+                                name="produce_gbif_taxonomy_query", arguments=arguments
                             )
                         )
                     ]
@@ -74,7 +74,7 @@ def test_forces_structured_output_via_the_taxon_tool():
             {"role": "user", "content": "I want to see birds"},
         ],
         tools=[QUERY_SCHEMA_TOOL_OPENAI],
-        tool_choice={"type": "function", "function": {"name": "produce_gbif_query"}},
+        tool_choice={"type": "function", "function": {"name": "produce_gbif_taxonomy_query"}},
         timeout=REQUEST_TIMEOUT,
     )
 

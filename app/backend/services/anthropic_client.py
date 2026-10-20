@@ -19,7 +19,7 @@ def resolve_taxon_filters(query: str, client, on_response=None, **extra_kwargs) 
         max_tokens=1024,
         system=TAXON_GUIDANCE,
         tools=[QUERY_SCHEMA_TOOL],
-        tool_choice={"type": "tool", "name": "produce_gbif_query"},
+        tool_choice={"type": "tool", "name": QUERY_SCHEMA_TOOL["name"]},
         messages=[{"role": "user", "content": query}],
         **extra_kwargs,
     )

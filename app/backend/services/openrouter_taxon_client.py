@@ -23,7 +23,7 @@ def resolve_taxon_filters(query: str, client, on_response=None, **extra_kwargs) 
             {"role": "user", "content": query},
         ],
         tools=[QUERY_SCHEMA_TOOL_OPENAI],
-        tool_choice={"type": "function", "function": {"name": "produce_gbif_query"}},
+        tool_choice={"type": "function", "function": {"name": QUERY_SCHEMA_TOOL_OPENAI["function"]["name"]}},
         timeout=REQUEST_TIMEOUT,
         **extra_kwargs,
     )
