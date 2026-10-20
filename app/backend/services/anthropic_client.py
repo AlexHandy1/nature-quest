@@ -1,21 +1,10 @@
 import os
 
-from anthropic import Anthropic
-
 from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 from services.secret_manager_client import fetch_secret
 
 MODEL = "claude-haiku-4-5-20251001"
 SECRET_ID = "anthropic-api-key"
-
-
-def build_client() -> Anthropic:
-    """Picks the key source by environment: Secret Manager when deployed on
-    Cloud Run (REQ-005; K_SERVICE is set automatically there, never locally —
-    tech debt: relies on a Cloud-Run-specific platform var rather than an
-    explicit config flag we control), the local ANTHROPIC_API_KEY env var
-    (.env) otherwise."""
-    return Anthropic(api_key=resolve_api_key())
 
 
 def resolve_api_key() -> str | None:

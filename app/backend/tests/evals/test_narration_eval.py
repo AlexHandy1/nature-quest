@@ -2,7 +2,8 @@ import re
 
 import pytest
 
-from services.anthropic_client import build_client
+from services.ai_observability import build_client
+from services.anthropic_client import resolve_api_key
 from services.narration import generate_narrative
 from services.wikipedia_client import fetch_species_summary
 
@@ -233,7 +234,7 @@ def run_llm_judge(narrative, species_list, client):
 @pytest.fixture(scope="session", params=list(SAMPLE_WALKS.keys()))
 def grounded_narrative_and_judgement(request):
     walk_name = request.param
-    client = build_client()
+    client = build_client(consent=False, distinct_id="narration-eval", api_key=resolve_api_key())
     species_list = [
         {**sp, **fetch_species_summary(sp["common_name"], sp["species"])}
         for sp in SAMPLE_WALKS[walk_name]
@@ -296,7 +297,7 @@ def test_narrative_has_no_major_unsupported_habitat_claims(grounded_narrative_an
 
 
 # One entry is deliberately not a real organism — confirms the refusal
-# guardrail (REFUSAL_GUIDANCE in services/narration.py) actually fires
+# guardrail (REFUSAL_GUIDANCE in services/prompts/narration.py) actually fires
 # against real model behaviour, not just the mocked sentinel-detection unit
 # test in test_narration.py.
 NON_ORGANISM_WALK = [
@@ -315,7 +316,7 @@ NON_ORGANISM_WALK = [
 
 @pytest.mark.eval
 def test_narrative_generation_refuses_when_a_species_entry_is_not_a_real_organism():
-    client = build_client()
+    client = build_client(consent=False, distinct_id="narration-eval", api_key=resolve_api_key())
 
     narrative = generate_narrative(NON_ORGANISM_WALK, client)
 

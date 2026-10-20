@@ -2,7 +2,8 @@ import os
 
 import pytest
 
-from services.anthropic_client import build_client
+from services.ai_observability import build_client
+from services.anthropic_client import resolve_api_key as resolve_anthropic_api_key
 from services.narration import generate_narrative
 from services.tts import resolve_api_key, synthesize_speech
 from services.wikipedia_client import fetch_species_summary
@@ -31,7 +32,9 @@ def _resolve_openrouter_api_key() -> str | None:
 
 @pytest.fixture(scope="session")
 def narrated_audio():
-    client = build_client()
+    client = build_client(
+        consent=False, distinct_id="narrate-audio-eval", api_key=resolve_anthropic_api_key()
+    )
     species_list = [
         {**sp, **fetch_species_summary(sp["common_name"], sp["species"])}
         for sp in SAMPLE_WALK
