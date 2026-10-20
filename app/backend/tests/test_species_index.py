@@ -1,7 +1,10 @@
+import os
+from unittest.mock import patch
+
 import duckdb
 import pygeohash as pgh
 
-from services.species_index import candidate_cells, query_species_for_filter
+from services.species_index import candidate_cells, open_index_connection, query_species_for_filter
 
 
 def test_candidate_cells_includes_the_geohash_cell_at_the_polygon_center():
@@ -92,4 +95,25 @@ def test_returns_the_dimension_tables_common_name_falling_back_to_null(tmp_path)
     pica = next(s for s in species if s["species"] == "Pica pica")
     assert sparrow["common_name"] == "House Sparrow"
     assert pica["common_name"] is None
+
+
+def test_open_index_connection_returns_a_working_connection_locally():
+    with patch.dict(os.environ, {}, clear=True):
+        con = open_index_connection()
+
+    assert con.execute("SELECT 1").fetchone() == (1,)
+
+
+def test_open_index_connection_configures_gcs_auth_on_cloud_run():
+    with (
+        patch.dict(os.environ, {"K_SERVICE": "nature-quest-backend"}),
+        patch(
+            "services.species_index.fetch_secret",
+            side_effect=["fake-key-id", "fake-secret"],
+        ),
+    ):
+        con = open_index_connection()
+
+    secrets = con.execute("SELECT type FROM duckdb_secrets()").fetchall()
+    assert secrets == [("gcs",)]
 

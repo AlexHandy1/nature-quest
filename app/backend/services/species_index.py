@@ -1,8 +1,14 @@
+import os
+
 import duckdb
 import pygeohash as pgh
 
+from services.secret_manager_client import fetch_secret
+
 DEFAULT_GEOHASH_PRECISION = 6
 CANDIDATE_CELL_STEP_DEG = 0.001
+GCS_HMAC_KEY_ID_SECRET = "gcs-index-data-hmac-key-id"
+GCS_HMAC_SECRET_SECRET = "gcs-index-data-hmac-secret"
 
 RANK_TO_COLUMN = {
     "kingdom": "kingdom",
@@ -29,6 +35,22 @@ def candidate_cells(
             lon += step_deg
         lat += step_deg
     return sorted(cells)
+
+
+def open_index_connection() -> duckdb.DuckDBPyConnection:
+    """On Cloud Run (K_SERVICE set), configures httpfs with a long-lived
+    HMAC key for the read-only app identity (provisioned in
+    infra/gcs_index_data.tf) so read_parquet can address gs:// paths.
+    Locally, returns a plain connection - callers pass local file paths
+    instead."""
+    con = duckdb.connect()
+    if os.environ.get("K_SERVICE"):
+        con.execute("INSTALL httpfs")
+        con.execute("LOAD httpfs")
+        key_id = fetch_secret(GCS_HMAC_KEY_ID_SECRET)
+        secret = fetch_secret(GCS_HMAC_SECRET_SECRET)
+        con.execute(f"CREATE SECRET (TYPE GCS, KEY_ID '{key_id}', SECRET '{secret}')")
+    return con
 
 
 def query_species_for_filter(
