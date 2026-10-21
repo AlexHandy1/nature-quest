@@ -18,6 +18,9 @@ vi.mock('react-leaflet', () => ({
   Polygon: ({ positions }: { positions: [number, number][] }) => (
     <div data-testid="area-polygon" data-points={positions.length} />
   ),
+  Rectangle: ({ bounds }: { bounds: [[number, number], [number, number]] }) => (
+    <div data-testid="cell-footprint" data-bounds={JSON.stringify(bounds)} />
+  ),
   Marker: ({
     position,
     eventHandlers,
@@ -143,8 +146,26 @@ test('plots numbered markers and a route line on a resolved outcome', async () =
       jsonResponse(200, {
         status: 'resolved',
         species: [
-          { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68 },
-          { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69 },
+          {
+            species: 'Turdus merula',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-a',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+          {
+            species: 'Pica pica',
+            count: 30,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.42,
+            hotspot_lon: -3.69,
+            cell: 'cell-b',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
         ],
         message: 'Early preview message',
       })
@@ -159,6 +180,104 @@ test('plots numbered markers and a route line on a resolved outcome', async () =
   expect(screen.getByTestId('polyline')).toHaveAttribute('data-points', '2')
 })
 
+test('draws one cell footprint per distinct cell, not per species', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        status: 'resolved',
+        species: [
+          {
+            species: 'Turdus merula',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-shared',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+          {
+            species: 'Pica pica',
+            count: 30,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-shared',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+          {
+            species: 'Columba livia',
+            count: 20,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.42,
+            hotspot_lon: -3.69,
+            cell: 'cell-other',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+        ],
+        message: 'Early preview message',
+      })
+    )
+  )
+
+  render(<MapView />)
+  await submit('birds')
+
+  const markers = await screen.findAllByTestId('marker')
+  expect(markers).toHaveLength(3)
+  const footprints = await screen.findAllByTestId('cell-footprint')
+  expect(footprints).toHaveLength(2)
+})
+
+test('spreads species sharing a cell to distinct marker positions', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue(
+      jsonResponse(200, {
+        status: 'resolved',
+        species: [
+          {
+            species: 'Turdus merula',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-shared',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+          {
+            species: 'Pica pica',
+            count: 30,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-shared',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+        ],
+        message: 'Early preview message',
+      })
+    )
+  )
+
+  render(<MapView />)
+  await submit('birds')
+
+  const [first, second] = await screen.findAllByTestId('marker')
+  const firstPosition = [first.getAttribute('data-lat'), first.getAttribute('data-lon')]
+  const secondPosition = [second.getAttribute('data-lat'), second.getAttribute('data-lon')]
+  expect(firstPosition).not.toEqual(secondPosition)
+  // Neither sits exactly on the shared cell's raw hotspot point - both are
+  // offset within the cell's footprint instead.
+  expect(firstPosition).not.toEqual(['40.41', '-3.68'])
+  expect(secondPosition).not.toEqual(['40.41', '-3.68'])
+})
+
 test('shows the results panel with species names and counts on a resolved outcome', async () => {
   vi.stubGlobal(
     'fetch',
@@ -166,8 +285,26 @@ test('shows the results panel with species names and counts on a resolved outcom
       jsonResponse(200, {
         status: 'resolved',
         species: [
-          { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68 },
-          { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69 },
+          {
+            species: 'Turdus merula',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-a',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
+          {
+            species: 'Pica pica',
+            count: 30,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.42,
+            hotspot_lon: -3.69,
+            cell: 'cell-b',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
         ],
         message: 'Early preview message',
       })
@@ -193,13 +330,15 @@ test('clicking a marker expands its matching row in the results panel', async ()
         species: [
           {
             species: 'Turdus merula',
-            species_key: 2495414,
             common_name: 'Common Blackbird',
             image_url: 'https://example.com/blackbird.jpg',
             count: 42,
             kingdom: 'Animalia',
             hotspot_lat: 40.41,
             hotspot_lon: -3.68,
+            cell: 'cell-a',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
           },
         ],
         message: 'Early preview message',
@@ -211,14 +350,11 @@ test('clicking a marker expands its matching row in the results panel', async ()
   await submit('birds')
 
   const [marker] = await screen.findAllByTestId('marker')
-  expect(screen.queryByRole('link', { name: /gbif/i })).not.toBeInTheDocument()
+  expect(screen.queryByText(/no image available/i)).not.toBeInTheDocument()
 
   await user.click(marker)
 
-  expect(screen.getByRole('link', { name: /gbif/i })).toHaveAttribute(
-    'href',
-    'https://www.gbif.org/species/2495414'
-  )
+  expect(screen.getByText(/no image available/i)).toBeInTheDocument()
 })
 
 test('hides the outcome message on a resolved outcome — the results speak for themselves', async () => {
@@ -228,7 +364,16 @@ test('hides the outcome message on a resolved outcome — the results speak for 
       jsonResponse(200, {
         status: 'resolved',
         species: [
-          { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68 },
+          {
+            species: 'Turdus merula',
+            count: 42,
+            kingdom: 'Animalia',
+            hotspot_lat: 40.41,
+            hotspot_lon: -3.68,
+            cell: 'cell-a',
+            cell_lat_err: 0.005,
+            cell_lon_err: 0.005,
+          },
         ],
         message: 'Early preview message',
       })
@@ -253,27 +398,6 @@ test('shows no markers on an unresolved outcome', async () => {
 
   await screen.findByText("couldn't match that")
   expect(screen.queryByTestId('marker')).not.toBeInTheDocument()
-})
-
-test('renders the GBIF status link and no markers on a gbif_unavailable outcome', async () => {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue(
-      jsonResponse(502, {
-        status: 'gbif_unavailable',
-        message: 'Our species data comes from GBIF, and their service is responding slowly.',
-      })
-    )
-  )
-
-  render(<MapView />)
-  await submit('birds')
-
-  const link = await screen.findByRole('link', { name: /gbif.*status/i })
-  expect(link).toHaveAttribute('href', 'https://status.gbif.org')
-  expect(screen.getByText(/backup data sources/i)).toBeInTheDocument()
-  expect(screen.queryByTestId('marker')).not.toBeInTheDocument()
-  expect(trackEvent).toHaveBeenCalledWith('query_outcome', { status: 'gbif_unavailable' })
 })
 
 test('posts query, distinctId, and consent to /api/query', async () => {

@@ -1,7 +1,12 @@
 variable "backend_secret_names" {
-  description = "Names of runtime secrets Cloud Run reads from Secret Manager at startup (REQ-007). Add a name here when a real secret exists; its value is set out-of-band, never in Terraform config."
+  description = "Names of runtime secrets Cloud Run reads from Secret Manager at startup (REQ-007). Add a name here when a real secret exists. Most values are set out-of-band, never in Terraform config - the gcs-index-data-hmac-* pair is the one exception, whose versions are populated in gcs_index_data.tf from a Terraform-managed google_storage_hmac_key."
   type        = list(string)
-  default     = ["anthropic-api-key", "openrouter-api-key"]
+  default = [
+    "anthropic-api-key",
+    "openrouter-api-key",
+    "gcs-index-data-hmac-key-id",
+    "gcs-index-data-hmac-secret",
+  ]
 }
 
 resource "google_secret_manager_secret" "backend" {

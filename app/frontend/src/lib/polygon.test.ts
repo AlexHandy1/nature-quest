@@ -48,13 +48,29 @@ test('accepts a valid small polygon', () => {
   expect(validatePolygonPoints(points)).toEqual({ valid: true })
 })
 
-test('rejects a polygon exceeding the 25 km^2 area cap', () => {
-  // ~55km x 55km bounding box, far above the cap
+test('accepts a polygon well above the old GBIF-motivated cap', () => {
+  // ~30km x 23km bounding box (~660 km^2) - well above the old, removed
+  // 25 km^2 GBIF cap, comfortably under the new 2,000 km^2 one.
+  const points: [number, number][] = [
+    [40.0, -3.85],
+    [40.0, -3.5],
+    [40.2, -3.5],
+    [40.2, -3.85],
+  ]
+
+  expect(validatePolygonPoints(points)).toEqual({ valid: true })
+})
+
+test('rejects a polygon exceeding the 2,000 km^2 area cap', () => {
+  // ~111km x 85km bounding box (~9,400 km^2). This cap bounds
+  // candidate_cells' own Python-side grid-sampling cost/memory, not
+  // GBIF's rate limits - measured empirically to stay well under 1s even
+  // at extreme (near-Arctic) latitudes.
   const points: [number, number][] = [
     [40.0, -4.0],
-    [40.0, -3.5],
-    [40.5, -3.5],
-    [40.5, -4.0],
+    [40.0, -3.0],
+    [41.0, -3.0],
+    [41.0, -4.0],
   ]
 
   expect(validatePolygonPoints(points)).toEqual({

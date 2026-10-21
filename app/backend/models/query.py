@@ -2,11 +2,16 @@ import math
 
 from pydantic import BaseModel, Field, field_validator
 
-from services.gbif_client import parse_polygon_vertices
+from services.species_index import parse_polygon_vertices
 
 MAX_QUERY_LENGTH = 300
 MIN_POLYGON_VERTICES = 3
-MAX_POLYGON_AREA_KM2 = 25.0
+# Bounds services.species_index.candidate_cells' own Python-side grid-
+# sampling cost/memory (not GBIF's rate limits, unlike the old 25 km^2 cap
+# this replaces) - measured empirically to stay well under 1s even at
+# extreme (near-Arctic) latitudes, where the fixed-degree step samples more
+# points per unit area. See the security review on build_duckdb_migration.
+MAX_POLYGON_AREA_KM2 = 2000.0
 KM_PER_DEGREE_LAT = 111.0
 
 

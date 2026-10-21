@@ -54,7 +54,7 @@ def test_forces_structured_output_via_the_taxon_tool():
         max_tokens=1024,
         system=TAXON_GUIDANCE,
         tools=[QUERY_SCHEMA_TOOL],
-        tool_choice={"type": "tool", "name": "produce_gbif_query"},
+        tool_choice={"type": "tool", "name": "produce_gbif_taxonomy_query"},
         messages=[{"role": "user", "content": "I want to see birds"}],
     )
 
@@ -72,11 +72,11 @@ def test_resolve_api_key_fetches_from_secret_manager_on_cloud_run():
     with (
         patch.dict("os.environ", {"K_SERVICE": "nature-quest-backend"}),
         patch(
-            "services.anthropic_client.google.auth.default",
+            "services.secret_manager_client.google.auth.default",
             return_value=(MagicMock(), "my-project"),
         ),
         patch(
-            "services.anthropic_client.secretmanager.SecretManagerServiceClient",
+            "services.secret_manager_client.secretmanager.SecretManagerServiceClient",
             return_value=mock_client,
         ),
     ):
@@ -107,7 +107,7 @@ def test_passes_extra_kwargs_through_to_the_create_call():
         max_tokens=1024,
         system=TAXON_GUIDANCE,
         tools=[QUERY_SCHEMA_TOOL],
-        tool_choice={"type": "tool", "name": "produce_gbif_query"},
+        tool_choice={"type": "tool", "name": "produce_gbif_taxonomy_query"},
         messages=[{"role": "user", "content": "I want to see birds"}],
         posthog_distinct_id="anon-1",
     )

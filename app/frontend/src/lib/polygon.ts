@@ -25,7 +25,11 @@ export function pointsToWkt(points: [number, number][]): string {
 
 // Must match models/query.py's MIN_POLYGON_VERTICES / MAX_POLYGON_AREA_KM2.
 const MIN_POLYGON_VERTICES = 3
-const MAX_POLYGON_AREA_KM2 = 25.0
+// Bounds MapView's own candidate-cell grid-sampling cost/memory, not
+// GBIF's rate limits (unlike the old 25 km^2 cap this replaces) - measured
+// empirically to stay well under 1s even at extreme (near-Arctic)
+// latitudes.
+const MAX_POLYGON_AREA_KM2 = 2000.0
 const KM_PER_DEGREE_LAT = 111.0
 
 export type PolygonValidation =

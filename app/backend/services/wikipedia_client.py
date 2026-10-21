@@ -3,8 +3,11 @@ from urllib.parse import quote, urlparse
 import httpx
 
 WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary"
-TRUSTED_IMAGE_HOST = "upload.wikimedia.org"
-USER_AGENT = "nature-quest/0.1"
+# upload.wikimedia.org serves Commons originals; thumb.wikimedia.org is what
+# the REST summary API's thumbnail/originalimage fields actually point at
+# (confirmed live) - trusting only the former silently dropped every image.
+TRUSTED_IMAGE_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
+USER_AGENT = "nature-quest/0.1 (alex.handy.research@gmail.com)"
 REQUEST_TIMEOUT = 30.0
 
 
@@ -31,13 +34,13 @@ def _is_trusted_image_url(url: str | None) -> bool:
     if not url:
         return False
     parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname == TRUSTED_IMAGE_HOST
+    return parsed.scheme == "https" and parsed.hostname in TRUSTED_IMAGE_HOSTS
 
 
 def _fetch_summary(title: str) -> dict | None:
     try:
         response = httpx.get(
-            f"{WIKIPEDIA_SUMMARY_URL}/{quote(title)}",
+            f"{WIKIPEDIA_SUMMARY_URL}/{quote(title, safe='')}",
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": USER_AGENT},
         )

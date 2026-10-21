@@ -8,12 +8,14 @@ type ResultsPanelProps = {
   distinctId: string
 }
 
-const TRUSTED_IMAGE_HOST = 'upload.wikimedia.org'
+// upload.wikimedia.org serves Commons originals; thumb.wikimedia.org is what
+// the REST summary API's thumbnail/originalimage fields actually point at.
+const TRUSTED_IMAGE_HOSTS = new Set(['upload.wikimedia.org', 'thumb.wikimedia.org'])
 
 function isTrustedImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'https:' && parsed.hostname === TRUSTED_IMAGE_HOST
+    return parsed.protocol === 'https:' && TRUSTED_IMAGE_HOSTS.has(parsed.hostname)
   } catch {
     return false
   }
@@ -48,7 +50,10 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
               >
                 <span className="results-panel__name">{primaryName}</span>
                 {s.common_name && <span className="results-panel__sci-name">{s.species}</span>}
-                <span className="results-panel__count">{s.count} observed</span>
+                <span className="results-panel__counts">
+                  <span className="results-panel__count">{s.hotspot_count} observed in this hotspot</span>
+                  <span className="results-panel__count">{s.count} observed in your whole search area</span>
+                </span>
               </button>
               {isExpanded && (
                 <div className="results-panel__detail">
@@ -56,15 +61,6 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
                     <img src={s.image_url} alt={primaryName} />
                   ) : (
                     <div className="results-panel__no-image">No image available</div>
-                  )}
-                  {s.species_key != null && (
-                    <a
-                      href={`https://www.gbif.org/species/${s.species_key}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View on GBIF ↗
-                    </a>
                   )}
                 </div>
               )}

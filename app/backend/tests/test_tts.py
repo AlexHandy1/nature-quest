@@ -19,11 +19,11 @@ def test_resolve_api_key_fetches_from_secret_manager_on_cloud_run():
     with (
         patch.dict("os.environ", {"K_SERVICE": "nature-quest-backend"}),
         patch(
-            "services.tts.google.auth.default",
+            "services.secret_manager_client.google.auth.default",
             return_value=(MagicMock(), "my-project"),
         ),
         patch(
-            "services.tts.secretmanager.SecretManagerServiceClient",
+            "services.secret_manager_client.secretmanager.SecretManagerServiceClient",
             return_value=mock_client,
         ),
     ):

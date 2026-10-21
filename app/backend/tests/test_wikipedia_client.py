@@ -139,3 +139,46 @@ def test_fetch_species_summary_returns_none_fields_when_neither_lookup_succeeds(
 def test_fetch_species_summary_returns_none_fields_on_request_failure():
     with patch("services.wikipedia_client.httpx.get", side_effect=httpx.HTTPError("boom")):
         assert fetch_species_summary(None, "Turdus merula") == {"image_url": None, "extract": None}
+
+
+def test_fetch_species_summary_trusts_thumb_wikimedia_org():
+    # Wikimedia's REST summary API serves thumbnails from
+    # thumb.wikimedia.org, not upload.wikimedia.org (confirmed live) -
+    # rejecting it meant every real image was silently dropped.
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary(
+            thumbnail="https://thumb.wikimedia.org/wikipedia/commons/thumb/blackbird.jpg"
+        )
+
+        summary = fetch_species_summary(None, "Turdus merula")
+
+    assert summary["image_url"] == "https://thumb.wikimedia.org/wikipedia/commons/thumb/blackbird.jpg"
+
+
+def test_fetch_species_summary_escapes_a_slash_in_the_common_name():
+    # A common name containing "/" (e.g. "Feral Pigeon/Rock Dove") must not
+    # be split into extra URL path segments - confirmed live that an
+    # unescaped "/" gets a 400 Bad Request instead of a clean 404.
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary()
+
+        fetch_species_summary("Feral Pigeon/Rock Dove", "Columba livia")
+
+    called_url = mock_get.call_args[0][0]
+    assert "/" not in called_url.removeprefix("https://en.wikipedia.org/api/rest_v1/page/summary/")
+
+
+def test_sends_a_user_agent_with_contact_info_per_wikimedias_policy():
+    # Wikimedia's User-Agent policy (https://foundation.wikimedia.org/wiki/Policy:User-Agent_policy)
+    # requires contact info in the header - a bare "name/version" with none
+    # gets 403'd by their robot policy (confirmed in production).
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary()
+
+        fetch_species_summary(None, "Turdus merula")
+
+    sent_headers = mock_get.call_args.kwargs["headers"]
+    assert "alex.handy.research@gmail.com" in sent_headers["User-Agent"]

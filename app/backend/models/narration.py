@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from services.gbif_client import TOP_SPECIES_COUNT
+from services.species_index import TOP_SPECIES_COUNT
 
 MAX_NAME_LENGTH = 500
 MAX_EXTRACT_LENGTH = 2000

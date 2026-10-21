@@ -1,6 +1,4 @@
 import os
-import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
@@ -8,11 +6,6 @@ from fastapi.responses import JSONResponse
 
 from models.query import QueryRequest
 from services import ai_observability
-from services.gbif_client import (
-    GbifUnavailableError,
-    fetch_top_species,
-    polygon_centroid,
-)
 from services.logging_client import (
     log_llm_taxon_filters_resolved,
     log_query_outcome,
@@ -25,7 +18,14 @@ from services.openrouter_taxon_client import resolve_taxon_filters
 from services.query_budget import try_consume_daily_budget
 from services.rate_limiter import limiter
 from services.species_enrichment import enrich_species
-from services.taxon_resolution import resolve_taxon_key
+from services.species_index import (
+    TOP_SPECIES_COUNT,
+    _select_species_across_groups,
+    candidate_cells,
+    open_index_connection,
+    polygon_centroid,
+    query_species_for_filter,
+)
 from services.tts import resolve_api_key as resolve_openrouter_api_key
 from services.waypoints import order_waypoints
 
@@ -33,14 +33,12 @@ router = APIRouter()
 
 UNRESOLVED_MESSAGE = "Sorry, we couldn't match that to a category we support yet — try something like 'birds' or 'plants'."
 NO_RESULTS_MESSAGE = "We understood your request, but didn't find anything for it here right now."
-GBIF_UNAVAILABLE_MESSAGE = (
-    "Our species data comes from GBIF, and their service is responding slowly right now "
-    "— this isn't a problem with Nature Quest. Please try again shortly."
-)
 DAILY_LIMIT_MESSAGE = "We've reached today's limit for this feature — please try again tomorrow."
 RESOLVED_MESSAGE = "This is an early preview of a much bigger nature-walk experience to come."
 MAX_TAXON_FILTERS = 10
-MAX_CONCURRENT_GBIF_REQUESTS = 3
+
+FACT_PARQUET_PATH = os.environ["FACT_PARQUET_PATH"]
+DIMENSION_PARQUET_PATH = os.environ["DIMENSION_PARQUET_PATH"]
 
 
 def _resolve_openrouter_api_key() -> str | None:
@@ -62,23 +60,6 @@ def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple
         query, client, on_response=_capture_usage, **extra_kwargs
     )
     return taxon_filters, usage
-
-
-def _gbif_unavailable_response(
-    body: QueryRequest, usage: dict, failed_step: str, started_at: float
-) -> JSONResponse:
-    log_query_outcome(
-        body.query,
-        "gbif_unavailable",
-        distinct_id=body.distinctId,
-        failed_step=failed_step,
-        elapsed_ms=int((time.monotonic() - started_at) * 1000),
-        **usage,
-    )
-    return JSONResponse(
-        status_code=502,
-        content={"status": "gbif_unavailable", "message": GBIF_UNAVAILABLE_MESSAGE},
-    )
 
 
 @router.post("/api/query")
@@ -105,35 +86,30 @@ def submit_query(request: Request, body: QueryRequest):
         taxon_filters[:MAX_TAXON_FILTERS],
         taxon_filters[MAX_TAXON_FILTERS:],
     )
-    gbif_started = time.monotonic()
-    try:
-        resolved, unresolved_groups = _resolve_taxon_keys(in_budget)
-    except GbifUnavailableError:
-        return _gbif_unavailable_response(body, usage, "taxon_match", gbif_started)
-    unresolved_groups += [f["taxonValue"] for f in over_budget]
-    if not resolved:
-        log_query_outcome(body.query, "unresolved", distinct_id=body.distinctId, **usage)
-        return {"status": "unresolved", "message": UNRESOLVED_MESSAGE}
+    unresolved_groups = [f["taxonValue"] for f in over_budget]
 
-    try:
-        species = fetch_top_species(
-            [{"taxon_rank": r["taxonRank"], "taxon_key": r["taxon_key"]} for r in resolved],
-            polygon=body.polygon,
-        )
-    except GbifUnavailableError:
-        return _gbif_unavailable_response(body, usage, "occurrence_search", gbif_started)
+    cells = candidate_cells(body.polygon)
+    con = open_index_connection()
+    groups = [
+        query_species_for_filter(con, FACT_PARQUET_PATH, DIMENSION_PARQUET_PATH, f, cells)
+        for f in in_budget
+    ]
+    non_empty_groups = [g for g in groups if g]
+    species = (
+        _select_species_across_groups(non_empty_groups, TOP_SPECIES_COUNT)
+        if non_empty_groups
+        else []
+    )
 
     log_species_selected(body.query, body.distinctId, species)
 
-    resolved_filters = [
-        {"taxonRank": r["taxonRank"], "taxonValue": r["taxonValue"]} for r in resolved
-    ]
-
     if not species:
-        log_query_outcome(body.query, "no_results", distinct_id=body.distinctId, gbif_result_count=0, **usage)
+        log_query_outcome(
+            body.query, "no_results", distinct_id=body.distinctId, gbif_result_count=0, **usage
+        )
         return {
             "status": "no_results",
-            "taxonFilters": resolved_filters,
+            "taxonFilters": in_budget,
             "unresolvedGroups": unresolved_groups,
             "message": NO_RESULTS_MESSAGE,
         }
@@ -149,32 +125,8 @@ def submit_query(request: Request, body: QueryRequest):
     )
     return {
         "status": "resolved",
-        "taxonFilters": resolved_filters,
+        "taxonFilters": in_budget,
         "unresolvedGroups": unresolved_groups,
-        "species": [
-            {k: v for k, v in s.items() if k != "clustering"} for s in ordered_species
-        ],
+        "species": ordered_species,
         "message": RESOLVED_MESSAGE,
     }
-
-
-def _resolve_taxon_keys(taxon_filters: list[dict]) -> tuple[list[dict], list[str]]:
-    if not taxon_filters:
-        return [], []
-
-    max_workers = min(len(taxon_filters), MAX_CONCURRENT_GBIF_REQUESTS)
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        taxon_keys = list(
-            executor.map(
-                lambda f: resolve_taxon_key(f["taxonRank"], f["taxonValue"]), taxon_filters
-            )
-        )
-
-    resolved = []
-    unresolved_groups = []
-    for taxon_filter, taxon_key in zip(taxon_filters, taxon_keys):
-        if taxon_key is None:
-            unresolved_groups.append(taxon_filter["taxonValue"])
-        else:
-            resolved.append({**taxon_filter, "taxon_key": taxon_key})
-    return resolved, unresolved_groups
