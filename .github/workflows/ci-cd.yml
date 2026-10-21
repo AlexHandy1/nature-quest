@@ -54,6 +54,12 @@ jobs:
     defaults:
       run:
         working-directory: app/backend
+    env:
+      # Required at module import time (routers/query.py) but never actually
+      # read - router tests mock query_species_for_filter, and
+      # test_species_index.py uses its own tmp_path fixture files directly.
+      FACT_PARQUET_PATH: /tmp/unused-fact.parquet
+      DIMENSION_PARQUET_PATH: /tmp/unused-dimension.parquet
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
