@@ -567,12 +567,3 @@ button:hover {
   border-radius: 999px;
 }
 
-.area-size-warning {
-  margin: 0;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: var(--fs-sm);
-  color: var(--error);
-  background: var(--error-bg);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
-}
