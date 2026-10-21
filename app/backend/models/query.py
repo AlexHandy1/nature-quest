@@ -1,9 +1,27 @@
+import math
+
 from pydantic import BaseModel, Field, field_validator
 
 from services.species_index import parse_polygon_vertices
 
 MAX_QUERY_LENGTH = 300
 MIN_POLYGON_VERTICES = 3
+# Bounds services.species_index.candidate_cells' own Python-side grid-
+# sampling cost/memory (not GBIF's rate limits, unlike the old 25 km^2 cap
+# this replaces) - measured empirically to stay well under 1s even at
+# extreme (near-Arctic) latitudes, where the fixed-degree step samples more
+# points per unit area. See the security review on build_duckdb_migration.
+MAX_POLYGON_AREA_KM2 = 2000.0
+KM_PER_DEGREE_LAT = 111.0
+
+
+def _bounding_area_km2(vertices: list[tuple[float, float]]) -> float:
+    lons = [lon for lon, _ in vertices]
+    lats = [lat for _, lat in vertices]
+    mean_lat = sum(lats) / len(lats)
+    height_km = (max(lats) - min(lats)) * KM_PER_DEGREE_LAT
+    width_km = (max(lons) - min(lons)) * KM_PER_DEGREE_LAT * math.cos(math.radians(mean_lat))
+    return height_km * width_km
 
 
 class QueryRequest(BaseModel):
@@ -25,4 +43,6 @@ class QueryRequest(BaseModel):
         vertices = parse_polygon_vertices(value)
         if len(vertices) < MIN_POLYGON_VERTICES:
             raise ValueError(f"polygon must have at least {MIN_POLYGON_VERTICES} vertices")
+        if _bounding_area_km2(vertices) > MAX_POLYGON_AREA_KM2:
+            raise ValueError(f"polygon bounding area must not exceed {MAX_POLYGON_AREA_KM2} km^2")
         return value

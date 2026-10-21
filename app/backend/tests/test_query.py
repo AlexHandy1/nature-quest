@@ -85,3 +85,18 @@ def test_polygon_with_fewer_than_three_vertices_returns_422_before_any_llm_or_du
     mock_duckdb.assert_not_called()
 
 
+def test_polygon_exceeding_area_cap_returns_422_before_any_llm_or_duckdb_call():
+    oversized_polygon = "POLYGON((-4.0 40.0,-3.0 40.0,-3.0 41.0,-4.0 41.0,-4.0 40.0))"
+    with (
+        patch("routers.query._resolve_taxon_filters") as mock_llm,
+        patch("routers.query.query_species_for_filter") as mock_duckdb,
+    ):
+        response = client.post(
+            "/api/query",
+            json={"query": "birds", "distinctId": "anon-123", "polygon": oversized_polygon},
+        )
+
+    assert response.status_code == 422
+    mock_llm.assert_not_called()
+    mock_duckdb.assert_not_called()
+
