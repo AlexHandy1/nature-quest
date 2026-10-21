@@ -1,7 +1,11 @@
 # ADR-011: Multi-Taxon Query Resolution Strategy
 
 ## Status
-Accepted
+Accepted, partially superseded by ADR-017 — the quota/merge design
+(decision 5, `_select_species_across_groups`) is unchanged and still
+reused as-is. Decision 3 (live GBIF `species/match` for key resolution) and
+the "no GBIF call-volume guardrail" consequence no longer apply: taxon
+resolution is now a local string match with no GBIF call at all.
 
 ## Date
 2026-08-09
