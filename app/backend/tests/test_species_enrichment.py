@@ -5,62 +5,50 @@ from unittest.mock import patch
 from services.species_enrichment import enrich_species
 
 
-def _species(species="Turdus merula", species_key=2495414, **extra):
-    return {"species": species, "species_key": species_key, "count": 5, **extra}
+def _species(species="Turdus merula", common_name="Common Blackbird", **extra):
+    return {"species": species, "common_name": common_name, "count": 5, **extra}
 
 
-def test_adds_common_name_image_url_and_extract_to_each_species():
-    with (
-        patch("services.species_enrichment.fetch_common_name", return_value="Common Blackbird"),
-        patch(
-            "services.species_enrichment.fetch_species_summary",
-            return_value={"image_url": "https://example.com/blackbird.jpg", "extract": "A common garden bird."},
-        ),
+def test_adds_image_url_and_extract_to_each_species():
+    with patch(
+        "services.species_enrichment.fetch_species_summary",
+        return_value={"image_url": "https://example.com/blackbird.jpg", "extract": "A common garden bird."},
     ):
         enriched = enrich_species([_species()])
 
-    assert enriched[0]["common_name"] == "Common Blackbird"
     assert enriched[0]["image_url"] == "https://example.com/blackbird.jpg"
     assert enriched[0]["extract"] == "A common garden bird."
     # Original fields untouched.
     assert enriched[0]["species"] == "Turdus merula"
+    assert enriched[0]["common_name"] == "Common Blackbird"
     assert enriched[0]["count"] == 5
 
 
-def test_looks_up_the_summary_using_the_resolved_common_name():
-    with (
-        patch("services.species_enrichment.fetch_common_name", return_value="Common Blackbird"),
-        patch("services.species_enrichment.fetch_species_summary") as mock_summary,
-    ):
+def test_looks_up_the_summary_using_the_already_joined_common_name():
+    with patch("services.species_enrichment.fetch_species_summary") as mock_summary:
         mock_summary.return_value = {"image_url": None, "extract": None}
-        enrich_species([_species(species="Turdus merula")])
+        enrich_species([_species(species="Turdus merula", common_name="Common Blackbird")])
 
     mock_summary.assert_called_once_with("Common Blackbird", "Turdus merula")
 
 
-def test_looks_up_the_summary_with_no_common_name_when_none_was_found():
-    with (
-        patch("services.species_enrichment.fetch_common_name", return_value=None),
-        patch("services.species_enrichment.fetch_species_summary") as mock_summary,
-    ):
+def test_looks_up_the_summary_with_no_common_name_when_none_was_joined():
+    with patch("services.species_enrichment.fetch_species_summary") as mock_summary:
         mock_summary.return_value = {"image_url": None, "extract": None}
-        enrich_species([_species(species="Turdus merula")])
+        enrich_species([_species(species="Turdus merula", common_name=None)])
 
     mock_summary.assert_called_once_with(None, "Turdus merula")
 
 
 def test_preserves_input_order_even_when_the_first_species_finishes_last():
-    delay_by_key = {1: 0.15, 2: 0.0}
+    delay_by_species = {"First": 0.15, "Second": 0.0}
 
-    def fake_common_name(species_key):
-        time.sleep(delay_by_key[species_key])
-        return f"Name{species_key}"
+    def fake_summary(common_name, species):
+        time.sleep(delay_by_species[species])
+        return {"image_url": None, "extract": None}
 
-    with (
-        patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
-    ):
-        enriched = enrich_species([_species(species="First", species_key=1), _species(species="Second", species_key=2)])
+    with patch("services.species_enrichment.fetch_species_summary", side_effect=fake_summary):
+        enriched = enrich_species([_species(species="First"), _species(species="Second")])
 
     assert [s["species"] for s in enriched] == ["First", "Second"]
 
@@ -68,15 +56,13 @@ def test_preserves_input_order_even_when_the_first_species_finishes_last():
 def test_enriches_species_concurrently_not_sequentially():
     per_species_delay = 0.2
 
-    def fake_common_name(species_key):
+    def fake_summary(common_name, species):
         time.sleep(per_species_delay)
+        return {"image_url": None, "extract": None}
 
-    with (
-        patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
-    ):
+    with patch("services.species_enrichment.fetch_species_summary", side_effect=fake_summary):
         start = time.monotonic()
-        enrich_species([_species(species_key=i) for i in range(3)])
+        enrich_species([_species(species=f"Species{i}") for i in range(3)])
         elapsed = time.monotonic() - start
 
     assert elapsed < 0.4
@@ -87,7 +73,7 @@ def test_caps_concurrent_enrichment_at_three():
     concurrent_count = 0
     max_concurrent_seen = 0
 
-    def fake_common_name(species_key):
+    def fake_summary(common_name, species):
         nonlocal concurrent_count, max_concurrent_seen
         with lock:
             concurrent_count += 1
@@ -95,12 +81,10 @@ def test_caps_concurrent_enrichment_at_three():
         time.sleep(0.1)
         with lock:
             concurrent_count -= 1
+        return {"image_url": None, "extract": None}
 
-    with (
-        patch("services.species_enrichment.fetch_common_name", side_effect=fake_common_name),
-        patch("services.species_enrichment.fetch_species_summary", return_value={"image_url": None, "extract": None}),
-    ):
-        enrich_species([_species(species_key=i) for i in range(6)])
+    with patch("services.species_enrichment.fetch_species_summary", side_effect=fake_summary):
+        enrich_species([_species(species=f"Species{i}") for i in range(6)])
 
     assert max_concurrent_seen <= 3
 
