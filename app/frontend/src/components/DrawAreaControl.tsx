@@ -1,9 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
 import GeolocationPrompt from './GeolocationPrompt'
+import AreaSizeWarning from './AreaSizeWarning'
 import { pointsToWkt, validatePolygonPoints } from '../lib/polygon'
 
 type DrawAreaControlProps = {
@@ -28,6 +29,7 @@ function DrawAreaControl({
   onGeolocationOffered,
 }: DrawAreaControlProps) {
   const map = useMap()
+  const [vertices, setVertices] = useState<[number, number][]>([])
 
   useEffect(() => {
     const drawnItems = new L.FeatureGroup()
@@ -46,6 +48,7 @@ function DrawAreaControl({
     map.addControl(drawControl)
 
     function commitIfValid(points: [number, number][]) {
+      setVertices(points)
       if (validatePolygonPoints(points).valid) {
         onConfirm(pointsToWkt(points), centroid(points))
       }
@@ -62,13 +65,18 @@ function DrawAreaControl({
       if (!layers.length) return
       commitIfValid(layerToPoints(layers[0] as L.Polygon))
     }
+    function onDeleted() {
+      setVertices([])
+    }
 
     map.on(L.Draw.Event.CREATED, onCreated)
     map.on(L.Draw.Event.EDITED, onEdited)
+    map.on(L.Draw.Event.DELETED, onDeleted)
 
     return () => {
       map.off(L.Draw.Event.CREATED, onCreated)
       map.off(L.Draw.Event.EDITED, onEdited)
+      map.off(L.Draw.Event.DELETED, onDeleted)
       map.removeControl(drawControl)
       map.removeLayer(drawnItems)
     }
@@ -83,6 +91,7 @@ function DrawAreaControl({
       {!geolocationOffered && (
         <GeolocationPrompt onLocated={handleUseMyLocation} onOffered={onGeolocationOffered} />
       )}
+      <AreaSizeWarning vertices={vertices} />
     </div>
   )
 }
