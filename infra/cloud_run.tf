@@ -29,6 +29,18 @@ resource "google_cloud_run_v2_service" "app" {
         name  = "POSTHOG_PROJECT_TOKEN"
         value = var.posthog_project_token
       }
+
+      # Deliberately no local default (see services/species_index.py) -
+      # local dev points these at its own editable copies via .env, never
+      # at this bucket, so the only place these gs:// paths are set is here.
+      env {
+        name  = "FACT_PARQUET_PATH"
+        value = "gs://${google_storage_bucket.index_data.name}/fact_sorted_by_cell.parquet"
+      }
+      env {
+        name  = "DIMENSION_PARQUET_PATH"
+        value = "gs://${google_storage_bucket.index_data.name}/species_dimension_with_common_names.parquet"
+      }
     }
   }
 
