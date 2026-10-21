@@ -62,11 +62,11 @@ test('shows each species hotspot-cell count in the row and the area-wide total b
 
   const items = screen.getAllByRole('listitem')
   // 18 observed in Turdus merula's own hotspot cell, 42 across the whole area.
-  expect(items[0]).toHaveTextContent('18 observed here')
-  expect(items[0]).toHaveTextContent('42 observed in the area')
+  expect(items[0]).toHaveTextContent('18 observed in this hotspot')
+  expect(items[0]).toHaveTextContent('42 observed in your whole search area')
   // 12 observed in Pica pica's own hotspot cell, 30 across the whole area.
-  expect(items[1]).toHaveTextContent('12 observed here')
-  expect(items[1]).toHaveTextContent('30 observed in the area')
+  expect(items[1]).toHaveTextContent('12 observed in this hotspot')
+  expect(items[1]).toHaveTextContent('30 observed in your whole search area')
 })
 
 test('renders nothing when there are no species', () => {

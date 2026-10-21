@@ -383,10 +383,16 @@ button:hover {
   min-width: 0;
 }
 
+.results-panel__counts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-left: auto;
+}
+
 .results-panel__count {
   font-size: var(--fs-xs);
   color: var(--text);
-  margin-left: auto;
 }
 
 .results-panel__detail {

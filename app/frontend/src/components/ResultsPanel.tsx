@@ -48,9 +48,11 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
               >
                 <span className="results-panel__name">{primaryName}</span>
                 {s.common_name && <span className="results-panel__sci-name">{s.species}</span>}
-                <span className="results-panel__count">{s.hotspot_count} observed here</span>
+                <span className="results-panel__counts">
+                  <span className="results-panel__count">{s.hotspot_count} observed in this hotspot</span>
+                  <span className="results-panel__count">{s.count} observed in your whole search area</span>
+                </span>
               </button>
-              <span className="results-panel__area-total">{s.count} observed in the area</span>
               {isExpanded && (
                 <div className="results-panel__detail">
                   {s.image_url && isTrustedImageUrl(s.image_url) ? (
