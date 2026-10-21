@@ -75,24 +75,25 @@ def query_species_for_filter(
             GROUP BY species, common_name
         ),
         ranked_cells AS (
-            SELECT species, cell,
+            SELECT species, cell, occurrence_count,
                    ROW_NUMBER() OVER (PARTITION BY species ORDER BY occurrence_count DESC) AS rn
             FROM joined
         )
-        SELECT t.species, t.common_name, t.total, r.cell AS hotspot_cell
+        SELECT t.species, t.common_name, t.total, r.cell AS hotspot_cell, r.occurrence_count AS hotspot_count
         FROM totals t JOIN ranked_cells r ON t.species = r.species AND r.rn = 1
         ORDER BY t.total DESC
     """
     rows = con.execute(sql, [fact_path, dim_path, cells, taxon_filter["taxonValue"]]).fetchall()
 
     species_list = []
-    for species, common_name, total, hotspot_cell in rows:
+    for species, common_name, total, hotspot_cell, hotspot_count in rows:
         lat, lon, lat_err, lon_err = pgh.decode_exactly(hotspot_cell)
         species_list.append(
             {
                 "species": species,
                 "common_name": common_name,
                 "count": int(total),
+                "hotspot_count": int(hotspot_count),
                 "cell": hotspot_cell,
                 "hotspot_lat": lat,
                 "hotspot_lon": lon,

@@ -48,8 +48,9 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
               >
                 <span className="results-panel__name">{primaryName}</span>
                 {s.common_name && <span className="results-panel__sci-name">{s.species}</span>}
-                <span className="results-panel__count">{s.count} observed</span>
+                <span className="results-panel__count">{s.hotspot_count} observed here</span>
               </button>
+              <span className="results-panel__area-total">{s.count} observed in the area</span>
               {isExpanded && (
                 <div className="results-panel__detail">
                   {s.image_url && isTrustedImageUrl(s.image_url) ? (

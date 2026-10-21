@@ -6,8 +6,8 @@ import ResultsPanel from './ResultsPanel'
 const CELL_FIELDS = { cell: 'cell-a', cell_lat_err: 0.005, cell_lon_err: 0.005 }
 
 const SPECIES = [
-  { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68, ...CELL_FIELDS },
-  { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69, ...CELL_FIELDS },
+  { species: 'Turdus merula', count: 42, hotspot_count: 18, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68, ...CELL_FIELDS },
+  { species: 'Pica pica', count: 30, hotspot_count: 12, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69, ...CELL_FIELDS },
 ]
 
 const ENRICHED_SPECIES = [
@@ -16,6 +16,7 @@ const ENRICHED_SPECIES = [
     common_name: 'Common Blackbird',
     image_url: 'https://upload.wikimedia.org/blackbird.jpg',
     count: 42,
+    hotspot_count: 18,
     kingdom: 'Animalia',
     hotspot_lat: 40.41,
     hotspot_lon: -3.68,
@@ -29,6 +30,7 @@ const UNTRUSTED_IMAGE_SPECIES = [
     common_name: 'Common Blackbird',
     image_url: 'https://evil.example.com/blackbird.jpg',
     count: 42,
+    hotspot_count: 18,
     kingdom: 'Animalia',
     hotspot_lat: 40.41,
     hotspot_lon: -3.68,
@@ -46,15 +48,25 @@ beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:mock-audio-url')
 })
 
-test('lists each species scientific name and observation count in route order', () => {
+test('lists each species scientific name in route order', () => {
   render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 
   const items = screen.getAllByRole('listitem')
   expect(items).toHaveLength(2)
   expect(items[0]).toHaveTextContent('Turdus merula')
-  expect(items[0]).toHaveTextContent('42')
   expect(items[1]).toHaveTextContent('Pica pica')
-  expect(items[1]).toHaveTextContent('30')
+})
+
+test('shows each species hotspot-cell count in the row and the area-wide total below it', () => {
+  render(<ResultsPanel species={SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
+
+  const items = screen.getAllByRole('listitem')
+  // 18 observed in Turdus merula's own hotspot cell, 42 across the whole area.
+  expect(items[0]).toHaveTextContent('18 observed here')
+  expect(items[0]).toHaveTextContent('42 observed in the area')
+  // 12 observed in Pica pica's own hotspot cell, 30 across the whole area.
+  expect(items[1]).toHaveTextContent('12 observed here')
+  expect(items[1]).toHaveTextContent('30 observed in the area')
 })
 
 test('renders nothing when there are no species', () => {
@@ -132,7 +144,7 @@ test('narration resets to "Create narrative" when the species list changes to a 
   await screen.findByRole('button', { name: /^play$/i })
 
   const NEW_WALK_SPECIES = [
-    { species: 'Alopochen aegyptiaca', count: 12, kingdom: 'Animalia', hotspot_lat: 40.44, hotspot_lon: -3.68, ...CELL_FIELDS },
+    { species: 'Alopochen aegyptiaca', count: 12, hotspot_count: 5, kingdom: 'Animalia', hotspot_lat: 40.44, hotspot_lon: -3.68, ...CELL_FIELDS },
   ]
   rerender(
     <ResultsPanel species={NEW_WALK_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />

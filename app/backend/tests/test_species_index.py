@@ -91,6 +91,25 @@ def test_returns_each_species_hotspot_as_its_highest_occurrence_cell(tmp_path):
     assert pica["cell_lon_err"] == lon_err
 
 
+def test_returns_the_hotspot_cells_own_count_separately_from_the_area_total(tmp_path):
+    fact_path, dim_path = _write_fixture_index(tmp_path)
+    con = duckdb.connect()
+
+    species = query_species_for_filter(
+        con,
+        fact_path,
+        dim_path,
+        {"taxonRank": "class", "taxonValue": "Aves"},
+        cells=["u4pruy", "u4pruz"],
+    )
+
+    # Pica pica: 10 occurrences in its hotspot cell (u4pruy) vs 15 total
+    # across both candidate cells (10 + 5 in u4pruz).
+    pica = next(s for s in species if s["species"] == "Pica pica")
+    assert pica["hotspot_count"] == 10
+    assert pica["count"] == 15
+
+
 def test_returns_the_dimension_tables_common_name_falling_back_to_null(tmp_path):
     fact_path, dim_path = _write_fixture_index(tmp_path)
     con = duckdb.connect()

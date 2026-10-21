@@ -34,6 +34,7 @@ type AreaState = {
 export type Species = {
   species: string
   count: number
+  hotspot_count: number
   kingdom: string
   hotspot_lat: number
   hotspot_lon: number
