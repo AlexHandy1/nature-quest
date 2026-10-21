@@ -108,6 +108,18 @@ test('shows image only for the expanded species', () => {
   expect(image).toHaveAttribute('src', 'https://upload.wikimedia.org/blackbird.jpg')
 })
 
+test('shows an image hosted on thumb.wikimedia.org too', () => {
+  // Wikimedia's REST summary API serves thumbnails from
+  // thumb.wikimedia.org, not just upload.wikimedia.org.
+  const species = [{ ...ENRICHED_SPECIES[0], image_url: 'https://thumb.wikimedia.org/blackbird.jpg' }]
+  render(
+    <ResultsPanel species={species} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
+  )
+
+  const image = screen.getByRole('img', { name: /common blackbird/i })
+  expect(image).toHaveAttribute('src', 'https://thumb.wikimedia.org/blackbird.jpg')
+})
+
 test('does not show detail for a species that is not the expanded one', () => {
   render(<ResultsPanel species={ENRICHED_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />)
 

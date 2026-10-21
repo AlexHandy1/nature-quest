@@ -8,12 +8,14 @@ type ResultsPanelProps = {
   distinctId: string
 }
 
-const TRUSTED_IMAGE_HOST = 'upload.wikimedia.org'
+// upload.wikimedia.org serves Commons originals; thumb.wikimedia.org is what
+// the REST summary API's thumbnail/originalimage fields actually point at.
+const TRUSTED_IMAGE_HOSTS = new Set(['upload.wikimedia.org', 'thumb.wikimedia.org'])
 
 function isTrustedImageUrl(url: string): boolean {
   try {
     const parsed = new URL(url)
-    return parsed.protocol === 'https:' && parsed.hostname === TRUSTED_IMAGE_HOST
+    return parsed.protocol === 'https:' && TRUSTED_IMAGE_HOSTS.has(parsed.hostname)
   } catch {
     return false
   }
