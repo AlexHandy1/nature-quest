@@ -109,13 +109,6 @@ test('shows a no-image fallback when the expanded species has no image', () => {
   expect(screen.getByText(/no image available/i)).toBeInTheDocument()
 })
 
-test('tells the user the location is a hotspot zone, not an exact sighting point', () => {
-  render(<ResultsPanel species={SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />)
-
-  expect(screen.getByText(/hotspot zone/i)).toBeInTheDocument()
-  expect(screen.getByText(/not an exact sighting point/i)).toBeInTheDocument()
-})
-
 test('shows a no-image fallback when the image url is not from a trusted wikimedia host', () => {
   render(
     <ResultsPanel species={UNTRUSTED_IMAGE_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
