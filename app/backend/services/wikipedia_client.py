@@ -4,7 +4,7 @@ import httpx
 
 WIKIPEDIA_SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary"
 TRUSTED_IMAGE_HOST = "upload.wikimedia.org"
-USER_AGENT = "nature-quest/0.1"
+USER_AGENT = "nature-quest/0.1 (alex.handy.research@gmail.com)"
 REQUEST_TIMEOUT = 30.0
 
 

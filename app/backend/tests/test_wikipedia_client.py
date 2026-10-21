@@ -139,3 +139,17 @@ def test_fetch_species_summary_returns_none_fields_when_neither_lookup_succeeds(
 def test_fetch_species_summary_returns_none_fields_on_request_failure():
     with patch("services.wikipedia_client.httpx.get", side_effect=httpx.HTTPError("boom")):
         assert fetch_species_summary(None, "Turdus merula") == {"image_url": None, "extract": None}
+
+
+def test_sends_a_user_agent_with_contact_info_per_wikimedias_policy():
+    # Wikimedia's User-Agent policy (https://foundation.wikimedia.org/wiki/Policy:User-Agent_policy)
+    # requires contact info in the header - a bare "name/version" with none
+    # gets 403'd by their robot policy (confirmed in production).
+    with patch("services.wikipedia_client.httpx.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = _summary()
+
+        fetch_species_summary(None, "Turdus merula")
+
+    sent_headers = mock_get.call_args.kwargs["headers"]
+    assert "alex.handy.research@gmail.com" in sent_headers["User-Agent"]
