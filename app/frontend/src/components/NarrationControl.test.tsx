@@ -8,9 +8,11 @@ vi.mock('../lib/posthog', () => ({
   hasConsent: vi.fn(() => false),
 }))
 
+const CELL_FIELDS = { cell: 'cell-a', cell_lat_err: 0.005, cell_lon_err: 0.005 }
+
 const SPECIES = [
-  { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68, common_name: 'Blackbird', extract: 'A common thrush.' },
-  { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69, common_name: 'Magpie', extract: 'A clever corvid.' },
+  { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68, common_name: 'Blackbird', extract: 'A common thrush.', ...CELL_FIELDS },
+  { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69, common_name: 'Magpie', extract: 'A clever corvid.', ...CELL_FIELDS },
 ]
 
 function jsonResponse(status: number, body: unknown) {

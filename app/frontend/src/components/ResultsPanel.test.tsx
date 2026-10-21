@@ -3,9 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { test, expect, vi, beforeEach } from 'vitest'
 import ResultsPanel from './ResultsPanel'
 
+const CELL_FIELDS = { cell: 'cell-a', cell_lat_err: 0.005, cell_lon_err: 0.005 }
+
 const SPECIES = [
-  { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68 },
-  { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69 },
+  { species: 'Turdus merula', count: 42, kingdom: 'Animalia', hotspot_lat: 40.41, hotspot_lon: -3.68, ...CELL_FIELDS },
+  { species: 'Pica pica', count: 30, kingdom: 'Animalia', hotspot_lat: 40.42, hotspot_lon: -3.69, ...CELL_FIELDS },
 ]
 
 const ENRICHED_SPECIES = [
@@ -17,6 +19,7 @@ const ENRICHED_SPECIES = [
     kingdom: 'Animalia',
     hotspot_lat: 40.41,
     hotspot_lon: -3.68,
+    ...CELL_FIELDS,
   },
 ]
 
@@ -29,6 +32,7 @@ const UNTRUSTED_IMAGE_SPECIES = [
     kingdom: 'Animalia',
     hotspot_lat: 40.41,
     hotspot_lon: -3.68,
+    ...CELL_FIELDS,
   },
 ]
 
@@ -105,6 +109,13 @@ test('shows a no-image fallback when the expanded species has no image', () => {
   expect(screen.getByText(/no image available/i)).toBeInTheDocument()
 })
 
+test('tells the user the location is a hotspot zone, not an exact sighting point', () => {
+  render(<ResultsPanel species={SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />)
+
+  expect(screen.getByText(/hotspot zone/i)).toBeInTheDocument()
+  expect(screen.getByText(/not an exact sighting point/i)).toBeInTheDocument()
+})
+
 test('shows a no-image fallback when the image url is not from a trusted wikimedia host', () => {
   render(
     <ResultsPanel species={UNTRUSTED_IMAGE_SPECIES} expandedSpecies="Turdus merula" onToggleSpecies={noop} distinctId="anon-1" />
@@ -128,7 +139,7 @@ test('narration resets to "Create narrative" when the species list changes to a 
   await screen.findByRole('button', { name: /^play$/i })
 
   const NEW_WALK_SPECIES = [
-    { species: 'Alopochen aegyptiaca', count: 12, kingdom: 'Animalia', hotspot_lat: 40.44, hotspot_lon: -3.68 },
+    { species: 'Alopochen aegyptiaca', count: 12, kingdom: 'Animalia', hotspot_lat: 40.44, hotspot_lon: -3.68, ...CELL_FIELDS },
   ]
   rerender(
     <ResultsPanel species={NEW_WALK_SPECIES} expandedSpecies={null} onToggleSpecies={noop} distinctId="anon-1" />

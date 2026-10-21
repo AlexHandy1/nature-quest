@@ -57,6 +57,9 @@ function ResultsPanel({ species, expandedSpecies, onToggleSpecies, distinctId }:
                   ) : (
                     <div className="results-panel__no-image">No image available</div>
                   )}
+                  <p className="results-panel__hotspot-note">
+                    Hotspot zone — not an exact sighting point
+                  </p>
                 </div>
               )}
             </li>
