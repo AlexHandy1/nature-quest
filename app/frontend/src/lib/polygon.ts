@@ -23,33 +23,14 @@ export function pointsToWkt(points: [number, number][]): string {
   return `POLYGON((${coords}))`
 }
 
-// Must match models/query.py's MIN_POLYGON_VERTICES / MAX_POLYGON_AREA_KM2.
+// Must match models/query.py's MIN_POLYGON_VERTICES.
 const MIN_POLYGON_VERTICES = 3
-const MAX_POLYGON_AREA_KM2 = 25.0
-const KM_PER_DEGREE_LAT = 111.0
 
-export type PolygonValidation =
-  | { valid: true }
-  | { valid: false; reason: 'too_few_vertices' | 'area_too_large' }
-
-function boundingAreaKm2(points: [number, number][]): number {
-  const lats = points.map(([lat]) => lat)
-  const lons = points.map(([, lon]) => lon)
-  const meanLat = lats.reduce((sum, lat) => sum + lat, 0) / lats.length
-  const heightKm = (Math.max(...lats) - Math.min(...lats)) * KM_PER_DEGREE_LAT
-  const widthKm =
-    (Math.max(...lons) - Math.min(...lons)) *
-    KM_PER_DEGREE_LAT *
-    Math.cos((meanLat * Math.PI) / 180)
-  return heightKm * widthKm
-}
+export type PolygonValidation = { valid: true } | { valid: false; reason: 'too_few_vertices' }
 
 export function validatePolygonPoints(points: [number, number][]): PolygonValidation {
   if (points.length < MIN_POLYGON_VERTICES) {
     return { valid: false, reason: 'too_few_vertices' }
-  }
-  if (boundingAreaKm2(points) > MAX_POLYGON_AREA_KM2) {
-    return { valid: false, reason: 'area_too_large' }
   }
   return { valid: true }
 }

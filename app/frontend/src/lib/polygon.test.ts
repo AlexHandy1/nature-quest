@@ -48,8 +48,9 @@ test('accepts a valid small polygon', () => {
   expect(validatePolygonPoints(points)).toEqual({ valid: true })
 })
 
-test('rejects a polygon exceeding the 25 km^2 area cap', () => {
-  // ~55km x 55km bounding box, far above the cap
+test('accepts a large polygon with no area cap', () => {
+  // ~55km x 55km bounding box - used to exceed the (now-removed) 25 km^2
+  // GBIF-motivated cap.
   const points: [number, number][] = [
     [40.0, -4.0],
     [40.0, -3.5],
@@ -57,8 +58,5 @@ test('rejects a polygon exceeding the 25 km^2 area cap', () => {
     [40.5, -4.0],
   ]
 
-  expect(validatePolygonPoints(points)).toEqual({
-    valid: false,
-    reason: 'area_too_large',
-  })
+  expect(validatePolygonPoints(points)).toEqual({ valid: true })
 })
