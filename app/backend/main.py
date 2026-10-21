@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import ClassVar
 
 from dotenv import load_dotenv
+
+# Must run before the router imports below - routers.query reads required
+# env vars (FACT_PARQUET_PATH etc.) at module import time.
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
@@ -13,8 +18,6 @@ from routers.health import router as health_router
 from routers.narration import router as narration_router
 from routers.query import router as query_router
 from services.rate_limiter import handle_rate_limit_exceeded, limiter
-
-load_dotenv()
 
 
 class JsonLogFormatter(logging.Formatter):

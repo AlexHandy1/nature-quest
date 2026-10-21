@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 from services.openrouter_taxon_client import (
     MODEL,
     QUERY_SCHEMA_TOOL_OPENAI,
     REQUEST_TIMEOUT,
     resolve_taxon_filters,
 )
+from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 
 
 def _mock_client(arguments: str) -> MagicMock:

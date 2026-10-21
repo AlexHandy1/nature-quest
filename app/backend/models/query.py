@@ -2,7 +2,7 @@ import math
 
 from pydantic import BaseModel, Field, field_validator
 
-from services.gbif_client import parse_polygon_vertices
+from services.species_index import parse_polygon_vertices
 
 MAX_QUERY_LENGTH = 300
 MIN_POLYGON_VERTICES = 3

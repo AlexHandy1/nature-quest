@@ -9,6 +9,7 @@ DEFAULT_GEOHASH_PRECISION = 6
 CANDIDATE_CELL_STEP_DEG = 0.001
 GCS_HMAC_KEY_ID_SECRET = "gcs-index-data-hmac-key-id"
 GCS_HMAC_SECRET_SECRET = "gcs-index-data-hmac-secret"
+TOP_SPECIES_COUNT = 5
 
 RANK_TO_COLUMN = {
     "kingdom": "kingdom",
@@ -102,9 +103,59 @@ def query_species_for_filter(
     return species_list
 
 
+def parse_polygon_vertices(polygon_wkt: str) -> list[tuple[float, float]]:
+    """Parses a WKT POLYGON's vertices into (lon, lat) pairs, excluding the
+    closing repeat of the first vertex."""
+    ring = polygon_wkt.removeprefix("POLYGON((").removesuffix("))")
+    points = [_parse_vertex(pair) for pair in ring.split(",")]
+    if points[0] == points[-1]:
+        points = points[:-1]
+    return points
+
+
+def _parse_vertex(pair: str) -> tuple[float, float]:
+    lon, lat = pair.split()
+    return float(lon), float(lat)
+
+
+def polygon_centroid(polygon_wkt: str) -> tuple[float, float]:
+    """Simple average of a WKT POLYGON's vertices ("lon lat" pairs), excluding
+    the closing repeat of the first vertex. Returns (lat, lon)."""
+    points = parse_polygon_vertices(polygon_wkt)
+    lats = [lat for _, lat in points]
+    lons = [lon for lon, _ in points]
+    return sum(lats) / len(lats), sum(lons) / len(lons)
+
+
+def _select_species_across_groups(groups: list[list[dict]], target_total: int) -> list[dict]:
+    num_groups = len(groups)
+    base_quota, remainder = divmod(target_total, num_groups)
+    quotas = [base_quota + (1 if i < remainder else 0) for i in range(num_groups)]
+
+    taken = [group[:quota] for group, quota in zip(groups, quotas)]
+    shortfall = target_total - sum(len(t) for t in taken)
+
+    while shortfall > 0:
+        gave_any = False
+        for i, group in enumerate(groups):
+            if shortfall == 0:
+                break
+            available_extra = group[len(taken[i]) : len(taken[i]) + 1]
+            if available_extra:
+                taken[i].extend(available_extra)
+                shortfall -= 1
+                gave_any = True
+        if not gave_any:
+            break
+
+    selected = []
+    for group_taken in taken:
+        selected.extend(group_taken)
+    return sorted(selected, key=lambda s: s["count"], reverse=True)
+
+
 def _polygon_bbox(polygon_wkt: str) -> tuple[float, float, float, float]:
-    coords_str = polygon_wkt.split("((")[1].split("))")[0]
-    points = [tuple(map(float, pair.split())) for pair in coords_str.split(",")]
+    points = parse_polygon_vertices(polygon_wkt)
     lons = [p[0] for p in points]
     lats = [p[1] for p in points]
     return min(lats), max(lats), min(lons), max(lons)

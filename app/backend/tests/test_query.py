@@ -54,10 +54,10 @@ def test_query_over_max_length_returns_422():
     assert response.status_code == 422
 
 
-def test_missing_polygon_returns_422_before_any_llm_or_gbif_call():
+def test_missing_polygon_returns_422_before_any_llm_or_duckdb_call():
     with (
         patch("routers.query._resolve_taxon_filters") as mock_llm,
-        patch("routers.query.fetch_top_species") as mock_gbif,
+        patch("routers.query.query_species_for_filter") as mock_duckdb,
     ):
         response = client.post(
             "/api/query",
@@ -66,14 +66,14 @@ def test_missing_polygon_returns_422_before_any_llm_or_gbif_call():
 
     assert response.status_code == 422
     mock_llm.assert_not_called()
-    mock_gbif.assert_not_called()
+    mock_duckdb.assert_not_called()
 
 
-def test_polygon_with_fewer_than_three_vertices_returns_422_before_any_llm_or_gbif_call():
+def test_polygon_with_fewer_than_three_vertices_returns_422_before_any_llm_or_duckdb_call():
     two_vertex_polygon = "POLYGON((-3.68876 40.4199,-3.689 40.40777,-3.68876 40.4199))"
     with (
         patch("routers.query._resolve_taxon_filters") as mock_llm,
-        patch("routers.query.fetch_top_species") as mock_gbif,
+        patch("routers.query.query_species_for_filter") as mock_duckdb,
     ):
         response = client.post(
             "/api/query",
@@ -82,14 +82,14 @@ def test_polygon_with_fewer_than_three_vertices_returns_422_before_any_llm_or_gb
 
     assert response.status_code == 422
     mock_llm.assert_not_called()
-    mock_gbif.assert_not_called()
+    mock_duckdb.assert_not_called()
 
 
-def test_polygon_exceeding_area_cap_returns_422_before_any_llm_or_gbif_call():
+def test_polygon_exceeding_area_cap_returns_422_before_any_llm_or_duckdb_call():
     oversized_polygon = "POLYGON((-4.0 40.0,-3.5 40.0,-3.5 40.5,-4.0 40.5,-4.0 40.0))"
     with (
         patch("routers.query._resolve_taxon_filters") as mock_llm,
-        patch("routers.query.fetch_top_species") as mock_gbif,
+        patch("routers.query.query_species_for_filter") as mock_duckdb,
     ):
         response = client.post(
             "/api/query",
@@ -98,4 +98,4 @@ def test_polygon_exceeding_area_cap_returns_422_before_any_llm_or_gbif_call():
 
     assert response.status_code == 422
     mock_llm.assert_not_called()
-    mock_gbif.assert_not_called()
+    mock_duckdb.assert_not_called()
