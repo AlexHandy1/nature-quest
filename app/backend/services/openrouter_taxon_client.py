@@ -4,11 +4,12 @@ from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 
 MODEL = "google/gemini-3.7-flash"
 REQUEST_TIMEOUT = 30.0
+TOOL_NAME = QUERY_SCHEMA_TOOL["name"]
 
 QUERY_SCHEMA_TOOL_OPENAI = {
     "type": "function",
     "function": {
-        "name": QUERY_SCHEMA_TOOL["name"],
+        "name": TOOL_NAME,
         "description": QUERY_SCHEMA_TOOL["description"],
         "parameters": QUERY_SCHEMA_TOOL["input_schema"],
     },
@@ -23,7 +24,7 @@ def resolve_taxon_filters(query: str, client, on_response=None, **extra_kwargs) 
             {"role": "user", "content": query},
         ],
         tools=[QUERY_SCHEMA_TOOL_OPENAI],
-        tool_choice={"type": "function", "function": {"name": QUERY_SCHEMA_TOOL_OPENAI["function"]["name"]}},
+        tool_choice={"type": "function", "function": {"name": TOOL_NAME}},
         timeout=REQUEST_TIMEOUT,
         **extra_kwargs,
     )
