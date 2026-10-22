@@ -78,6 +78,20 @@ readers or fork-originated PRs, only to explicit collaborators, so this
 scales safely to future contributors without a manual out-of-band
 credential hand-off.
 
+**Secret rotation requires a redeploy to actually take effect.** The
+backend caches the OpenRouter API key and the GCS HMAC credentials in
+memory for the life of each container instance (see
+`docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md` —
+this was a deliberate latency fix: re-fetching these from Secret Manager
+on every request cost ~300–850ms/request). Rotating a secret's value in
+Secret Manager only affects *new* instances — any already-running
+instance keeps using its cached value until it's replaced. After
+rotating `openrouter-api-key`, `gcs-index-data-hmac-key-id`, or
+`gcs-index-data-hmac-secret` (e.g. responding to a leak), force a
+redeploy (`gcloud run deploy` with the current image, or re-running
+CI/CD) to cycle every running instance onto the new value — rotating the
+secret alone is not sufficient incident response on its own.
+
 **Cloud Monitoring gotchas** (see `ADR-010` for full detail): a
 Terraform-created email notification channel needs its verification
 manually triggered (`notificationChannels:sendVerificationCode` then
