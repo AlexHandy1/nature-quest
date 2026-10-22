@@ -1,6 +1,9 @@
 import json
 import logging
+import os
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import ClassVar
 
@@ -17,6 +20,7 @@ from slowapi.errors import RateLimitExceeded
 from routers.health import router as health_router
 from routers.narration import router as narration_router
 from routers.query import router as query_router
+from services import ai_observability, species_index, tts
 from services.rate_limiter import handle_rate_limit_exceeded, limiter
 
 
@@ -42,8 +46,34 @@ logging.basicConfig(level=logging.INFO, handlers=[handler])
 DEFAULT_STATIC_DIR = Path(__file__).parent / "static"
 
 
+def warm_caches() -> None:
+    """Builds the DuckDB/GCS connection and both OpenRouter clients once,
+    during startup, instead of on whichever user's request happens to be
+    first - see docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md.
+    No-op locally (K_SERVICE unset): local dev never touches GCS/Secret
+    Manager, and the lazy caches in species_index/tts/ai_observability
+    still build themselves correctly on first real use regardless."""
+    if not os.environ.get("K_SERVICE"):
+        return
+    species_index.get_shared_connection()
+    api_key = tts.resolve_api_key()
+    for consent in (False, True):
+        ai_observability.build_openrouter_client(
+            consent=consent, distinct_id="startup-warming", api_key=api_key
+        )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Runs before uvicorn binds the port, so Cloud Run's startup probe (and
+    # therefore any real traffic) waits for this - the one-time warming cost
+    # lands in the container's pre-traffic boot window, not a user's request.
+    warm_caches()
+    yield
+
+
 def create_app(static_dir: Path = DEFAULT_STATIC_DIR) -> FastAPI:
-    app = FastAPI()
+    app = FastAPI(lifespan=lifespan)
     app.state.limiter = limiter
     # Starlette's add_exception_handler is typed for Callable[[Request, Exception], ...];
     # a handler narrowed to a specific exception subclass (as it must be, to distinguish
