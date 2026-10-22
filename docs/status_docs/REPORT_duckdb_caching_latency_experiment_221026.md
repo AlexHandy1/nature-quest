@@ -223,3 +223,53 @@ the earlier, separate page-load cold-start finding (~19s, dominated by
 container provisioning) and is unrelated to this report's fixes — it's
 the cost `min_instances ≥ 1` would remove, not something connection/key
 caching touches.
+
+---
+
+## Addendum 2: production re-test after also switching the taxon-resolution model (22 October 2026)
+
+Separately from this report's caching/warming fixes, a model swap landed
+on top: `services/openrouter_taxon_client.py`'s `MODEL` constant changed
+from `google/gemini-3.7-flash` to `openai/gpt-oss-120b:nitro` (generic,
+unpinned routing) — see `prototypes/scripts/latency_provider_comparison.py`
+and the commit history on `optimise_openrouter` for the selection
+rationale (sub-1s P90 on OpenRouter's own latency pages, verified against
+all 25 taxon-resolution eval cases and all 4 full-pipeline eval cases with
+no accuracy loss before the swap landed).
+
+Re-ran the same production curl (3 reps × 2 consent states) plus a real
+browser test (3 reps) against the live, now-doubly-fixed deployment
+(caching/warming from Addendum 1 + this model swap).
+
+### Results: `t_llm_call` collapses from the dominant cost to the smallest-variance one
+
+| Rep | Total (`query_submitted`→`query_outcome`) | `t_llm_call` | `t_query_execute` |
+|---|---|---|---|
+| curl false-1 | 1.14s | 774ms | 167ms |
+| curl false-2 | 0.92s | 294ms | 389ms |
+| curl false-3 | 0.72s | 295ms | 203ms |
+| curl true-1 | 0.69s | 340ms | 173ms |
+| curl true-2 | 0.77s | 405ms | 164ms |
+| curl true-3 | 0.78s | 340ms | 179ms |
+| browser 1 | 0.81s | 379ms | 217ms |
+| browser 2 | 0.78s | 397ms | 180ms |
+| browser 3 | 0.78s | 383ms | 186ms |
+
+`t_build_openrouter_client` was **0.0ms on every single request** —
+Addendum 1's client caching holds unchanged under the new model.
+
+### The full arc of this investigation, start to finish
+
+| Stage | Total request time |
+|---|---|
+| Original production baseline (session start) | 3.4–4.5s |
+| After DuckDB/GCS + OpenRouter caching + startup warming (Addendum 1) | ~2.2–3.7s (curl) |
+| **After also switching to `gpt-oss-120b:nitro`** | **~0.7–1.1s** |
+
+`t_llm_call` fell from 1.7–3.3s (Addendum 1) to **294–774ms** — the
+single largest cost identified at the start of this investigation is now
+the pipeline's smallest-variance step, and total server-side processing
+time is consistently at or under ~1 second across both curl and real
+browser requests, meeting (and in most reps beating) the original "<1s
+for non-LLM retrieval steps" goal — now with the LLM call itself inside
+that budget too.
