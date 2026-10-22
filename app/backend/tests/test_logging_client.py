@@ -156,9 +156,8 @@ def test_log_timing_checkpoint_accepts_extra_tags(caplog):
 
 
 def test_timed_checkpoint_logs_the_measured_elapsed_time(caplog):
-    with caplog.at_level("INFO"):
-        with timed_checkpoint("t_connect"):
-            time.sleep(0.01)
+    with caplog.at_level("INFO"), timed_checkpoint("t_connect"):
+        time.sleep(0.01)
 
     record = caplog.records[0]
     assert record.message == "timing_checkpoint"
@@ -178,8 +177,7 @@ def test_timed_checkpoint_logs_even_when_the_block_raises(caplog):
 
 
 def test_timed_checkpoint_passes_through_extra_tags(caplog):
-    with caplog.at_level("INFO"):
-        with timed_checkpoint("t_build_openrouter_client", consent=True):
-            pass
+    with caplog.at_level("INFO"), timed_checkpoint("t_build_openrouter_client", consent=True):
+        pass
 
     assert caplog.records[0].consent is True
