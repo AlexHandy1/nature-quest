@@ -23,7 +23,7 @@ from services.species_index import (
     TOP_SPECIES_COUNT,
     _select_species_across_groups,
     candidate_cells,
-    open_index_connection,
+    get_connection_cursor,
     polygon_centroid,
     query_species_for_filter,
 )
@@ -91,7 +91,7 @@ def submit_query(request: Request, body: QueryRequest):
     unresolved_groups = [f["taxonValue"] for f in over_budget]
 
     cells = candidate_cells(body.polygon)
-    con = open_index_connection()
+    con = get_connection_cursor()
     groups = [
         query_species_for_filter(con, FACT_PARQUET_PATH, DIMENSION_PARQUET_PATH, f, cells)
         for f in in_budget

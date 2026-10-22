@@ -1,4 +1,5 @@
 import os
+import threading
 
 import duckdb
 import pygeohash as pgh
@@ -58,6 +59,40 @@ def open_index_connection() -> duckdb.DuckDBPyConnection:
         with timed_checkpoint("t_create_secret"):
             con.execute(f"CREATE SECRET (TYPE GCS, KEY_ID '{key_id}', SECRET '{secret}')")
     return con
+
+
+_shared_connection: duckdb.DuckDBPyConnection | None = None
+_shared_connection_lock = threading.Lock()
+
+
+def get_shared_connection() -> duckdb.DuckDBPyConnection:
+    """Builds the index connection (and, on Cloud Run, its httpfs/GCS-secret
+    setup) at most once per process, reusing it for the rest of the
+    container's lifetime - see docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md.
+    Callers must use get_connection_cursor() for the actual per-request work,
+    not this connection directly - a single DuckDBPyConnection's execute/fetch
+    state isn't safe under concurrent request threads (confirmed empirically,
+    see that report)."""
+    global _shared_connection
+    if _shared_connection is None:
+        with _shared_connection_lock:
+            if _shared_connection is None:
+                _shared_connection = open_index_connection()
+    return _shared_connection
+
+
+def get_connection_cursor() -> duckdb.DuckDBPyConnection:
+    """A cheap, per-request handle into the shared connection - shares its
+    already-loaded httpfs extension and already-created GCS secret, but keeps
+    its own independent execute/fetch state so concurrent requests can't see
+    each other's results."""
+    return get_shared_connection().cursor()
+
+
+def reset_shared_connection() -> None:
+    global _shared_connection
+    with _shared_connection_lock:
+        _shared_connection = None
 
 
 def query_species_for_filter(

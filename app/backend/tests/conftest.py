@@ -1,7 +1,7 @@
 import pytest
 
 from main import app
-from services import ai_observability, narration_budget, query_budget
+from services import ai_observability, narration_budget, query_budget, species_index
 
 
 @pytest.fixture(autouse=True)
@@ -26,3 +26,10 @@ def reset_narration_budget():
 def reset_ai_observability_client():
     ai_observability.reset()
     yield
+
+
+@pytest.fixture(autouse=True)
+def reset_shared_index_connection():
+    species_index.reset_shared_connection()
+    yield
+    species_index.reset_shared_connection()
