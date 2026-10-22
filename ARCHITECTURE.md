@@ -24,7 +24,13 @@ prototypes/     Throwaway validation code — untouched, never deployed, not par
 
 ```
 main.py                    create_app(): FastAPI instance, JSON stdout logging config,
-                             slowapi rate-limiter wiring, .env loading (load_dotenv), static-file mount
+                             slowapi rate-limiter wiring, .env loading (load_dotenv), static-file
+                             mount. warm_caches() + a lifespan hook (K_SERVICE only, no-op locally)
+                             eagerly build species_index's shared DuckDB/GCS connection and both
+                             consent-state OpenRouter clients before uvicorn binds the port, so
+                             Cloud Run's startup probe (and therefore real traffic) waits for this
+                             instead of a user's first request paying it — see
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md
 routers/health.py          GET /health
 routers/query.py           POST /api/query — rate-limited; validate → daily budget → LLM resolve
                              to a list of taxon filters (+ token usage capture) → candidate_cells
@@ -79,8 +85,12 @@ services/
                              narration prompt content; services/narration.py keeps the
                              LLM-calling logic
   secret_manager_client.py  fetch_secret(secret_id) — the one place Secret Manager access lives;
-                             used by anthropic_client.py, tts.py, and species_index.py (the GCS
-                             HMAC key, see ADR-018) rather than each duplicating the fetch logic
+                             used by anthropic_client.py (fetched fresh per call), tts.py, and
+                             species_index.py (the GCS HMAC key, see ADR-018) rather than each
+                             duplicating the fetch logic. tts.py and species_index.py each cache
+                             their fetched value once per process (see their own entries below) -
+                             anthropic_client.py's key is deliberately not cached here, since it's
+                             only the manual rollback path for taxon resolution, not the live one
   anthropic_client.py      resolve_taxon_filters() (accepts an optional on_response callback +
                              **extra_kwargs passthrough) — returns a list of {taxonRank,
                              taxonValue}, empty if no signal. Retained, unused by routers/query.py,
@@ -118,7 +128,12 @@ services/
                              https://openrouter.ai/api/v1): a plain openai.OpenAI when consent=False, or
                              posthog.ai.openai.OpenAI when consent=True — used by routers/query.py's
                              taxon resolution. Both branches share one lazily-built singleton PostHog
-                             client from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. Note:
+                             client from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. The built
+                             OpenRouter client itself is also now cached, one per consent state
+                             (module-level, built at most once per process, since distinct_id is
+                             passed per-call to chat.completions.create() rather than baked into
+                             construction) - not rebuilt on every call the way it used to be; both
+                             are warmed eagerly by main.py's startup hook on Cloud Run. Note:
                              posthog.ai.openai.OpenAI always stamps $ai_provider: "openai" on captured
                              events regardless of base_url — filter/group PostHog insights for this call
                              site by $ai_model or $ai_base_url instead. See ADR-009.
@@ -127,7 +142,23 @@ services/
                              geohash-6 cells (bbox only, not exact polygon containment — a known,
                              carried-forward limitation), once per request. open_index_connection()
                              — plain local connection in dev; on Cloud Run, configures httpfs with
-                             the HMAC credential from Secret Manager (ADR-018). query_species_for_filter(
+                             the HMAC credential from Secret Manager (ADR-018) - this full build
+                             (connect + httpfs + two secret fetches + CREATE SECRET) now happens at
+                             most once per process. get_shared_connection() builds it lazily (with
+                             a lock) the first time it's needed and caches the result;
+                             get_connection_cursor() is what request handlers actually call -
+                             returns a cheap per-request cursor() on that shared connection rather
+                             than the connection itself, since a single DuckDBPyConnection silently
+                             returns the wrong result under concurrent requests (confirmed
+                             empirically, not just asserted - see the report below); the cursor
+                             shares the already-loaded httpfs extension and already-created secret
+                             but keeps its own independent execute/fetch state. reset_shared_connection()
+                             exists for test isolation. routers/query.py calls get_connection_cursor(),
+                             never open_index_connection() or get_shared_connection() directly. See
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md for
+                             the measured impact (t_query_execute fell ~4-5x once connection reuse
+                             landed) and the concurrency-safety reasoning/evidence.
+                             query_species_for_filter(
                              con, fact_path, dim_path, taxon_filter, cells) — the atomic unit: one
                              DuckDB query per taxon filter, filtering by the taxon-rank column,
                              joining common_name from the dimension table, picking each species'
@@ -167,8 +198,13 @@ services/
                              (returns None on refusal — see ADR-014), sanitizes TTS-unfriendly dash
                              pauses deterministically after generation
   tts.py                    synthesize_speech(text, api_key, voice) — OpenRouter/Kokoro-82M
-                             text-to-speech, mp3 response_format. resolve_api_key() mirrors
-                             anthropic_client.py's Secret Manager pattern for OPENROUTER_API_KEY
+                             text-to-speech, mp3 response_format. resolve_api_key() fetches
+                             OPENROUTER_API_KEY from Secret Manager on Cloud Run (K_SERVICE check,
+                             same shape as anthropic_client.py's resolve_api_key()) but, unlike
+                             that one, caches the fetched value per process after the first call -
+                             this is also the function routers/query.py's own key resolution calls
+                             through (services/tts.py's SECRET_ID is shared by both the TTS and
+                             taxon-resolution call sites), so both benefit from the same cache
   waypoints.py              order_waypoints(species, center_lat, center_lon) — pure nearest-neighbour
                              route ordering from a center point (Slice 3); no I/O
   rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
@@ -295,6 +331,12 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     │    → services/logging_client.py (structured log line)
                                                     └─ everything else → static/ (built frontend)
 ```
+
+The DuckDB/GCS connection and both OpenRouter clients shown above are no
+longer built fresh on this path — they're built once per process (eagerly,
+at startup, on Cloud Run) and reused across every request; see
+`services/species_index.py`/`services/ai_observability.py`/`services/tts.py`
+above and `docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md`.
 
 ## Deploy flow
 
