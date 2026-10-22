@@ -66,6 +66,30 @@ def test_resolve_api_key_logs_no_checkpoint_locally(caplog):
     assert checkpoints == []
 
 
+def test_resolve_api_key_fetches_from_secret_manager_only_once_across_calls():
+    mock_client = MagicMock()
+    mock_client.access_secret_version.return_value = SimpleNamespace(
+        payload=SimpleNamespace(data=b"sk-or-test-key")
+    )
+    with (
+        patch.dict("os.environ", {"K_SERVICE": "nature-quest-backend"}),
+        patch(
+            "services.secret_manager_client.google.auth.default",
+            return_value=(MagicMock(), "my-project"),
+        ),
+        patch(
+            "services.secret_manager_client.secretmanager.SecretManagerServiceClient",
+            return_value=mock_client,
+        ),
+    ):
+        first = resolve_api_key()
+        second = resolve_api_key()
+        third = resolve_api_key()
+
+    assert first == second == third == "sk-or-test-key"
+    mock_client.access_secret_version.assert_called_once()
+
+
 def test_synthesize_speech_returns_audio_bytes_on_success():
     with patch("services.tts.httpx.post") as mock_post:
         mock_post.return_value = SimpleNamespace(status_code=200, content=b"fake-mp3-bytes")

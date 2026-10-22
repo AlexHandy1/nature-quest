@@ -1,4 +1,5 @@
 import os
+import threading
 from unittest.mock import patch
 
 import duckdb
@@ -8,6 +9,8 @@ import pytest
 from services.species_index import (
     _select_species_across_groups,
     candidate_cells,
+    get_connection_cursor,
+    get_shared_connection,
     open_index_connection,
     polygon_centroid,
     query_species_for_filter,
@@ -265,4 +268,63 @@ def test_select_species_across_groups_sorts_the_final_merged_selection_by_count_
         "Podarcis virescens",
     ]
     assert [s["count"] for s in selected] == [121, 16, 1]
+
+
+def test_get_shared_connection_returns_the_same_object_across_calls():
+    with patch.dict(os.environ, {}, clear=True):
+        first = get_shared_connection()
+        second = get_shared_connection()
+
+    assert first is second
+
+
+def test_get_shared_connection_builds_the_connection_only_once_on_cloud_run():
+    with (
+        patch.dict(os.environ, {"K_SERVICE": "nature-quest-backend"}),
+        patch(
+            "services.species_index.fetch_secret",
+            side_effect=["fake-key-id", "fake-secret"],
+        ) as mock_fetch_secret,
+    ):
+        get_shared_connection()
+        get_shared_connection()
+        get_shared_connection()
+
+    # Two secrets fetched once each across three calls, not three times each.
+    assert mock_fetch_secret.call_count == 2
+
+
+def test_get_connection_cursor_returns_a_working_but_distinct_cursor_each_call():
+    with patch.dict(os.environ, {}, clear=True):
+        cursor_one = get_connection_cursor()
+        cursor_two = get_connection_cursor()
+
+    assert cursor_one is not cursor_two
+    assert cursor_one.execute("SELECT 1").fetchone() == (1,)
+    assert cursor_two.execute("SELECT 2").fetchone() == (2,)
+
+
+def test_concurrent_cursors_do_not_corrupt_each_others_results():
+    with patch.dict(os.environ, {}, clear=True):
+        get_shared_connection().execute(
+            "CREATE TABLE t AS SELECT range AS i FROM range(100000)"
+        )
+
+        mismatches = []
+
+        def worker(n):
+            cursor = get_connection_cursor()
+            for _ in range(20):
+                cursor.execute(f"SELECT {n} AS tag, COUNT(*) FROM t WHERE i > {n * 1000}")
+                row = cursor.fetchone()
+                if row is None or row[0] != n:
+                    mismatches.append((n, row))
+
+        threads = [threading.Thread(target=worker, args=(i,)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert mismatches == []
 

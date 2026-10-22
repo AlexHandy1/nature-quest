@@ -3,9 +3,6 @@
 ## Status
 Draft — investigation plus a recommendation. The new latency instrumentation is a permanent addition, not throwaway diagnostic code.
 
-## Branch
-`explore_duckdb_caching`, based off `main` (not off `monthly_gbif_data_update`, which holds unrelated in-progress work to return to separately).
-
 ## Background
 
 Live production testing (5 sequential `curl` requests against `/api/query`) measured 3.4–4.5s time-to-first-byte — DNS/TLS/connect overhead ruled out (~0.2–0.3s, confirmed via `curl`'s own timing breakdown). Pulling structured Cloud Logging timestamps (`query_submitted` → `llm_taxon_filters_resolved` → `species_selected` → `species_enriched`) split this into three coarse stages, consistent across all 5 runs with no visible warm-up trend:
