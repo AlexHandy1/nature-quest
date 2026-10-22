@@ -91,3 +91,18 @@ def test_caps_concurrent_enrichment_at_three():
 
 def test_returns_empty_list_when_given_no_species():
     assert enrich_species([]) == []
+
+
+def test_logs_a_wikipedia_fetch_checkpoint_per_species(caplog):
+    with (
+        caplog.at_level("INFO"),
+        patch(
+            "services.species_enrichment.fetch_species_summary",
+            return_value={"image_url": None, "extract": None},
+        ),
+    ):
+        enrich_species([_species(species="Turdus merula"), _species(species="Pica pica")])
+
+    checkpoints = [r for r in caplog.records if r.message == "timing_checkpoint"]
+    assert {r.checkpoint for r in checkpoints} == {"t_wikipedia_fetch"}
+    assert sorted(r.species for r in checkpoints) == ["Pica pica", "Turdus merula"]

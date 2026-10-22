@@ -2,6 +2,7 @@ import os
 
 import httpx
 
+from services.logging_client import timed_checkpoint
 from services.secret_manager_client import fetch_secret
 
 SECRET_ID = "openrouter-api-key"
@@ -14,7 +15,8 @@ REQUEST_TIMEOUT = 60.0
 
 def resolve_api_key() -> str | None:
     if os.environ.get("K_SERVICE"):
-        return fetch_secret(SECRET_ID)
+        with timed_checkpoint("t_fetch_secret_openrouter"):
+            return fetch_secret(SECRET_ID)
     return None
 
 

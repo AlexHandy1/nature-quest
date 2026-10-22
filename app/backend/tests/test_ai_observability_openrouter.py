@@ -36,6 +36,15 @@ def test_consent_true_without_injected_client_builds_one_from_env_vars():
     )
 
 
+def test_build_openrouter_client_logs_a_timing_checkpoint_tagged_with_consent(caplog):
+    with caplog.at_level("INFO"):
+        build_openrouter_client(consent=False, distinct_id="anon-1", api_key="test-key")
+
+    record = next(r for r in caplog.records if r.message == "timing_checkpoint")
+    assert record.checkpoint == "t_build_openrouter_client"
+    assert record.consent is False
+
+
 def test_default_posthog_client_is_shared_with_the_anthropic_branch():
     from services.ai_observability import build_client
 

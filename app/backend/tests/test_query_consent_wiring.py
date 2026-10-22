@@ -65,6 +65,19 @@ def test_returns_the_taxon_filter_and_token_usage():
     assert usage == {"input_tokens": 120, "output_tokens": 15}
 
 
+def test_resolve_taxon_filters_logs_an_llm_call_checkpoint(caplog):
+    client = _mock_client()
+    with (
+        caplog.at_level("INFO"),
+        patch("routers.query.ai_observability.build_openrouter_client", return_value=client),
+        patch("routers.query._resolve_openrouter_api_key", return_value=None),
+    ):
+        _resolve_taxon_filters("birds", distinct_id="anon-1", consent=False)
+
+    checkpoints = [r.checkpoint for r in caplog.records if r.message == "timing_checkpoint"]
+    assert "t_llm_call" in checkpoints
+
+
 def test_resolve_openrouter_api_key_falls_back_to_the_env_var_locally():
     from routers.query import _resolve_openrouter_api_key
 

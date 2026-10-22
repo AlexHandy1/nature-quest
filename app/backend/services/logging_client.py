@@ -1,4 +1,6 @@
 import logging
+import time
+from contextlib import contextmanager
 
 query_logger = logging.getLogger("query")
 
@@ -63,6 +65,29 @@ def log_species_enriched(query: str, distinct_id: str, species: list[dict]) -> N
         "species_enriched",
         extra={"query": query, "distinct_id": distinct_id, "species": species},
     )
+
+
+def log_timing_checkpoint(checkpoint: str, elapsed_ms: float, **extra) -> None:
+    """Permanent per-request latency instrumentation (not a throwaway
+    diagnostic) - see docs/specs/spec-duckdb-caching-latency-experiment-211026.md.
+    One line per named checkpoint (t_connect, t_query_execute, ...), tagged
+    with whatever context the call site has (e.g. consent, taxon_rank)."""
+    query_logger.info(
+        "timing_checkpoint",
+        extra={"checkpoint": checkpoint, "elapsed_ms": elapsed_ms, **extra},
+    )
+
+
+@contextmanager
+def timed_checkpoint(checkpoint: str, **extra):
+    """Wraps a block, logging its wall-clock duration via log_timing_checkpoint
+    on exit - including when the block raises, so a failing step still shows
+    up in the timing breakdown instead of silently vanishing."""
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        log_timing_checkpoint(checkpoint, (time.perf_counter() - start) * 1000, **extra)
 
 
 def log_narration_outcome(

@@ -3,6 +3,7 @@ import os
 import duckdb
 import pygeohash as pgh
 
+from services.logging_client import timed_checkpoint
 from services.secret_manager_client import fetch_secret
 
 DEFAULT_GEOHASH_PRECISION = 6
@@ -44,13 +45,18 @@ def open_index_connection() -> duckdb.DuckDBPyConnection:
     infra/gcs_index_data.tf) so read_parquet can address gs:// paths.
     Locally, returns a plain connection - callers pass local file paths
     instead."""
-    con = duckdb.connect()
+    with timed_checkpoint("t_connect"):
+        con = duckdb.connect()
     if os.environ.get("K_SERVICE"):
-        con.execute("INSTALL httpfs")
-        con.execute("LOAD httpfs")
-        key_id = fetch_secret(GCS_HMAC_KEY_ID_SECRET)
-        secret = fetch_secret(GCS_HMAC_SECRET_SECRET)
-        con.execute(f"CREATE SECRET (TYPE GCS, KEY_ID '{key_id}', SECRET '{secret}')")
+        with timed_checkpoint("t_install_load_httpfs"):
+            con.execute("INSTALL httpfs")
+            con.execute("LOAD httpfs")
+        with timed_checkpoint("t_fetch_secret_gcs_key_id"):
+            key_id = fetch_secret(GCS_HMAC_KEY_ID_SECRET)
+        with timed_checkpoint("t_fetch_secret_gcs_secret"):
+            secret = fetch_secret(GCS_HMAC_SECRET_SECRET)
+        with timed_checkpoint("t_create_secret"):
+            con.execute(f"CREATE SECRET (TYPE GCS, KEY_ID '{key_id}', SECRET '{secret}')")
     return con
 
 
@@ -83,7 +89,12 @@ def query_species_for_filter(
         FROM totals t JOIN ranked_cells r ON t.species = r.species AND r.rn = 1
         ORDER BY t.total DESC
     """
-    rows = con.execute(sql, [fact_path, dim_path, cells, taxon_filter["taxonValue"]]).fetchall()
+    with timed_checkpoint(
+        "t_query_execute",
+        taxon_rank=taxon_filter["taxonRank"],
+        taxon_value=taxon_filter["taxonValue"],
+    ):
+        rows = con.execute(sql, [fact_path, dim_path, cells, taxon_filter["taxonValue"]]).fetchall()
 
     species_list = []
     for species, common_name, total, hotspot_cell, hotspot_count in rows:

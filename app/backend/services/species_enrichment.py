@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 
+from services.logging_client import timed_checkpoint
 from services.wikipedia_client import fetch_species_summary
 
 MAX_CONCURRENT_ENRICHMENT_REQUESTS = 3
@@ -20,5 +21,6 @@ def enrich_species(species_list: list[dict]) -> list[dict]:
 
 
 def _enrich_one(species: dict) -> dict:
-    summary = fetch_species_summary(species.get("common_name"), species["species"])
+    with timed_checkpoint("t_wikipedia_fetch", species=species["species"]):
+        summary = fetch_species_summary(species.get("common_name"), species["species"])
     return {**species, **summary}

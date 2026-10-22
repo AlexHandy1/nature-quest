@@ -149,6 +149,52 @@ def test_open_index_connection_configures_gcs_auth_on_cloud_run():
     assert secrets == [("gcs",)]
 
 
+def test_open_index_connection_logs_only_a_connect_checkpoint_locally(caplog):
+    with caplog.at_level("INFO"), patch.dict(os.environ, {}, clear=True):
+        open_index_connection()
+
+    checkpoints = [r.checkpoint for r in caplog.records if r.message == "timing_checkpoint"]
+    assert checkpoints == ["t_connect"]
+
+
+def test_open_index_connection_logs_the_gcs_setup_checkpoints_on_cloud_run(caplog):
+    with (
+        caplog.at_level("INFO"),
+        patch.dict(os.environ, {"K_SERVICE": "nature-quest-backend"}),
+        patch(
+            "services.species_index.fetch_secret",
+            side_effect=["fake-key-id", "fake-secret"],
+        ),
+    ):
+        open_index_connection()
+
+    checkpoints = [r.checkpoint for r in caplog.records if r.message == "timing_checkpoint"]
+    assert checkpoints == [
+        "t_connect",
+        "t_install_load_httpfs",
+        "t_fetch_secret_gcs_key_id",
+        "t_fetch_secret_gcs_secret",
+        "t_create_secret",
+    ]
+
+
+def test_query_species_for_filter_logs_a_query_execute_checkpoint(tmp_path, caplog):
+    fact_path, dim_path = _write_fixture_index(tmp_path)
+    con = duckdb.connect()
+
+    with caplog.at_level("INFO"):
+        query_species_for_filter(
+            con,
+            fact_path,
+            dim_path,
+            {"taxonRank": "class", "taxonValue": "Aves"},
+            cells=["u4pruy", "u4pruz"],
+        )
+
+    checkpoints = [r.checkpoint for r in caplog.records if r.message == "timing_checkpoint"]
+    assert checkpoints == ["t_query_execute"]
+
+
 def test_polygon_centroid_averages_the_polygon_vertices():
     # A simple closed square: (0,0),(0,2),(2,2),(2,0),(0,0) in "lon lat" WKT
     # order. Average of the 4 unique vertices (excluding the closing repeat

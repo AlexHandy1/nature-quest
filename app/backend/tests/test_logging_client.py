@@ -1,3 +1,5 @@
+import time
+
 from services.logging_client import (
     log_llm_taxon_filters_resolved,
     log_narration_outcome,
@@ -5,7 +7,9 @@ from services.logging_client import (
     log_query_submitted,
     log_species_enriched,
     log_species_selected,
+    log_timing_checkpoint,
     log_waypoints_ordered,
+    timed_checkpoint,
 )
 
 
@@ -131,3 +135,49 @@ def test_log_narration_outcome_logs_which_guardrail_fired(caplog):
     record = caplog.records[0]
     assert record.outcome == "daily_limit_reached"
     assert record.guardrail == "daily_limit"
+
+
+def test_log_timing_checkpoint_logs_the_checkpoint_name_and_elapsed_ms(caplog):
+    with caplog.at_level("INFO"):
+        log_timing_checkpoint("t_connect", 12.5)
+
+    record = caplog.records[0]
+    assert record.message == "timing_checkpoint"
+    assert record.checkpoint == "t_connect"
+    assert record.elapsed_ms == 12.5
+
+
+def test_log_timing_checkpoint_accepts_extra_tags(caplog):
+    with caplog.at_level("INFO"):
+        log_timing_checkpoint("t_build_openrouter_client", 3.0, consent=True)
+
+    record = caplog.records[0]
+    assert record.consent is True
+
+
+def test_timed_checkpoint_logs_the_measured_elapsed_time(caplog):
+    with caplog.at_level("INFO"), timed_checkpoint("t_connect"):
+        time.sleep(0.01)
+
+    record = caplog.records[0]
+    assert record.message == "timing_checkpoint"
+    assert record.checkpoint == "t_connect"
+    assert record.elapsed_ms >= 10
+
+
+def test_timed_checkpoint_logs_even_when_the_block_raises(caplog):
+    with caplog.at_level("INFO"):
+        try:
+            with timed_checkpoint("t_query_execute"):
+                raise ValueError("boom")
+        except ValueError:
+            pass
+
+    assert caplog.records[0].checkpoint == "t_query_execute"
+
+
+def test_timed_checkpoint_passes_through_extra_tags(caplog):
+    with caplog.at_level("INFO"), timed_checkpoint("t_build_openrouter_client", consent=True):
+        pass
+
+    assert caplog.records[0].consent is True
