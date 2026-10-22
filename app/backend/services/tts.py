@@ -1,4 +1,5 @@
 import os
+import threading
 
 import httpx
 
@@ -12,12 +13,31 @@ DEFAULT_VOICE = "af_alloy"
 TTS_URL = "https://openrouter.ai/api/v1/audio/speech"
 REQUEST_TIMEOUT = 60.0
 
+_cached_api_key: str | None = None
+_cached_api_key_lock = threading.Lock()
+
 
 def resolve_api_key() -> str | None:
-    if os.environ.get("K_SERVICE"):
-        with timed_checkpoint("t_fetch_secret_openrouter"):
-            return fetch_secret(SECRET_ID)
-    return None
+    """Fetches the OpenRouter key from Secret Manager at most once per
+    process on Cloud Run, reusing it for the rest of the container's
+    lifetime - see docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md.
+    Rotating this secret only takes effect on already-running instances
+    after a redeploy (see infra/README.md)."""
+    global _cached_api_key
+    if not os.environ.get("K_SERVICE"):
+        return None
+    if _cached_api_key is None:
+        with _cached_api_key_lock:
+            if _cached_api_key is None:
+                with timed_checkpoint("t_fetch_secret_openrouter"):
+                    _cached_api_key = fetch_secret(SECRET_ID)
+    return _cached_api_key
+
+
+def reset() -> None:
+    global _cached_api_key
+    with _cached_api_key_lock:
+        _cached_api_key = None
 
 
 def synthesize_speech(text: str, api_key: str, voice: str = DEFAULT_VOICE) -> bytes:

@@ -45,6 +45,34 @@ def test_build_openrouter_client_logs_a_timing_checkpoint_tagged_with_consent(ca
     assert record.consent is False
 
 
+def test_consent_false_client_is_cached_and_reused_across_calls():
+    first = build_openrouter_client(consent=False, distinct_id="anon-1", api_key="test-key")
+    second = build_openrouter_client(consent=False, distinct_id="anon-2", api_key="test-key")
+
+    assert first is second
+
+
+def test_consent_true_client_is_cached_and_reused_across_calls():
+    posthog_client = MagicMock()
+    first = build_openrouter_client(
+        consent=True, distinct_id="anon-1", api_key="test-key", posthog_client=posthog_client
+    )
+    second = build_openrouter_client(
+        consent=True, distinct_id="anon-2", api_key="test-key", posthog_client=posthog_client
+    )
+
+    assert first is second
+
+
+def test_consent_false_and_true_are_cached_separately():
+    false_client = build_openrouter_client(consent=False, distinct_id="anon-1", api_key="test-key")
+    true_client = build_openrouter_client(
+        consent=True, distinct_id="anon-1", api_key="test-key", posthog_client=MagicMock()
+    )
+
+    assert false_client is not true_client
+
+
 def test_default_posthog_client_is_shared_with_the_anthropic_branch():
     from services.ai_observability import build_client
 
