@@ -6,6 +6,8 @@ from posthog import Client as PostHogClient
 from posthog.ai.anthropic import Anthropic as ObservedAnthropic
 from posthog.ai.openai import OpenAI as ObservedOpenAI
 
+from services.logging_client import timed_checkpoint
+
 DEFAULT_POSTHOG_HOST = "https://eu.i.posthog.com"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -30,12 +32,13 @@ def build_openrouter_client(
     api_key: str | None = None,
     posthog_client=None,
 ) -> OpenAI:
-    if not consent:
-        return OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
-    posthog_client = posthog_client or _default_posthog_client()
-    return ObservedOpenAI(
-        api_key=api_key, base_url=OPENROUTER_BASE_URL, posthog_client=posthog_client
-    )
+    with timed_checkpoint("t_build_openrouter_client", consent=consent):
+        if not consent:
+            return OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
+        posthog_client = posthog_client or _default_posthog_client()
+        return ObservedOpenAI(
+            api_key=api_key, base_url=OPENROUTER_BASE_URL, posthog_client=posthog_client
+        )
 
 
 def _default_posthog_client() -> PostHogClient:

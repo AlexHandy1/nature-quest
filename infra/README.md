@@ -44,9 +44,26 @@ Applying changes is a manual step (no `terraform apply` in CI/CD):
 ```bash
 cd infra
 TF_VAR_posthog_project_token=$(gh variable get POSTHOG_PROJECT_TOKEN) \
-TF_VAR_alert_email="you@example.com" \
+TF_VAR_alert_email="alex.handy.research@gmail.com" \
+TF_VAR_operator_member="user:alex.handy.research@gmail.com" \
+  terraform plan   # review the diff before applying
+TF_VAR_posthog_project_token=$(gh variable get POSTHOG_PROJECT_TOKEN) \
+TF_VAR_alert_email="alex.handy.research@gmail.com" \
+TF_VAR_operator_member="user:alex.handy.research@gmail.com" \
   terraform apply
 ```
+
+All three undefaulted variables are required for every `plan`/`apply` in
+this repo — missing any one makes Terraform prompt interactively instead
+of erroring cleanly, which looks like it's hung. The real, current value
+for both `alert_email` and `operator_member` (the human operator who
+impersonates the index-refresh service account) is the maintainer's own
+address, **alex.handy.research@gmail.com** — this is the one actually
+live in the deployed notification channel and IAM binding, not a
+placeholder. Supplying a different value here would make `plan` propose
+changing those live resources, not just whatever you actually meant to
+change — always pass the same value shown above unless you deliberately
+intend to change the maintainer/operator identity.
 
 `posthog_project_token` is sourced from the same GitHub Actions
 repository variable the frontend build already uses (`vars.
@@ -60,10 +77,6 @@ does not expose repository variables/secrets to arbitrary public-repo
 readers or fork-originated PRs, only to explicit collaborators, so this
 scales safely to future contributors without a manual out-of-band
 credential hand-off.
-
-`alert_email` (`CON-003`) has no equivalent existing GitHub variable —
-supply it directly at apply time (as above) or via a local `.tfvars`
-file (gitignored, never committed).
 
 **Cloud Monitoring gotchas** (see `ADR-010` for full detail): a
 Terraform-created email notification channel needs its verification

@@ -13,6 +13,7 @@ from services.logging_client import (
     log_species_enriched,
     log_species_selected,
     log_waypoints_ordered,
+    timed_checkpoint,
 )
 from services.openrouter_taxon_client import resolve_taxon_filters
 from services.query_budget import try_consume_daily_budget
@@ -56,9 +57,10 @@ def _resolve_taxon_filters(query: str, distinct_id: str, consent: bool) -> tuple
         usage["input_tokens"] = response.usage.prompt_tokens
         usage["output_tokens"] = response.usage.completion_tokens
 
-    taxon_filters = resolve_taxon_filters(
-        query, client, on_response=_capture_usage, **extra_kwargs
-    )
+    with timed_checkpoint("t_llm_call"):
+        taxon_filters = resolve_taxon_filters(
+            query, client, on_response=_capture_usage, **extra_kwargs
+        )
     return taxon_filters, usage
 
 

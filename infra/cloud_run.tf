@@ -25,6 +25,13 @@ resource "google_cloud_run_v2_service" "app" {
       # real built image on every deploy (see lifecycle block below).
       image = "us-docker.pkg.dev/cloudrun/container/hello:latest"
 
+      # Doubles CPU during container startup (+10s after) to speed up cold
+      # starts - billed only for that short boosted window, negligible cost
+      # at current traffic (see 211026 cold-start discussion).
+      resources {
+        startup_cpu_boost = true
+      }
+
       env {
         name  = "POSTHOG_PROJECT_TOKEN"
         value = var.posthog_project_token
