@@ -61,7 +61,7 @@ def test_resolves_a_fungi_query_to_the_fungi_kingdom_filter():
 def test_resolves_a_turtles_query_to_the_testudines_order_filter():
     taxon_filters = _resolve("I want to see Turtles")
 
-    assert taxon_filters == [{"taxonRank": "class", "taxonValue": "Testudines"}]
+    assert taxon_filters == [{"taxonRank": "order", "taxonValue": "Testudines"}]
 
 
 @pytest.mark.eval
@@ -122,14 +122,14 @@ def test_fish_request_expands_to_the_seven_curated_groups():
 
 
 @pytest.mark.eval
-def test_reptiles_request_expands_to_the_four_curated_classes():
+def test_reptiles_request_expands_to_the_four_curated_groups():
     taxon_filters = _resolve("I want to see reptiles")
 
     assert taxon_filters == [
         {"taxonRank": "class", "taxonValue": "Crocodylia"},
         {"taxonRank": "class", "taxonValue": "Squamata"},
-        {"taxonRank": "class", "taxonValue": "Testudines"},
         {"taxonRank": "class", "taxonValue": "Sphenodontia"},
+        {"taxonRank": "order", "taxonValue": "Testudines"},
     ]
 
 

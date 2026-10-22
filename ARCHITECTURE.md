@@ -6,7 +6,7 @@ A current, whole-system map of what's built and how it works today — not a roa
 
 Nature Quest is a FastAPI backend + Vite/React frontend that turns a natural-language request and a drawn search area into a nature walk grounded in real GBIF-derived species-occurrence data. `MapView` is the whole product surface: a user draws or accepts a default search area, submits free text, and gets back a route-ordered species list, each enriched with a common name and a photo.
 
-Request path: free text → LLM taxon resolution (OpenRouter, model-agnostic client — currently `google/gemini-3.7-flash`) → per-taxon DuckDB query against a local Parquet index (occurrence counts + common names, pre-aggregated from GBIF's public BigQuery dataset — see ADR-017) → nearest-neighbour route ordering → species enrichment (Wikipedia image/extract only; common name is already joined) → response rendered as map markers (drawn as each species' hotspot-cell footprint, not a precise point — several species can share a cell) plus a results panel. GBIF itself is **not** a live dependency of this path any more — it's a batch data source, not a per-request API call. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
+Request path: free text → LLM taxon resolution (OpenRouter, model-agnostic client — currently `openai/gpt-oss-120b:nitro`, generic/unpinned routing, chosen for latency — see `docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md`) → per-taxon DuckDB query against a local Parquet index (occurrence counts + common names, pre-aggregated from GBIF's public BigQuery dataset — see ADR-017) → nearest-neighbour route ordering → species enrichment (Wikipedia image/extract only; common name is already joined) → response rendered as map markers (drawn as each species' hotspot-cell footprint, not a precise point — several species can share a cell) plus a results panel. GBIF itself is **not** a live dependency of this path any more — it's a batch data source, not a per-request API call. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
 
 Audio narration (spoken per-waypoint field-guide text) is a secondary, optional action available once a walk has resolved: a "Create narrative" control inline in the results panel triggers `POST /api/narrate`, which grounds a short narrative in each species' Wikipedia extract, generates it (Anthropic), synthesizes it to audio (OpenRouter/Kokoro-82M), and returns both in one response. See ADR-014 for the data-flow and response-shape reasoning.
 
@@ -24,7 +24,13 @@ prototypes/     Throwaway validation code — untouched, never deployed, not par
 
 ```
 main.py                    create_app(): FastAPI instance, JSON stdout logging config,
-                             slowapi rate-limiter wiring, .env loading (load_dotenv), static-file mount
+                             slowapi rate-limiter wiring, .env loading (load_dotenv), static-file
+                             mount. warm_caches() + a lifespan hook (K_SERVICE only, no-op locally)
+                             eagerly build species_index's shared DuckDB/GCS connection and both
+                             consent-state OpenRouter clients before uvicorn binds the port, so
+                             Cloud Run's startup probe (and therefore real traffic) waits for this
+                             instead of a user's first request paying it — see
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md
 routers/health.py          GET /health
 routers/query.py           POST /api/query — rate-limited; validate → daily budget → LLM resolve
                              to a list of taxon filters (+ token usage capture) → candidate_cells
@@ -79,8 +85,12 @@ services/
                              narration prompt content; services/narration.py keeps the
                              LLM-calling logic
   secret_manager_client.py  fetch_secret(secret_id) — the one place Secret Manager access lives;
-                             used by anthropic_client.py, tts.py, and species_index.py (the GCS
-                             HMAC key, see ADR-018) rather than each duplicating the fetch logic
+                             used by anthropic_client.py (fetched fresh per call), tts.py, and
+                             species_index.py (the GCS HMAC key, see ADR-018) rather than each
+                             duplicating the fetch logic. tts.py and species_index.py each cache
+                             their fetched value once per process (see their own entries below) -
+                             anthropic_client.py's key is deliberately not cached here, since it's
+                             only the manual rollback path for taxon resolution, not the live one
   anthropic_client.py      resolve_taxon_filters() (accepts an optional on_response callback +
                              **extra_kwargs passthrough) — returns a list of {taxonRank,
                              taxonValue}, empty if no signal. Retained, unused by routers/query.py,
@@ -89,19 +99,26 @@ services/
                              see the OpenRouter spec). resolve_api_key() (Secret Manager on Cloud
                              Run via K_SERVICE check, local ANTHROPIC_API_KEY env var otherwise)
   openrouter_taxon_client.py Model-agnostic taxon-resolution client used by routers/query.py today —
-                             MODEL constant (google/gemini-3.7-flash; the only place a model name
-                             appears — swapping providers/models is a one-constant change plus
-                             re-running the taxon-resolution/full-pipeline eval suites, no other code
-                             changes), QUERY_SCHEMA_TOOL_OPENAI (built once at import from
+                             MODEL constant (openai/gpt-oss-120b:nitro, generic/unpinned routing —
+                             the only place a model name appears; swapping providers/models is a
+                             one-constant change plus re-running the taxon-resolution/full-pipeline
+                             eval suites, no other code changes), QUERY_SCHEMA_TOOL_OPENAI (built
+                             once at import from
                              prompts/taxon_resolution.py's QUERY_SCHEMA_TOOL, OpenAI tool-calling
                              shape), resolve_taxon_filters() — same signature as
                              anthropic_client.py's function, calls client.chat.completions.create()
                              with forced tool choice, parses taxonFilters out of the tool-call JSON,
                              raises rather than silently returning [] on a missing/malformed tool
-                             call. No explicit `provider` routing preference is set, so OpenRouter's
-                             default "Balanced" mode picks the backend/tier per call — real measured
-                             cost came in ~2x the original prototyping estimate as a result; see
-                             ADR-015.
+                             call. No explicit `provider` field is set (deliberately generic/
+                             unpinned, not locked to one provider) — the `:nitro` model-id suffix
+                             is what actually overrides OpenRouter's routing here, toward its
+                             lowest-latency providers for this model, replacing the plain default
+                             "Balanced" mode ADR-015 originally found picking backend/tier per call
+                             (that finding, including its ~2x cost surprise, was specific to the
+                             earlier google/gemini-3.7-flash choice — see ADR-015 for the historical
+                             reasoning; the latency rationale for the current model is in
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md
+                             and prototypes/scripts/latency_provider_comparison.py).
   ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
                              anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
                              wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
@@ -111,7 +128,12 @@ services/
                              https://openrouter.ai/api/v1): a plain openai.OpenAI when consent=False, or
                              posthog.ai.openai.OpenAI when consent=True — used by routers/query.py's
                              taxon resolution. Both branches share one lazily-built singleton PostHog
-                             client from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. Note:
+                             client from POSTHOG_PROJECT_TOKEN/POSTHOG_HOST env vars. The built
+                             OpenRouter client itself is also now cached, one per consent state
+                             (module-level, built at most once per process, since distinct_id is
+                             passed per-call to chat.completions.create() rather than baked into
+                             construction) - not rebuilt on every call the way it used to be; both
+                             are warmed eagerly by main.py's startup hook on Cloud Run. Note:
                              posthog.ai.openai.OpenAI always stamps $ai_provider: "openai" on captured
                              events regardless of base_url — filter/group PostHog insights for this call
                              site by $ai_model or $ai_base_url instead. See ADR-009.
@@ -120,7 +142,23 @@ services/
                              geohash-6 cells (bbox only, not exact polygon containment — a known,
                              carried-forward limitation), once per request. open_index_connection()
                              — plain local connection in dev; on Cloud Run, configures httpfs with
-                             the HMAC credential from Secret Manager (ADR-018). query_species_for_filter(
+                             the HMAC credential from Secret Manager (ADR-018) - this full build
+                             (connect + httpfs + two secret fetches + CREATE SECRET) now happens at
+                             most once per process. get_shared_connection() builds it lazily (with
+                             a lock) the first time it's needed and caches the result;
+                             get_connection_cursor() is what request handlers actually call -
+                             returns a cheap per-request cursor() on that shared connection rather
+                             than the connection itself, since a single DuckDBPyConnection silently
+                             returns the wrong result under concurrent requests (confirmed
+                             empirically, not just asserted - see the report below); the cursor
+                             shares the already-loaded httpfs extension and already-created secret
+                             but keeps its own independent execute/fetch state. reset_shared_connection()
+                             exists for test isolation. routers/query.py calls get_connection_cursor(),
+                             never open_index_connection() or get_shared_connection() directly. See
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md for
+                             the measured impact (t_query_execute fell ~4-5x once connection reuse
+                             landed) and the concurrency-safety reasoning/evidence.
+                             query_species_for_filter(
                              con, fact_path, dim_path, taxon_filter, cells) — the atomic unit: one
                              DuckDB query per taxon filter, filtering by the taxon-rank column,
                              joining common_name from the dimension table, picking each species'
@@ -160,8 +198,13 @@ services/
                              (returns None on refusal — see ADR-014), sanitizes TTS-unfriendly dash
                              pauses deterministically after generation
   tts.py                    synthesize_speech(text, api_key, voice) — OpenRouter/Kokoro-82M
-                             text-to-speech, mp3 response_format. resolve_api_key() mirrors
-                             anthropic_client.py's Secret Manager pattern for OPENROUTER_API_KEY
+                             text-to-speech, mp3 response_format. resolve_api_key() fetches
+                             OPENROUTER_API_KEY from Secret Manager on Cloud Run (K_SERVICE check,
+                             same shape as anthropic_client.py's resolve_api_key()) but, unlike
+                             that one, caches the fetched value per process after the first call -
+                             this is also the function routers/query.py's own key resolution calls
+                             through (services/tts.py's SECRET_ID is shared by both the TTS and
+                             taxon-resolution call sites), so both benefit from the same cache
   waypoints.py              order_waypoints(species, center_lat, center_lon) — pure nearest-neighbour
                              route ordering from a center point (Slice 3); no I/O
   rate_limiter.py           slowapi Limiter instance + async custom 429 handler (reads the query text
@@ -266,7 +309,7 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     ├─ POST /api/query → routers/query.py
                                                     │    → services/ai_observability.py (consent-gated
                                                     │      client selection) → services/openrouter_taxon_client.py
-                                                    │      (OpenRouter API, google/gemini-3.7-flash, real
+                                                    │      (OpenRouter API, openai/gpt-oss-120b:nitro, real
                                                     │      key from Secret Manager — services/anthropic_client.py
                                                     │      stays available as a manual, tested rollback)
                                                     │    → services/species_index.py (candidate_cells,
@@ -288,6 +331,12 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     │    → services/logging_client.py (structured log line)
                                                     └─ everything else → static/ (built frontend)
 ```
+
+The DuckDB/GCS connection and both OpenRouter clients shown above are no
+longer built fresh on this path — they're built once per process (eagerly,
+at startup, on Cloud Run) and reused across every request; see
+`services/species_index.py`/`services/ai_observability.py`/`services/tts.py`
+above and `docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md`.
 
 ## Deploy flow
 

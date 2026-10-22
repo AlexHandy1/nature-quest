@@ -2,7 +2,7 @@ import json
 
 from services.prompts.taxon_resolution import QUERY_SCHEMA_TOOL, TAXON_GUIDANCE
 
-MODEL = "google/gemini-3.7-flash"
+MODEL = "openai/gpt-oss-120b:nitro"
 REQUEST_TIMEOUT = 30.0
 TOOL_NAME = QUERY_SCHEMA_TOOL["name"]
 

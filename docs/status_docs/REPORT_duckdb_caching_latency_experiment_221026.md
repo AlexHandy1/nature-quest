@@ -156,3 +156,70 @@ its tests — nothing new to fix here.
 3. **LLM latency spikes (multi-second, intermittent) are provider-side and don't correlate with request order** — contradicts an earlier working assumption that they were a local warm-up artifact; caching the OpenRouter client won't fix these.
 4. **The PostHog consent wrapper's extra cost is genuinely one-time-per-process** (~300–900ms), making it a clean startup-warming candidate.
 5. **Wikipedia enrichment is already fine** — no action needed.
+
+---
+
+## Addendum: post-fix production re-test (22 October 2026, after deploy)
+
+All three recommended fixes from this report were implemented and deployed
+to production this session:
+
+1. Shared DuckDB/GCS connection, built once at process startup, with a
+   per-request `.cursor()` for thread-safe concurrent access
+   (`services/species_index.py`).
+2. OpenRouter API key + both consent-state clients cached per process
+   (`services/tts.py`, `services/ai_observability.py`).
+3. A FastAPI `lifespan` startup hook that eagerly warms all of the above
+   before Cloud Run routes any traffic (`main.py`).
+
+Re-ran the same production-curl procedure as the original experiment (3
+reps × 2 consent states, same Retiro `birds` query, pulled Cloud Logging
+checkpoints afterward — same `exp-prod-curl-*`-style distinct IDs, this
+run prefixed `postfix-prod-curl-*`). One methodology note: the first
+`gcloud logging read` pull after the test was incomplete (Cloud Logging
+ingestion lag, not a request bug) — re-pulling ~90s later showed all 6
+requests cleanly, each with a clean single `query_submitted`→
+`query_outcome` pair, no overlap.
+
+### Results: all three predicted wins confirmed, plus one bonus
+
+| Checkpoint | Before (this report, warm) | After (post-fix, warm) |
+|---|---|---|
+| `t_fetch_secret_openrouter` | 75–150ms, every request | **never fires** (warmed at startup) |
+| `t_install_load_httpfs` | 75–200ms, every request | **never fires** |
+| `t_fetch_secret_gcs_key_id` / `_secret` | 80–325ms / 65–160ms, every request | **never fire** |
+| `t_create_secret` | 1–10ms, every request | **never fires** |
+| `t_build_openrouter_client` | 11–23ms, every request | **0.0ms**, every request |
+| `t_query_execute` (warm) | 760–1,006ms | **189–220ms** |
+| `t_llm_call` | 1.7–3.3s (provider variance) | 1.7–3.3s — unchanged, as expected |
+| Wikipedia enrichment | 40–280ms/species | 40–780ms/species — unchanged, as expected |
+
+The `t_query_execute` drop is the standout, unconfirmed-until-now result:
+finding 2 above only *hypothesized* that connection reuse might also cut
+the steady-state `read_parquet()` network cost, not just the auth/secret
+setup around it. It did — warm query time fell ~4–5x (not just the
+~300–850ms of setup cost disappearing, but the query itself getting
+roughly 570–800ms faster too).
+
+**Real total request time** (`query_submitted`→`query_outcome`, excluding
+the one cold-instance outlier below): **consent=false ~2.2–3.7s,
+consent=true ~2.6–2.8s** — down from this report's ~4–8s (curl) / ~5–7s
+(browser) warm baseline.
+
+**Non-LLM portion specifically** (total minus `t_llm_call`): **~0.41–0.52s**
+on 5 of the 6 requests — essentially hitting the "<1s for non-LLM
+retrieval steps" goal discussed alongside this work. The LLM call is now
+the dominant, and only remaining unaddressed, cost — tracked separately
+(`prototypes/scripts/latency_provider_comparison.py`).
+
+### Not a regression: the first request after a cold container still pays Cloud Run's own provisioning cost
+
+The first request in this re-test (`postfix-prod-curl-false-1`) took
+24.66s by `curl`'s own clock, but the `query_submitted`→`query_outcome`
+gap inside that was only **4.04s** — the other ~20s was Cloud Run
+provisioning a cold container plus this session's new startup-warming
+hook running, *before* the request handler started at all. This matches
+the earlier, separate page-load cold-start finding (~19s, dominated by
+container provisioning) and is unrelated to this report's fixes — it's
+the cost `min_instances ≥ 1` would remove, not something connection/key
+caching touches.
