@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Latency/provider comparison — taxon resolution</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e6e8ec;
+    --dim: #8b909c;
+    --green: #3ecf8e;
+    --red: #e05a5a;
+    --yellow: #e0c15a;
+    --accent: #5b8def;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .subtitle { color: var(--dim); font-size: 13px; margin-bottom: 20px; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  .seed-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .seed-btn {
+    background: #232733;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 9px;
+    border-radius: 5px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .seed-btn:hover { border-color: var(--accent); }
+  #run-all-seeded { margin-top: 10px; }
+  select {
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .candidate-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .candidate-row label { font-size: 13px; color: var(--dim); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 8px; vertical-align: top; text-align: left; }
+  th { background: #1d212b; color: var(--dim); font-weight: 600; }
+  .model-name { font-weight: 600; white-space: nowrap; }
+  .filters { font-family: ui-monospace, monospace; font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  .error { color: var(--red); font-size: 11.5px; white-space: pre-wrap; word-break: break-word; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.pass { background: rgba(62,207,142,0.15); color: var(--green); }
+  .badge.fail { background: rgba(224,90,90,0.15); color: var(--red); }
+  .badge.na { background: rgba(139,144,156,0.15); color: var(--dim); }
+  .elapsed { font-size: 12px; font-weight: 600; }
+  .elapsed.fast { color: var(--green); }
+  .elapsed.mid { color: var(--yellow); }
+  .elapsed.slow { color: var(--red); }
+  .query-block { margin-bottom: 24px; }
+  .query-heading { font-size: 13px; margin-bottom: 6px; }
+  .query-heading .expected { color: var(--dim); font-family: ui-monospace, monospace; font-size: 11px; }
+  .loading { color: var(--dim); font-size: 13px; }
+  #summary-panel { display: none; }
+  #summary-panel.visible { display: block; }
+</style>
+</head>
+<body>
+
+<h1>Latency / provider comparison — taxon resolution</h1>
+<div class="subtitle">
+  Pinned low-P90-latency model+provider combinations (per OpenRouter's own
+  ?percentile=p90#providers pages) against production's current unpinned
+  google/gemini-3.7-flash. Elapsed time is colour-coded: green &lt;1s, yellow
+  1&ndash;2s, red &gt;2s — the goal is getting this step under ~1s. Cost per
+  query is OpenRouter's real reported cost, not an estimate.
+</div>
+
+<div class="panel" id="summary-panel">
+  <strong>Running latency summary</strong>
+  <span class="subtitle" style="margin:0;">(updates after each query; sorted by P90, lowest first)</span>
+  <table id="summary-table" style="margin-top: 10px;">
+    <thead>
+      <tr><th>Candidate</th><th>mean</th><th>median</th><th>p90</th><th>max</th><th>pass/run</th><th>errors</th><th>avg cost/query</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <div class="candidate-row">
+    <label for="candidate-select">Run against:</label>
+    <select id="candidate-select">
+      <option value="">All candidates</option>
+    </select>
+  </div>
+  <div><strong>Seeded eval queries</strong> <span class="subtitle" style="margin:0;">(every case from test_taxon_resolution_eval.py — expected filters shown, pass/fail auto-checked)</span></div>
+  <div class="seed-grid" id="seed-grid"></div>
+  <button id="run-all-seeded">Run all seeded queries</button>
+</div>
+
+<div id="results"></div>
+
+<script>
+const resultsEl = document.getElementById('results');
+const seedGrid = document.getElementById('seed-grid');
+const summaryPanel = document.getElementById('summary-panel');
+const summaryTableBody = document.querySelector('#summary-table tbody');
+const candidateSelect = document.getElementById('candidate-select');
+let seededQueries = [];
+
+function selectedLabels() {
+  return candidateSelect.value ? [candidateSelect.value] : null;
+}
+
+async function loadCandidates() {
+  const res = await fetch('/api/candidates');
+  const candidates = await res.json();
+  candidates.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.label;
+    opt.textContent = c.label;
+    candidateSelect.appendChild(opt);
+  });
+}
+
+// label -> array of {elapsed_s, passed, error}
+const stats = {};
+
+function recordStat(label, elapsed_s, passed, error) {
+  if (!stats[label]) stats[label] = [];
+  stats[label].push({ elapsed_s, passed, error });
+}
+
+function percentile(values, pct) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.max(0, Math.min(sorted.length - 1, Math.round(pct * (sorted.length - 1))));
+  return sorted[idx];
+}
+
+function renderSummary() {
+  const labels = Object.keys(stats);
+  if (labels.length === 0) return;
+  summaryPanel.classList.add('visible');
+
+  const rows = labels.map(label => {
+    const entries = stats[label];
+    const elapsed = entries.map(e => e.elapsed_s);
+    const mean = elapsed.reduce((a, b) => a + b, 0) / elapsed.length;
+    const sortedElapsed = [...elapsed].sort((a, b) => a - b);
+    const median = sortedElapsed[Math.floor(sortedElapsed.length / 2)];
+    const p90 = percentile(elapsed, 0.9);
+    const max = Math.max(...elapsed);
+    const passed = entries.filter(e => e.passed === true).length;
+    const errors = entries.filter(e => e.error).length;
+    return { label, mean, median, p90, max, passed, errors, total: entries.length };
+  });
+  rows.sort((a, b) => a.p90 - b.p90);
+
+  summaryTableBody.innerHTML = rows.map(r => `
+    <tr>
+      <td class="model-name">${escapeHtml(r.label)}</td>
+      <td>${elapsedSpan(r.mean)}</td>
+      <td>${elapsedSpan(r.median)}</td>
+      <td>${elapsedSpan(r.p90)}</td>
+      <td>${elapsedSpan(r.max)}</td>
+      <td>${r.passed}/${r.total}</td>
+      <td>${r.errors}</td>
+    </tr>
+  `).join('');
+}
+
+function elapsedClass(s) {
+  if (s < 1) return 'fast';
+  if (s < 2) return 'mid';
+  return 'slow';
+}
+
+function elapsedSpan(s) {
+  return `<span class="elapsed ${elapsedClass(s)}">${s.toFixed(2)}s</span>`;
+}
+
+async function loadSeeded() {
+  const res = await fetch('/api/seeded-queries');
+  seededQueries = await res.json();
+  seedGrid.innerHTML = '';
+  seededQueries.forEach((sq) => {
+    const btn = document.createElement('button');
+    btn.className = 'seed-btn';
+    btn.textContent = sq.query;
+    btn.onclick = () => runQuery(sq.query, sq.expected);
+    seedGrid.appendChild(btn);
+  });
+}
+
+function renderBadge(passed) {
+  if (passed === null || passed === undefined) return '<span class="badge na">—</span>';
+  return passed ? '<span class="badge pass">PASS</span>' : '<span class="badge fail">FAIL</span>';
+}
+
+function renderBlock(query, expected) {
+  const block = document.createElement('div');
+  block.className = 'query-block';
+  const expectedText = expected === null || expected === undefined
+    ? '(no ground truth — free text)'
+    : JSON.stringify(expected);
+  block.innerHTML = `
+    <div class="query-heading"><strong>${escapeHtml(query)}</strong> &nbsp; <span class="expected">expected: ${escapeHtml(expectedText)}</span></div>
+    <div class="loading">Running against all pinned candidates…</div>
+  `;
+  resultsEl.prepend(block);
+  return block;
+}
+
+function formatCost(cost) {
+  if (cost === null || cost === undefined) return '<span class="elapsed">n/a</span>';
+  return `$${cost.toFixed(6)}`;
+}
+
+function renderTable(block, results) {
+  let rows = results.map(r => `
+    <tr>
+      <td class="model-name">${escapeHtml(r.label)}<br/>${elapsedSpan(r.elapsed_s)}</td>
+      <td>${renderBadge(r.passed)}</td>
+      <td class="filters">${formatCost(r.cost_usd)}</td>
+      <td class="filters">${escapeHtml(JSON.stringify(r.taxon_filters, null, 0))}</td>
+      <td class="error">${r.error ? escapeHtml(r.error) : ''}</td>
+    </tr>
+  `).join('');
+  block.innerHTML = block.querySelector('.query-heading').outerHTML + `
+    <table>
+      <thead><tr><th>Candidate</th><th>Result</th><th>Cost/query</th><th>taxon_filters</th><th>error</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function runQuery(query, expected) {
+  const block = renderBlock(query, expected);
+  try {
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query, expected: expected ?? null, labels: selectedLabels()}),
+    });
+    const data = await res.json();
+    if (data.status !== 'ok') {
+      block.innerHTML = `<div class="error">${escapeHtml(data.message || 'error')}</div>`;
+      return;
+    }
+    renderTable(block, data.results);
+    data.results.forEach(r => recordStat(r.label, r.elapsed_s, r.passed, r.error));
+    renderSummary();
+  } catch (e) {
+    block.innerHTML = `<div class="error">${escapeHtml(String(e))}</div>`;
+  }
+}
+
+document.getElementById('run-all-seeded').onclick = async () => {
+  for (const sq of seededQueries) {
+    await runQuery(sq.query, sq.expected);
+  }
+};
+
+loadCandidates();
+loadSeeded();
+</script>
+
+</body>
+</html>
