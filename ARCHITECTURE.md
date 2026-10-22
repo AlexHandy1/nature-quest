@@ -6,7 +6,7 @@ A current, whole-system map of what's built and how it works today — not a roa
 
 Nature Quest is a FastAPI backend + Vite/React frontend that turns a natural-language request and a drawn search area into a nature walk grounded in real GBIF-derived species-occurrence data. `MapView` is the whole product surface: a user draws or accepts a default search area, submits free text, and gets back a route-ordered species list, each enriched with a common name and a photo.
 
-Request path: free text → LLM taxon resolution (OpenRouter, model-agnostic client — currently `google/gemini-3.7-flash`) → per-taxon DuckDB query against a local Parquet index (occurrence counts + common names, pre-aggregated from GBIF's public BigQuery dataset — see ADR-017) → nearest-neighbour route ordering → species enrichment (Wikipedia image/extract only; common name is already joined) → response rendered as map markers (drawn as each species' hotspot-cell footprint, not a precise point — several species can share a cell) plus a results panel. GBIF itself is **not** a live dependency of this path any more — it's a batch data source, not a per-request API call. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
+Request path: free text → LLM taxon resolution (OpenRouter, model-agnostic client — currently `openai/gpt-oss-120b:nitro`, generic/unpinned routing, chosen for latency — see `docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md`) → per-taxon DuckDB query against a local Parquet index (occurrence counts + common names, pre-aggregated from GBIF's public BigQuery dataset — see ADR-017) → nearest-neighbour route ordering → species enrichment (Wikipedia image/extract only; common name is already joined) → response rendered as map markers (drawn as each species' hotspot-cell footprint, not a precise point — several species can share a cell) plus a results panel. GBIF itself is **not** a live dependency of this path any more — it's a batch data source, not a per-request API call. This sits behind per-IP rate limiting and a daily LLM-call budget guardrail, with structured operational logging and consent-gated PostHog observability (client- and server-side).
 
 Audio narration (spoken per-waypoint field-guide text) is a secondary, optional action available once a walk has resolved: a "Create narrative" control inline in the results panel triggers `POST /api/narrate`, which grounds a short narrative in each species' Wikipedia extract, generates it (Anthropic), synthesizes it to audio (OpenRouter/Kokoro-82M), and returns both in one response. See ADR-014 for the data-flow and response-shape reasoning.
 
@@ -89,19 +89,26 @@ services/
                              see the OpenRouter spec). resolve_api_key() (Secret Manager on Cloud
                              Run via K_SERVICE check, local ANTHROPIC_API_KEY env var otherwise)
   openrouter_taxon_client.py Model-agnostic taxon-resolution client used by routers/query.py today —
-                             MODEL constant (google/gemini-3.7-flash; the only place a model name
-                             appears — swapping providers/models is a one-constant change plus
-                             re-running the taxon-resolution/full-pipeline eval suites, no other code
-                             changes), QUERY_SCHEMA_TOOL_OPENAI (built once at import from
+                             MODEL constant (openai/gpt-oss-120b:nitro, generic/unpinned routing —
+                             the only place a model name appears; swapping providers/models is a
+                             one-constant change plus re-running the taxon-resolution/full-pipeline
+                             eval suites, no other code changes), QUERY_SCHEMA_TOOL_OPENAI (built
+                             once at import from
                              prompts/taxon_resolution.py's QUERY_SCHEMA_TOOL, OpenAI tool-calling
                              shape), resolve_taxon_filters() — same signature as
                              anthropic_client.py's function, calls client.chat.completions.create()
                              with forced tool choice, parses taxonFilters out of the tool-call JSON,
                              raises rather than silently returning [] on a missing/malformed tool
-                             call. No explicit `provider` routing preference is set, so OpenRouter's
-                             default "Balanced" mode picks the backend/tier per call — real measured
-                             cost came in ~2x the original prototyping estimate as a result; see
-                             ADR-015.
+                             call. No explicit `provider` field is set (deliberately generic/
+                             unpinned, not locked to one provider) — the `:nitro` model-id suffix
+                             is what actually overrides OpenRouter's routing here, toward its
+                             lowest-latency providers for this model, replacing the plain default
+                             "Balanced" mode ADR-015 originally found picking backend/tier per call
+                             (that finding, including its ~2x cost surprise, was specific to the
+                             earlier google/gemini-3.7-flash choice — see ADR-015 for the historical
+                             reasoning; the latency rationale for the current model is in
+                             docs/status_docs/REPORT_duckdb_caching_latency_experiment_221026.md
+                             and prototypes/scripts/latency_provider_comparison.py).
   ai_observability.py      build_client(consent, distinct_id, api_key) — returns a plain
                              anthropic.Anthropic when consent=False, or a posthog.ai.anthropic.Anthropic
                              wrapper (per-call posthog_distinct_id, full $ai_input/$ai_output_choices
@@ -266,7 +273,7 @@ Browser → Cloud Run (nature-quest-production) → FastAPI (main.py)
                                                     ├─ POST /api/query → routers/query.py
                                                     │    → services/ai_observability.py (consent-gated
                                                     │      client selection) → services/openrouter_taxon_client.py
-                                                    │      (OpenRouter API, google/gemini-3.7-flash, real
+                                                    │      (OpenRouter API, openai/gpt-oss-120b:nitro, real
                                                     │      key from Secret Manager — services/anthropic_client.py
                                                     │      stays available as a manual, tested rollback)
                                                     │    → services/species_index.py (candidate_cells,
