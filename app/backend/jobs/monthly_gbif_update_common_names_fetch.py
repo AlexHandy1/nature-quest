@@ -58,9 +58,9 @@ def build_common_name_map(records: list[dict]) -> dict[str, str]:
 
 
 def fetch_common_names_for_taxa(
-    dataset_key: str,
+    dataset_key: int,
     taxon_ids: list[str],
-    fetch_fn: Callable[[str, str], list[dict]],
+    fetch_fn: Callable[[int, str], list[dict]],
     max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> list[dict]:
     """Fans out one request per taxon, concurrently (bounded by max_workers).

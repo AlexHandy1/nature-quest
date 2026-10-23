@@ -4,10 +4,11 @@ import duckdb
 
 from jobs.monthly_gbif_update_gcs_release import (
     download_blob_to_file,
+    join_common_names,
+    open_gcs_write_connection,
     promote_release,
     read_parquet_rows,
     release_blob_path,
-    upload_release_file,
     write_parquet,
 )
 
@@ -44,18 +45,6 @@ def test_promote_release_copies_each_dated_object_to_the_bucket_root():
     bucket.copy_blob.assert_called_once_with(source_blob, bucket, "fact_sorted_by_cell.parquet")
 
 
-def test_upload_release_file_uploads_to_the_dated_releases_path():
-    bucket = MagicMock()
-    client = MagicMock()
-    client.bucket.return_value = bucket
-
-    upload_release_file(client, "my-bucket", "2026-11-07", "/tmp/fact.parquet", "fact_sorted_by_cell.parquet")
-
-    blob = bucket.blob.return_value
-    bucket.blob.assert_called_once_with("releases/2026-11-07/fact_sorted_by_cell.parquet")
-    blob.upload_from_filename.assert_called_once_with("/tmp/fact.parquet")
-
-
 def test_download_blob_to_file_downloads_the_named_blob():
     bucket = MagicMock()
     client = MagicMock()
@@ -76,3 +65,32 @@ def test_read_parquet_rows_reads_back_what_write_parquet_wrote(tmp_path):
     result = read_parquet_rows(path)
 
     assert result == rows
+
+
+def test_open_gcs_write_connection_configures_gcs_auth():
+    con = open_gcs_write_connection("fake-key-id", "fake-secret")
+
+    secrets = con.execute("SELECT type FROM duckdb_secrets()").fetchall()
+    assert secrets == [("gcs",)]
+
+
+def test_join_common_names_joins_the_cache_onto_the_dimension_rows(tmp_path):
+    dimension_path = str(tmp_path / "dimension.parquet")
+    output_path = str(tmp_path / "dimension_with_names.parquet")
+    write_parquet(
+        [
+            {"specieskey": "SP1", "species": "Pica pica"},
+            {"specieskey": "SP2", "species": "Passer domesticus"},
+        ],
+        dimension_path,
+    )
+    cache = {"SP1": "Eurasian Magpie"}
+
+    con = duckdb.connect()
+    join_common_names(con, dimension_path, cache, output_path)
+
+    result = read_parquet_rows(output_path)
+    assert sorted(result, key=lambda r: r["specieskey"]) == [
+        {"specieskey": "SP1", "species": "Pica pica", "common_name": "Eurasian Magpie"},
+        {"specieskey": "SP2", "species": "Passer domesticus", "common_name": None},
+    ]

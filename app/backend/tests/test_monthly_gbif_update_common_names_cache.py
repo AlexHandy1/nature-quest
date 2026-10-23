@@ -1,9 +1,12 @@
+import duckdb
+
 from jobs.monthly_gbif_update_common_names_cache import (
-    bootstrap_cache_from_dimension,
+    bootstrap_cache_from_production,
     compute_top_n_specieskeys,
     merge_into_cache,
     new_entrants,
 )
+from jobs.monthly_gbif_update_gcs_release import write_parquet
 
 
 def test_new_entrants_returns_specieskeys_not_already_in_the_cache():
@@ -42,35 +45,34 @@ def test_merge_into_cache_never_overwrites_an_existing_entry():
     assert result == {"SP1": "Pica pica"}
 
 
-def test_bootstrap_cache_from_dimension_keeps_rows_with_a_common_name():
-    dimension_rows = [
-        {"specieskey": "SP1", "common_name": "Pica pica"},
-        {"specieskey": "SP2", "common_name": "House Sparrow"},
-    ]
+def test_bootstrap_cache_from_production_keeps_only_rows_with_a_common_name(tmp_path):
+    dimension_path = str(tmp_path / "dimension.parquet")
+    write_parquet(
+        [
+            {"specieskey": "SP1", "common_name": "Pica pica"},
+            {"specieskey": "SP2", "common_name": None},
+        ],
+        dimension_path,
+    )
+    con = duckdb.connect()
 
-    result = bootstrap_cache_from_dimension(dimension_rows)
-
-    assert result == {"SP1": "Pica pica", "SP2": "House Sparrow"}
-
-
-def test_bootstrap_cache_from_dimension_skips_rows_with_no_common_name():
-    dimension_rows = [
-        {"specieskey": "SP1", "common_name": "Pica pica"},
-        {"specieskey": "SP2", "common_name": None},
-    ]
-
-    result = bootstrap_cache_from_dimension(dimension_rows)
+    result = bootstrap_cache_from_production(con, dimension_path)
 
     assert result == {"SP1": "Pica pica"}
 
 
-def test_compute_top_n_specieskeys_returns_the_smallest_set_covering_the_target_coverage():
-    fact_rows = [
-        {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 97},
-        {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 2},
-        {"cell": "u4prvz", "specieskey": "SP3", "occurrence_count": 1},
-    ]
+def test_compute_top_n_specieskeys_returns_the_smallest_set_covering_the_target_coverage(tmp_path):
+    fact_path = str(tmp_path / "fact.parquet")
+    write_parquet(
+        [
+            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 97},
+            {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 2},
+            {"cell": "u4prvz", "specieskey": "SP3", "occurrence_count": 1},
+        ],
+        fact_path,
+    )
+    con = duckdb.connect()
 
-    result = compute_top_n_specieskeys(fact_rows, coverage=0.97)
+    result = compute_top_n_specieskeys(con, fact_path, coverage=0.97)
 
     assert result == ["SP1"]

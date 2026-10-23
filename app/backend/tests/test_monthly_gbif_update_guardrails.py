@@ -1,8 +1,11 @@
+import duckdb
+
+from jobs.monthly_gbif_update_gcs_release import write_parquet
 from jobs.monthly_gbif_update_guardrails import (
     EXPECTED_DIMENSION_COLUMNS,
     EXPECTED_FACT_COLUMNS,
     RunStats,
-    compute_run_stats,
+    compute_stats_from_parquet,
     evaluate,
 )
 
@@ -143,18 +146,27 @@ def test_warns_when_total_occurrence_count_swings_by_more_than_twenty_percent():
     assert any("occurrence count" in reason for reason in outcome.warn_reasons)
 
 
-def test_compute_run_stats_derives_schema_and_counts_from_raw_rows():
-    fact_rows = [
-        {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
-        {"cell": "u4pruy", "specieskey": "SP2", "occurrence_count": 25},
-        {"cell": "u4pruz", "specieskey": "SP1", "occurrence_count": 5},
-    ]
-    dimension_rows = [
-        {"specieskey": "SP1", "species": "Pica pica", "common_name": None},
-        {"specieskey": "SP2", "species": "Passer domesticus", "common_name": "House Sparrow"},
-    ]
+def test_compute_stats_from_parquet_derives_schema_and_counts_without_materializing_rows(tmp_path):
+    fact_path = str(tmp_path / "fact.parquet")
+    dimension_path = str(tmp_path / "dimension.parquet")
+    write_parquet(
+        [
+            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
+            {"cell": "u4pruy", "specieskey": "SP2", "occurrence_count": 25},
+            {"cell": "u4pruz", "specieskey": "SP1", "occurrence_count": 5},
+        ],
+        fact_path,
+    )
+    write_parquet(
+        [
+            {"specieskey": "SP1", "species": "Pica pica", "common_name": None},
+            {"specieskey": "SP2", "species": "Passer domesticus", "common_name": "House Sparrow"},
+        ],
+        dimension_path,
+    )
+    con = duckdb.connect()
 
-    stats = compute_run_stats(fact_rows, dimension_rows)
+    stats = compute_stats_from_parquet(con, fact_path, dimension_path)
 
     assert stats.fact_columns == frozenset({"cell", "specieskey", "occurrence_count"})
     assert stats.dimension_columns == frozenset({"specieskey", "species", "common_name"})

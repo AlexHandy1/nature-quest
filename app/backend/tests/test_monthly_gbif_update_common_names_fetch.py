@@ -53,7 +53,7 @@ def test_fetch_common_names_for_taxa_collects_records_from_every_taxon():
     def fake_fetch(dataset_key, taxon_id):
         return [{"name": f"Name for {taxon_id}"}]
 
-    records = fetch_common_names_for_taxa("dataset-key", ["SP1", "SP2"], fetch_fn=fake_fetch)
+    records = fetch_common_names_for_taxa(315557, ["SP1", "SP2"], fetch_fn=fake_fetch)
 
     assert sorted(records, key=lambda r: r["taxonID"]) == [
         {"taxonID": "SP1", "name": "Name for SP1"},

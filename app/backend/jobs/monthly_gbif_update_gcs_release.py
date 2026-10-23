@@ -13,12 +13,34 @@ def write_parquet(rows: list[dict], path: str) -> None:
     con.execute(f"COPY rows_df TO '{path}' (FORMAT PARQUET)")
 
 
-def upload_release_file(
-    client: storage.Client, bucket_name: str, release_date: str, local_path: str, filename: str
+def open_gcs_write_connection(key_id: str, secret: str) -> duckdb.DuckDBPyConnection:
+    """DuckDB connection with a write-capable GCS secret for the
+    index_refresh identity - httpfs has no native GCP credential
+    auto-discovery (ADR-018), same reason the app's read-only connection
+    needs its own HMAC key."""
+    con = duckdb.connect()
+    con.execute("INSTALL httpfs")
+    con.execute("LOAD httpfs")
+    con.execute(f"CREATE SECRET (TYPE GCS, KEY_ID '{key_id}', SECRET '{secret}')")
+    return con
+
+
+def join_common_names(
+    con: duckdb.DuckDBPyConnection, dimension_path: str, cache: dict[str, str], output_path: str
 ) -> None:
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(release_blob_path(release_date, filename))
-    blob.upload_from_filename(local_path)
+    """Joins the common-names cache onto the dimension table entirely
+    within DuckDB - dimension_path/output_path can be local paths or
+    gs:// paths (with con from open_gcs_write_connection); dimension rows
+    never pass through Python regardless of table size."""
+    cache_df = pd.DataFrame({"specieskey": list(cache.keys()), "common_name": list(cache.values())})
+    con.register("cache_df", cache_df)
+    con.execute(f"""
+        COPY (
+            SELECT d.*, c.common_name
+            FROM read_parquet('{dimension_path}') d
+            LEFT JOIN cache_df c ON d.specieskey = c.specieskey
+        ) TO '{output_path}' (FORMAT PARQUET)
+    """)
 
 
 def download_blob_to_file(

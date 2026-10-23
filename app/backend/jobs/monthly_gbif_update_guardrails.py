@@ -26,15 +26,31 @@ class GuardrailOutcome:
     warn_reasons: list[str] = field(default_factory=list)
 
 
-def compute_run_stats(fact_rows: list[dict], dimension_rows: list[dict]) -> RunStats:
-    fact_columns = frozenset(fact_rows[0].keys()) if fact_rows else frozenset()
-    dimension_columns = frozenset(dimension_rows[0].keys()) if dimension_rows else frozenset()
+def compute_stats_from_parquet(con, fact_path: str, dimension_path: str) -> RunStats:
+    """Derives RunStats via DuckDB aggregate queries against fact_path/
+    dimension_path (local or gs://) - used for both the freshly-extracted
+    release files and the current production files (the guardrail
+    baseline), so neither the ~221M-row fact table nor the dimension
+    table ever passes through Python as row data."""
+    fact_columns = frozenset(
+        row[0] for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{fact_path}')").fetchall()
+    )
+    dimension_columns = frozenset(
+        row[0]
+        for row in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{dimension_path}')").fetchall()
+    )
+    total_occurrence_count, distinct_cell_count = con.execute(f"""
+        SELECT SUM(occurrence_count), COUNT(DISTINCT cell) FROM read_parquet('{fact_path}')
+    """).fetchone()
+    (distinct_species_count,) = con.execute(f"""
+        SELECT COUNT(DISTINCT specieskey) FROM read_parquet('{dimension_path}')
+    """).fetchone()
     return RunStats(
         fact_columns=fact_columns,
         dimension_columns=dimension_columns,
-        total_occurrence_count=sum(row["occurrence_count"] for row in fact_rows),
-        distinct_cell_count=len({row["cell"] for row in fact_rows}),
-        distinct_species_count=len({row["specieskey"] for row in dimension_rows}),
+        total_occurrence_count=total_occurrence_count,
+        distinct_cell_count=distinct_cell_count,
+        distinct_species_count=distinct_species_count,
     )
 
 
