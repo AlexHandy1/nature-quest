@@ -1,3 +1,4 @@
 -r requirements.txt
+-r requirements-job.txt
 ruff==0.16.1
 mypy==2.3.0
