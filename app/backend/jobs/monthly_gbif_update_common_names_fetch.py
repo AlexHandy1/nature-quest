@@ -3,6 +3,23 @@ from collections.abc import Callable
 
 DEFAULT_MAX_WORKERS = 20
 
+# Pinned explicitly, not resolved live on every run. Why: our fact/
+# dimension specieskeys come from whatever COL XR release GBIF had pinned
+# at BigQuery's snapshot time; resolving this live at pipeline-run time
+# could silently drift to a newer release than the one our occurrence data
+# actually uses. Update this constant only via a deliberate decision - the
+# same way the Testudines rank-override and the COL XR migration itself
+# (WORK_SUMMARY_091026.md) were handled, never automatically.
+#
+# Verified against GBIF's registry 2026-10-23: resolves to ChecklistBank
+# dataset 315557, alias "COL26.6 XR", version "2026-06-19 XR" - Catalogue
+# of Life's Extended Release. To re-check: GET
+# https://api.gbif.org/v1/dataset/7ddf754f-d193-4cc9-b351-99906754a03b and
+# read the identifiers[].identifier where type is "CLB_DATASET_KEY", then
+# GET https://api.checklistbank.org/dataset/{that key} and compare its
+# alias/version against the ones recorded here.
+CHECKLISTBANK_COL_XR_DATASET_KEY = 315557
+
 
 def _is_code_like(name: str) -> bool:
     """Looks like a banding/abbreviation code (e.g. "COST", "GRTI"), not a name."""
