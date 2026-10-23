@@ -2,6 +2,7 @@ from jobs.monthly_gbif_update_guardrails import (
     EXPECTED_DIMENSION_COLUMNS,
     EXPECTED_FACT_COLUMNS,
     RunStats,
+    compute_run_stats,
     evaluate,
 )
 
@@ -140,3 +141,23 @@ def test_warns_when_total_occurrence_count_swings_by_more_than_twenty_percent():
     assert outcome.verdict == "warn"
     assert outcome.block_reasons == []
     assert any("occurrence count" in reason for reason in outcome.warn_reasons)
+
+
+def test_compute_run_stats_derives_schema_and_counts_from_raw_rows():
+    fact_rows = [
+        {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
+        {"cell": "u4pruy", "specieskey": "SP2", "occurrence_count": 25},
+        {"cell": "u4pruz", "specieskey": "SP1", "occurrence_count": 5},
+    ]
+    dimension_rows = [
+        {"specieskey": "SP1", "species": "Pica pica", "common_name": None},
+        {"specieskey": "SP2", "species": "Passer domesticus", "common_name": "House Sparrow"},
+    ]
+
+    stats = compute_run_stats(fact_rows, dimension_rows)
+
+    assert stats.fact_columns == frozenset({"cell", "specieskey", "occurrence_count"})
+    assert stats.dimension_columns == frozenset({"specieskey", "species", "common_name"})
+    assert stats.total_occurrence_count == 40
+    assert stats.distinct_cell_count == 2
+    assert stats.distinct_species_count == 2

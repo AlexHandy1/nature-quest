@@ -26,6 +26,18 @@ class GuardrailOutcome:
     warn_reasons: list[str] = field(default_factory=list)
 
 
+def compute_run_stats(fact_rows: list[dict], dimension_rows: list[dict]) -> RunStats:
+    fact_columns = frozenset(fact_rows[0].keys()) if fact_rows else frozenset()
+    dimension_columns = frozenset(dimension_rows[0].keys()) if dimension_rows else frozenset()
+    return RunStats(
+        fact_columns=fact_columns,
+        dimension_columns=dimension_columns,
+        total_occurrence_count=sum(row["occurrence_count"] for row in fact_rows),
+        distinct_cell_count=len({row["cell"] for row in fact_rows}),
+        distinct_species_count=len({row["specieskey"] for row in dimension_rows}),
+    )
+
+
 def evaluate(current: RunStats, previous: RunStats) -> GuardrailOutcome:
     block_reasons: list[str] = []
 

@@ -21,6 +21,20 @@ def upload_release_file(
     blob.upload_from_filename(local_path)
 
 
+def download_blob_to_file(
+    client: storage.Client, bucket_name: str, blob_path: str, local_path: str
+) -> None:
+    bucket = client.bucket(bucket_name)
+    bucket.blob(blob_path).download_to_filename(local_path)
+
+
+def read_parquet_rows(path: str) -> list[dict]:
+    con = duckdb.connect()
+    columns = [col[0] for col in con.execute(f"DESCRIBE SELECT * FROM read_parquet('{path}')").fetchall()]
+    rows = con.execute(f"SELECT * FROM read_parquet('{path}')").fetchall()
+    return [dict(zip(columns, row, strict=True)) for row in rows]
+
+
 def promote_release(
     client: storage.Client, bucket_name: str, release_date: str, filenames: list[str]
 ) -> None:

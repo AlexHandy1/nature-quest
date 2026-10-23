@@ -3,7 +3,9 @@ from unittest.mock import MagicMock
 import duckdb
 
 from jobs.monthly_gbif_update_gcs_release import (
+    download_blob_to_file,
     promote_release,
+    read_parquet_rows,
     release_blob_path,
     upload_release_file,
     write_parquet,
@@ -52,3 +54,25 @@ def test_upload_release_file_uploads_to_the_dated_releases_path():
     blob = bucket.blob.return_value
     bucket.blob.assert_called_once_with("releases/2026-11-07/fact_sorted_by_cell.parquet")
     blob.upload_from_filename.assert_called_once_with("/tmp/fact.parquet")
+
+
+def test_download_blob_to_file_downloads_the_named_blob():
+    bucket = MagicMock()
+    client = MagicMock()
+    client.bucket.return_value = bucket
+
+    download_blob_to_file(client, "my-bucket", "fact_sorted_by_cell.parquet", "/tmp/fact.parquet")
+
+    blob = bucket.blob.return_value
+    bucket.blob.assert_called_once_with("fact_sorted_by_cell.parquet")
+    blob.download_to_filename.assert_called_once_with("/tmp/fact.parquet")
+
+
+def test_read_parquet_rows_reads_back_what_write_parquet_wrote(tmp_path):
+    path = str(tmp_path / "fact.parquet")
+    rows = [{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}]
+    write_parquet(rows, path)
+
+    result = read_parquet_rows(path)
+
+    assert result == rows
