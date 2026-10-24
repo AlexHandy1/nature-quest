@@ -1,12 +1,14 @@
 """Monthly GBIF data-update pipeline - the Cloud Run Job entrypoint.
 
-Flow: generate a target release from BigQuery and export it to GCS
-(sharded for the fact table, single-file for the dimension table) ->
-download and recombine the fact shards locally into one correctly-
-sorted file -> read current production's summary stats -> compute the
-target release's own summary stats from the local (recombined fact +
-raw dimension) files and compare guardrails -> if not blocked, join
-common names and promote the release to production. See
+Flow: generate a target release from BigQuery via EXPORT DATA straight
+to GCS (sharded for the fact table, single-file for the dimension
+table - BigQuery guarantees the fact shards' global ORDER BY cell is
+preserved sequentially across them) -> download the fact shards and
+concatenate them locally into one file, in order, with no re-sort ->
+read current production's summary stats -> compute the target
+release's own summary stats from the local (recombined fact + raw
+dimension) files and compare guardrails -> if not blocked, join common
+names and promote the release to production. See
 docs/decisions/ADR-016/017 and
 docs/status_docs/PLANNING_DUCKDB_MIGRATION_201026.md for the surrounding
 architecture this automates (previously a manual, one-off process).
@@ -238,19 +240,17 @@ _DIMENSION_SELECT_SQL = """
 """
 
 
-def _run_fact_and_dimension_queries(
-    client: bigquery.Client,
-) -> tuple[bigquery.TableReference, bigquery.TableReference]:
-    """One BigQuery session: a single scan of the raw public occurrences
-    table, grouped by (cell, specieskey, taxonomy) into a TEMP TABLE -
-    same shape as the original manual process's species_cell_index_
-    global_g6 (8 Oct session), ~549M rows rather than the ~3.6B raw
-    per-occurrence rows. Both derived SELECTs (fact, dimension) read
-    from this much smaller aggregated intermediate, not the raw table
-    or its unaggregated row count - confirmed empirically this session
-    that skipping this aggregation (reading the raw ~3.6B-row shape
-    directly) cost ~700GB across the two derived queries alone, on top
-    of the ~393GB raw scan."""
+def _create_scan_session(client: bigquery.Client) -> str:
+    """One BigQuery session, scoped to a single scan of the raw public
+    occurrences table, grouped by (cell, specieskey, taxonomy) into a
+    TEMP TABLE - same shape as the original manual process's species_
+    cell_index_global_g6 (8 Oct session), ~549M rows rather than the
+    ~3.6B raw per-occurrence rows. Both derived EXPORT DATA statements
+    that follow read from this much smaller aggregated intermediate,
+    not the raw table or its unaggregated row count - confirmed
+    empirically this session that skipping this aggregation (reading
+    the raw ~3.6B-row shape directly) cost ~700GB across the two
+    derived queries alone, on top of the ~393GB raw scan."""
     session_job_config = bigquery.QueryJobConfig(create_session=True, maximum_bytes_billed=MAXIMUM_BYTES_BILLED)
     scan_job = client.query(_SCAN_INTO_TEMP_TABLE_SQL, job_config=session_job_config)
     scan_job.result()
@@ -258,15 +258,33 @@ def _run_fact_and_dimension_queries(
     assert session_info is not None, "BigQuery did not return a session for create_session=True"
     session_id = session_info.session_id
     assert session_id is not None, "BigQuery session has no session_id"
+    return session_id
 
+
+def _export_query_to_gcs(client: bigquery.Client, session_id: str, select_sql: str, destination_uri: str) -> None:
+    """Runs select_sql as an EXPORT DATA statement within the given
+    session, writing straight to destination_uri - no intermediate
+    BigQuery destination table, so row data never passes through
+    Python. Unlike extract_table() on a destination table (no ordering
+    guarantee at all - a BigQuery table has no row order at rest
+    regardless of a prior query's ORDER BY), EXPORT DATA guarantees any
+    ORDER BY in select_sql is preserved globally and distributed
+    sequentially across shard files when destination_uri contains a
+    wildcard: shard 0 holds the lowest-sorted rows, shard 1 the next
+    chunk, and so on. Confirmed via https://docs.cloud.google.com/
+    bigquery/docs/reference/standard-sql/export-statements ("the
+    ordered sequence is preserved globally across all generated
+    files"). This is what lets the local recombine step concatenate
+    shards instead of re-sorting the whole dataset in memory."""
     session_job_config = bigquery.QueryJobConfig(
         connection_properties=[bigquery.ConnectionProperty("session_id", session_id)]
     )
-    fact_job = client.query(_FACT_SELECT_SQL, job_config=session_job_config)
-    fact_job.result()
-    dimension_job = client.query(_DIMENSION_SELECT_SQL, job_config=session_job_config)
-    dimension_job.result()
-    return fact_job.destination, dimension_job.destination
+    export_sql = f"""
+        EXPORT DATA OPTIONS(uri='{destination_uri}', format='PARQUET', overwrite=true) AS
+        {select_sql}
+    """
+    export_job = client.query(export_sql, job_config=session_job_config)
+    export_job.result()
 
 
 def compute_top_n_specieskeys(
@@ -297,32 +315,26 @@ def compute_top_n_specieskeys(
     return [row[0] for row in con.execute(sql).fetchall()]
 
 
-def _extract_table_to_gcs(client: bigquery.Client, table_ref: bigquery.TableReference, destination_uri: str) -> None:
-    """destination_uri may be a plain gs:// path (single file, used for
-    the dimension table - confirmed well under BigQuery's ~1GB logical
-    single-file export limit) or contain a `*` wildcard (required for
-    the fact table, which exceeds that limit and must be sharded into a
-    non-deterministic number of files)."""
-    extract_job = client.extract_table(
-        table_ref, destination_uri, job_config=bigquery.ExtractJobConfig(destination_format="PARQUET")
-    )
-    extract_job.result()
-
-
 def generate_target_release(
     client: bigquery.Client, fact_destination_uri: str, dimension_destination_uri: str
 ) -> None:
-    """Runs the fact/dimension derivation and extracts both results
-    directly to GCS (BigQuery's own server-side export) - row data for
-    either table (the fact table alone is ~221M rows) never passes
-    through Python here. Stats, top-N, and schema checks are computed
-    later, locally, from the downloaded (and, for the fact table,
-    shard-recombined) files - this keeps guardrails evaluating the
-    actual bytes that would be promoted, not a separate BigQuery-side
-    estimate of them."""
-    fact_table_ref, dimension_table_ref = _run_fact_and_dimension_queries(client)
-    _extract_table_to_gcs(client, fact_table_ref, fact_destination_uri)
-    _extract_table_to_gcs(client, dimension_table_ref, dimension_destination_uri)
+    """Runs the fact/dimension derivation and EXPORT DATAs both results
+    directly to GCS, within one BigQuery session - row data for either
+    table (the fact table alone is ~221M rows) never passes through
+    Python here, and no intermediate BigQuery destination table is
+    created. fact_destination_uri's ORDER BY cell is guaranteed
+    preserved globally across its shards by BigQuery itself (see
+    _export_query_to_gcs) - the local recombine step relies on this to
+    concatenate shards rather than re-sort the whole dataset in memory
+    (an earlier version of this pipeline OOM'd a 16Gi Cloud Run
+    instance doing exactly that full in-memory sort). Stats, top-N, and
+    schema checks are computed later, locally, from the downloaded
+    (and, for the fact table, shard-recombined) files - this keeps
+    guardrails evaluating the actual bytes that would be promoted, not
+    a separate BigQuery-side estimate of them."""
+    session_id = _create_scan_session(client)
+    _export_query_to_gcs(client, session_id, _FACT_SELECT_SQL, fact_destination_uri)
+    _export_query_to_gcs(client, session_id, _DIMENSION_SELECT_SQL, dimension_destination_uri)
 
 
 # --- GCS: local Parquet I/O and promotion -----------------------------------
@@ -349,43 +361,54 @@ def list_blobs_with_prefix(client: storage.Client, bucket_name: str, prefix: str
     return [blob.name for blob in client.bucket(bucket_name).list_blobs(prefix=prefix)]
 
 
-def download_blobs_with_prefix(client: storage.Client, bucket_name: str, prefix: str, local_dir: str) -> str:
-    """Downloads every blob matching prefix (BigQuery's sharded export
-    output - a non-deterministic number of files) into local_dir, and
-    returns a local glob pattern matching all of them."""
+def download_blobs_with_prefix(client: storage.Client, bucket_name: str, prefix: str, local_dir: str) -> list[str]:
+    """Downloads every blob matching prefix (BigQuery's sharded EXPORT
+    DATA output - a non-deterministic number of files) into local_dir,
+    and returns their local paths in the same order list_blobs_with_
+    prefix returned them. GCS list_blobs returns objects in ascending
+    (lexicographic) name order, which matches BigQuery's zero-padded
+    sequential shard numbering - this order must be preserved, since
+    the later concatenation step relies on it to reproduce the globally
+    sorted result EXPORT DATA distributed across these shards."""
     os.makedirs(local_dir, exist_ok=True)
+    local_paths = []
     for blob_name in list_blobs_with_prefix(client, bucket_name, prefix):
-        download_blob_to_file(client, bucket_name, blob_name, f"{local_dir}/{os.path.basename(blob_name)}")
-    return f"{local_dir}/*.parquet"
+        local_path = f"{local_dir}/{os.path.basename(blob_name)}"
+        download_blob_to_file(client, bucket_name, blob_name, local_path)
+        local_paths.append(local_path)
+    return local_paths
 
 
-def recombine_sorted_parquet(
+def recombine_ordered_shards(
     con: duckdb.DuckDBPyConnection,
-    input_glob: str,
+    shard_paths: list[str],
     output_path: str,
-    sort_column: str = "cell",
     row_group_size: int = PRODUCTION_ROW_GROUP_SIZE,
 ) -> None:
-    """Reads every file matching input_glob (BigQuery's sharded export
-    shards, in whatever order the filesystem/glob returns them) and
-    writes them back out as a single, explicitly-sorted file - BigQuery
-    extract jobs do not guarantee row order is preserved once sharded,
-    so this is the step that actually guarantees the production-serving
-    file is ordered by cell, rather than relying on that as an
-    assumption about BigQuery's export behaviour."""
+    """Concatenates shard_paths, in the given order, into a single
+    file - no re-sort. Relies on BigQuery's EXPORT DATA having already
+    distributed a globally ORDER BY'd result sequentially across these
+    shards (see _export_query_to_gcs); shard_paths must already be in
+    that same order (download_blobs_with_prefix guarantees this).
+    verify_sorted_by_cell is the check that actually proves the
+    guarantee held for this real output, rather than trusting it
+    blindly - a full local re-sort (an earlier version of this
+    pipeline) OOM'd a 16Gi Cloud Run instance on real production data,
+    since Cloud Run's default filesystem is memory-backed and the sort
+    had no way to spill without also consuming that same memory pool."""
+    file_list = ", ".join(f"'{path}'" for path in shard_paths)
     con.execute(f"""
-        COPY (
-            SELECT * FROM read_parquet('{input_glob}') ORDER BY {sort_column}
-        ) TO '{output_path}' (FORMAT PARQUET, ROW_GROUP_SIZE {row_group_size})
+        COPY (SELECT * FROM read_parquet([{file_list}])) TO '{output_path}' (FORMAT PARQUET, ROW_GROUP_SIZE {row_group_size})
     """)
 
 
-def verify_recombined_row_count(con: duckdb.DuckDBPyConnection, input_glob: str, output_path: str) -> None:
+def verify_recombined_row_count(con: duckdb.DuckDBPyConnection, shard_paths: list[str], output_path: str) -> None:
     """Raises if the recombine step silently dropped or duplicated rows
     - a mechanism failure, not a data-quality signal, so this is a hard
     failure (crashes the job, trips the GCP-level backstop alert) rather
     than a soft guardrail outcome."""
-    (shard_total,) = con.execute(f"SELECT COUNT(*) FROM read_parquet('{input_glob}')").fetchone()  # type: ignore[misc]
+    file_list = ", ".join(f"'{path}'" for path in shard_paths)
+    (shard_total,) = con.execute(f"SELECT COUNT(*) FROM read_parquet([{file_list}])").fetchone()  # type: ignore[misc]
     (recombined_total,) = con.execute(f"SELECT COUNT(*) FROM read_parquet('{output_path}')").fetchone()  # type: ignore[misc]
     if shard_total != recombined_total:
         raise ValueError(
@@ -395,8 +418,8 @@ def verify_recombined_row_count(con: duckdb.DuckDBPyConnection, input_glob: str,
 
 def verify_sorted_by_cell(con: duckdb.DuckDBPyConnection, path: str, sort_column: str = "cell") -> None:
     """Raises if the recombined file's row groups are not monotonically
-    ordered by sort_column - a mechanism failure (the ORDER BY in
-    recombine_sorted_parquet should make this impossible), checked
+    ordered by sort_column - the check that actually proves BigQuery's
+    EXPORT DATA ordering guarantee held for this real output, checked
     directly via Parquet row-group statistics rather than assumed."""
     rows = con.execute(f"""
         SELECT row_group_id, min(stats_min_value) AS group_min, max(stats_max_value) AS group_max
@@ -579,15 +602,15 @@ def run(
     raw_dim_uri = f"gs://{bucket_name}/{release_blob_path(release_date, RAW_DIMENSION_FILENAME)}"
     generate_target_release(bigquery_client, fact_shard_uri, raw_dim_uri)
 
-    shard_glob = download_blobs_with_prefix(
+    shard_paths = download_blobs_with_prefix(
         storage_client,
         bucket_name,
         release_blob_path(release_date, FACT_SHARD_PREFIX),
         f"{workdir}/fact_shards",
     )
     target_fact_path = f"{workdir}/{FACT_FILENAME}"
-    recombine_sorted_parquet(con, shard_glob, target_fact_path)
-    verify_recombined_row_count(con, shard_glob, target_fact_path)
+    recombine_ordered_shards(con, shard_paths, target_fact_path)
+    verify_recombined_row_count(con, shard_paths, target_fact_path)
     verify_sorted_by_cell(con, target_fact_path)
 
     raw_dim_path = f"{workdir}/{RAW_DIMENSION_FILENAME}"
