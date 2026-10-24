@@ -16,6 +16,8 @@ env:
   REGION: europe-west1
   SERVICE: nature-quest-production
   IMAGE: europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app
+  JOB: nature-quest-monthly-gbif-update
+  JOB_IMAGE: europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/monthly-gbif-update
 
 jobs:
   lint-typecheck-backend:
@@ -90,6 +92,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f app/backend/Dockerfile --build-arg VITE_POSTHOG_KEY="${{ vars.POSTHOG_PROJECT_TOKEN }}" -t "$IMAGE:${{ github.sha }}" .
+      - run: docker build -f app/backend/Dockerfile.job -t "$JOB_IMAGE:${{ github.sha }}" .
 
   deploy:
     needs: build
@@ -115,6 +118,10 @@ jobs:
           docker push "$IMAGE:${{ github.sha }}"
 
       - run: |
+          docker build -f app/backend/Dockerfile.job -t "$JOB_IMAGE:${{ github.sha }}" .
+          docker push "$JOB_IMAGE:${{ github.sha }}"
+
+      - run: |
           gcloud run deploy "$SERVICE" \
             --image="$IMAGE:${{ github.sha }}" \
             --region="$REGION" \
@@ -125,3 +132,14 @@ jobs:
         run: |
           URL=$(gcloud run services describe "$SERVICE" --region="$REGION" --project="$PROJECT_ID" --format="value(status.url)")
           curl -sf "$URL/health" | grep -q '"status":"ok"'
+
+      - name: Update monthly GBIF update Job image
+        # Only ever updates the image field - Terraform still owns everything
+        # else about the Job (infra/monthly_gbif_update_job.tf), same pattern
+        # as the Service deploy step above.
+        run: |
+          gcloud run jobs update "$JOB" \
+            --image="$JOB_IMAGE:${{ github.sha }}" \
+            --region="$REGION" \
+            --project="$PROJECT_ID" \
+            --quiet

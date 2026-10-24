@@ -1,3 +1,6 @@
 -r requirements.txt
+-r requirements-job.txt
 ruff==0.16.1
 mypy==2.3.0
+pandas-stubs==3.0.5.260914
+types-requests==2.33.0.20261006

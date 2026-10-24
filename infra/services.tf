@@ -9,6 +9,8 @@ locals {
     "monitoring.googleapis.com",
     "logging.googleapis.com",
     "storage.googleapis.com",
+    "bigquery.googleapis.com",
+    "cloudscheduler.googleapis.com",
   ]
 }
 

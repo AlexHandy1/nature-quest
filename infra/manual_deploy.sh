@@ -13,6 +13,8 @@ PROJECT_ID="nature-quest-504414"
 REGION="europe-west1"
 SERVICE="nature-quest-production"
 IMAGE="europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/app"
+JOB="nature-quest-monthly-gbif-update"
+JOB_IMAGE="europe-west1-docker.pkg.dev/nature-quest-504414/nature-quest/monthly-gbif-update"
 SHA="$(git rev-parse HEAD)"
 
 echo "==> Fetching VITE_POSTHOG_KEY from the GitHub Actions repo variable (same source CI uses)"
@@ -29,6 +31,12 @@ docker build -f app/backend/Dockerfile \
 echo "==> Pushing ${IMAGE}:${SHA}"
 docker push "${IMAGE}:${SHA}"
 
+echo "==> Building job image ${JOB_IMAGE}:${SHA}"
+docker build -f app/backend/Dockerfile.job -t "${JOB_IMAGE}:${SHA}" .
+
+echo "==> Pushing ${JOB_IMAGE}:${SHA}"
+docker push "${JOB_IMAGE}:${SHA}"
+
 echo "==> Deploying to Cloud Run service ${SERVICE}"
 gcloud run deploy "$SERVICE" \
   --image="${IMAGE}:${SHA}" \
@@ -42,3 +50,12 @@ curl -sf "$URL/health" | grep -q '"status":"ok"'
 curl -sf -X POST "$URL/api/interest" -H "Content-Type: application/json" -d '{"query":"manual deploy smoke test"}' | grep -q '"status":"received"'
 
 echo "==> Deploy of ${SHA} to ${URL} succeeded and passed smoke test."
+
+echo "==> Updating monthly GBIF update Job image"
+gcloud run jobs update "$JOB" \
+  --image="${JOB_IMAGE}:${SHA}" \
+  --region="$REGION" \
+  --project="$PROJECT_ID" \
+  --quiet
+
+echo "==> Job ${JOB} updated to ${SHA}."
