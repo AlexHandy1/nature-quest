@@ -1,3 +1,4 @@
+import dataclasses
 from unittest.mock import MagicMock, patch
 
 import duckdb
@@ -33,15 +34,14 @@ from jobs.monthly_gbif_update import (
 
 
 def _healthy_stats(**overrides) -> RunStats:
-    defaults = {
-        "fact_columns": EXPECTED_FACT_COLUMNS,
-        "dimension_columns": EXPECTED_DIMENSION_COLUMNS,
-        "total_occurrence_count": 1_000_000,
-        "distinct_cell_count": 10_000,
-        "distinct_species_count": 5_000,
-    }
-    defaults.update(overrides)
-    return RunStats(**defaults)
+    base = RunStats(
+        fact_columns=EXPECTED_FACT_COLUMNS,
+        dimension_columns=EXPECTED_DIMENSION_COLUMNS,
+        total_occurrence_count=1_000_000,
+        distinct_cell_count=10_000,
+        distinct_species_count=5_000,
+    )
+    return dataclasses.replace(base, **overrides)
 
 
 def test_passes_when_schema_matches_and_no_counts_decreased():
@@ -530,15 +530,14 @@ RAW_DIMENSION_COLUMNS = frozenset(
 
 
 def _healthy_run_stats(**overrides) -> RunStats:
-    defaults = {
-        "fact_columns": frozenset({"cell", "specieskey", "occurrence_count"}),
-        "dimension_columns": RAW_DIMENSION_COLUMNS | {"common_name"},
-        "total_occurrence_count": 1_000_000,
-        "distinct_cell_count": 10_000,
-        "distinct_species_count": 5_000,
-    }
-    defaults.update(overrides)
-    return RunStats(**defaults)
+    base = RunStats(
+        fact_columns=frozenset({"cell", "specieskey", "occurrence_count"}),
+        dimension_columns=RAW_DIMENSION_COLUMNS | {"common_name"},
+        total_occurrence_count=1_000_000,
+        distinct_cell_count=10_000,
+        distinct_species_count=5_000,
+    )
+    return dataclasses.replace(base, **overrides)
 
 
 def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
