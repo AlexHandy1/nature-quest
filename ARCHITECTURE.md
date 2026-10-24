@@ -221,6 +221,44 @@ One structural rule: any future router must be registered in `create_app()` **be
 
 Local dev needs a repo-root `.env` with `ANTHROPIC_API_KEY` (real narration/rollback LLM calls), `OPENROUTER_API_KEY` (real taxon-resolution LLM calls and real TTS calls), and `POSTHOG_PROJECT_TOKEN` (real server-side PostHog capture when testing with `consent=True`) — gitignored, loaded via `python-dotenv` in `main.py`. Tests that don't need real API access mock the service-layer functions at the router boundary (see `tests/conftest.py` for the rate-limiter/budget-counter/ai_observability-singleton reset fixtures needed because all three are process-global state — narration_budget.py's counter gets the same treatment). A separate `@pytest.mark.eval` tier (`tests/evals/`, `pytest.ini`) makes real Anthropic/GBIF/Wikipedia/OpenRouter calls — excluded from the default `pytest` run and CI, run explicitly via `pytest -m eval`. Covers happy-path taxon resolution (birds, plants, insects, fungi, turtles), adversarial cases (negation, off-topic, purely qualitative), mixed-taxa expansion (two- and three-way), the fish lay-term expansion (asserts the exact 7-group curated list), a real end-to-end pipeline case for both a single filter and a mixed-taxa pair — runs the real LLM call through the real local DuckDB query layer (ADR-017), then verifies the results independently against live GBIF `species/match` (an oracle on species identity, not on how the local query matched the taxon — still valid post-migration), an optional PostHog-capture check that auto-skips without `POSTHOG_PROJECT_TOKEN`, narration quality checks (length/timing/dash-pause/all-species-mentioned programmatic checks plus an LLM-judged faithfulness/habitat-claim pass, parametrized across three sample walks, plus a live content-safety refusal check — see ADR-014), and a narrative-to-audio check asserting the TTS response is valid, plausibly-sized audio. `tests/test_smoke_llm.py` still exercises the pre-ADR-017 taxon-resolution shape directly (not the router) and is deliberately left as-is pending a broader eval-strategy pass, rather than rewired piecemeal.
 
+#### Monthly GBIF update (`app/backend/jobs/`)
+
+```
+monthly_gbif_update.py    Cloud Run Job entrypoint (separate Dockerfile.job, separate
+                             requirements-job.txt — not bundled into the main app image), triggered
+                             monthly by Cloud Scheduler (infra/monthly_gbif_update_job.tf).
+                             Automates the manual 8-9 Oct table-creation process: derives a fact
+                             table (cell+specieskey, ~221M rows) and a dimension table from a
+                             session-scoped BigQuery TEMP TABLE scan of bigquery-public-data.gbif.
+                             occurrences, EXPORT DATAs both straight to GCS (no intermediate
+                             BigQuery destination table — see ADR-019 for why, and why this isn't
+                             extract_table()), downloads and locally concatenates each table's
+                             shards in order (no re-sort — BigQuery's EXPORT DATA guarantees the
+                             fact table's ORDER BY cell is preserved sequentially across shards),
+                             verifies the result (row-count + row-group-monotonicity checks),
+                             computes guardrail stats from those local files and compares against
+                             current production (schema checks + 3 count-metric checks, each
+                             independently pass/warn/block), joins an incrementally-updated
+                             ChecklistBank common-names cache onto the dimension table, and —
+                             unless guardrails return "block" — promotes both files to the bucket
+                             root the live app reads from. A "warn" verdict still promotes; only
+                             "block" stops short of it. Every run's dated release folder
+                             (releases/<date>/) is written regardless of the verdict, so a blocked
+                             run is still inspectable
+```
+
+Runs as the `index_refresh` service account (write-only on the index-data
+bucket, `bigquery.jobUser` on the project — `infra/monthly_gbif_update_job.tf`),
+deliberately never combined with the app's own read-only runtime identity.
+4Gi/2 vCPU OOM-killed a real execution before the EXPORT DATA redesign (a
+full local re-sort peaked at ~14GB, and Cloud Run's default filesystem is
+memory-backed, adding downloaded/written file bytes on top of that same
+pool) — now 16Gi/4 vCPU, with real headroom after the redesign (see
+ADR-019). Two independent Cloud Monitoring alerts cover it: a structured-
+log alert on every run's outcome (pass/warn/block), and a GCP-level
+backstop on the Job's own execution-failure metric, for failures that
+never reach the point of logging an outcome at all.
+
 ### Frontend (`app/frontend/`)
 
 ```
@@ -299,7 +337,7 @@ The dev server (`npm run dev`) proxies `/api` and `/health` to `localhost:8000` 
 
 ### Infrastructure (`infra/`)
 
-Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN`/`FACT_PARQUET_PATH`/`DIMENSION_PARQUET_PATH` env vars — the latter two point at the real `gs://` index-data bucket, no local default so dev can never accidentally hit it), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account (`nature-quest-run`), Secret Manager secrets (`anthropic-api-key`, `openrouter-api-key` — values set out-of-band; `gcs-index-data-hmac-key-id`/`gcs-index-data-hmac-secret` — values generated by Terraform itself, ADR-018 — all four IAM-bound to `nature-quest-run`), a separate GCS bucket (`infra/gcs_index_data.tf`) serving the local DuckDB index data (ADR-016/ADR-017) with a least-privilege read/write split — `nature-quest-run` gets read-only access to that one bucket, a second, separate identity (`nature-quest-index-refresh`) gets write-only access for the (currently manual, eventually monthly-automated) data upload, and the two are never combined — Cloud Monitoring (`monitoring.tf` — an email notification channel, a log-based metric counting `query_outcome` log lines, and an alert policy firing on every one, per `ADR-010`), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
+Terraform-managed: Cloud Run (`nature-quest-production`, `europe-west1`, public, `max_instance_count=2`, `POSTHOG_PROJECT_TOKEN`/`FACT_PARQUET_PATH`/`DIMENSION_PARQUET_PATH` env vars — the latter two point at the real `gs://` index-data bucket, no local default so dev can never accidentally hit it), Artifact Registry (Docker images), a dedicated Cloud Run runtime service account (`nature-quest-run`), Secret Manager secrets (`anthropic-api-key`, `openrouter-api-key` — values set out-of-band; `gcs-index-data-hmac-key-id`/`gcs-index-data-hmac-secret` — values generated by Terraform itself, ADR-018 — all four IAM-bound to `nature-quest-run`), a separate GCS bucket (`infra/gcs_index_data.tf`) serving the local DuckDB index data (ADR-016/ADR-017) with a least-privilege read/write split — `nature-quest-run` gets read-only access to that one bucket, a second, separate identity (`nature-quest-index-refresh`) gets write-only access for the monthly automated data refresh, and the two are never combined — a Cloud Run Job + Cloud Scheduler trigger running that refresh monthly (`infra/monthly_gbif_update_job.tf`; see the Backend section's "Monthly GBIF update" subsection and ADR-019 — this was a manual, one-off process before 24 Oct 2026), Cloud Monitoring (`monitoring.tf` — an email notification channel, a log-based metric counting `query_outcome` log lines, and an alert policy firing on every one, per `ADR-010` — plus two more alert policies dedicated to the monthly job itself, see its own subsection), and Workload Identity Federation for GitHub Actions (see Deploy flow below). Remote state lives in a GCS bucket, bootstrapped manually once — see `infra/README.md` for that one-off step, `terraform apply` usage, and `infra/manual_deploy.sh` (a CI/CD-outage fallback that reproduces the build+deploy jobs locally).
 
 ## Request flow
 
