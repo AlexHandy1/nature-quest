@@ -2,6 +2,7 @@ import dataclasses
 from unittest.mock import MagicMock, patch
 
 import duckdb
+import pytest
 
 import jobs.monthly_gbif_update as job
 from jobs.monthly_gbif_update import (
@@ -13,20 +14,26 @@ from jobs.monthly_gbif_update import (
     bootstrap_cache_from_production,
     build_common_name_map,
     compute_stats_from_parquet,
+    compute_top_n_specieskeys,
     download_blob_to_file,
+    download_blobs_with_prefix,
     evaluate,
     fetch_common_names_for_taxa,
     generate_target_release,
     join_common_names,
+    list_blobs_with_prefix,
     log_outcome,
     merge_into_cache,
     new_entrants,
     pick_best_name,
     promote_release,
     read_parquet_rows,
+    recombine_sorted_parquet,
     release_blob_path,
     run,
     upload_file,
+    verify_recombined_row_count,
+    verify_sorted_by_cell,
     write_parquet,
 )
 
@@ -361,74 +368,171 @@ def test_fetch_common_names_for_taxa_collects_records_from_every_taxon():
 # --- BigQuery: generate the target release --------------------------------
 
 
-def _mock_field(name):
-    field = MagicMock()
-    field.name = name
-    return field
-
-
 def _mock_bigquery_client():
     scan_job = MagicMock()
-    scan_job.result.return_value = []
+    scan_job.result.return_value = None
 
     fact_job = MagicMock()
-    fact_job.result.return_value = []
+    fact_job.result.return_value = None
     fact_job.destination = "project.dataset.fact_tmp"
 
     dimension_job = MagicMock()
-    dimension_job.result.return_value = []
+    dimension_job.result.return_value = None
     dimension_job.destination = "project.dataset.dimension_tmp"
 
     extract_job = MagicMock()
     extract_job.result.return_value = None
 
-    fact_stats_row = {"total_occurrence_count": 1_000_000, "distinct_cell_count": 10_000}
-    dimension_stats_row = {"distinct_species_count": 5_000}
-    fact_stats_job = MagicMock()
-    fact_stats_job.result.return_value = [fact_stats_row]
-    dimension_stats_job = MagicMock()
-    dimension_stats_job.result.return_value = [dimension_stats_row]
-    top_n_job = MagicMock()
-    top_n_job.result.return_value = [{"specieskey": "SP1"}, {"specieskey": "SP2"}]
-
     client = MagicMock()
-    client.query.side_effect = [
-        scan_job,
-        fact_job,
-        dimension_job,
-        fact_stats_job,
-        dimension_stats_job,
-        top_n_job,
-    ]
+    client.query.side_effect = [scan_job, fact_job, dimension_job]
     client.extract_table.return_value = extract_job
-
-    fact_table = MagicMock()
-    fact_table.schema = [_mock_field("cell"), _mock_field("specieskey"), _mock_field("occurrence_count")]
-    dimension_table = MagicMock()
-    dimension_table.schema = [_mock_field("specieskey"), _mock_field("species")]
-    client.get_table.side_effect = [fact_table, dimension_table]
-
     return client
 
 
-def test_generate_target_release_extracts_both_tables_and_returns_their_stats():
+def test_generate_target_release_derives_then_extracts_both_tables_to_gcs():
     client = _mock_bigquery_client()
 
-    fact_stats, dimension_stats, top_n_specieskeys = generate_target_release(
-        client, "gs://bucket/fact.parquet", "gs://bucket/dimension.parquet"
+    generate_target_release(client, "gs://bucket/fact-*.parquet", "gs://bucket/dimension.parquet")
+
+    assert client.extract_table.call_count == 2
+    extracted_uris = [call.args[1] for call in client.extract_table.call_args_list]
+    assert extracted_uris == ["gs://bucket/fact-*.parquet", "gs://bucket/dimension.parquet"]
+
+
+def test_compute_top_n_specieskeys_selects_the_smallest_set_covering_the_threshold(tmp_path):
+    fact_path = str(tmp_path / "fact.parquet")
+    write_parquet(
+        [
+            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 97},
+            {"cell": "u4pruy", "specieskey": "SP2", "occurrence_count": 2},
+            {"cell": "u4pruy", "specieskey": "SP3", "occurrence_count": 1},
+        ],
+        fact_path,
+    )
+    con = duckdb.connect()
+
+    result = compute_top_n_specieskeys(con, fact_path, coverage=0.99)
+
+    assert result == ["SP1", "SP2"]
+
+
+# --- GCS: sharded fact export recombine -------------------------------------
+
+
+def test_list_blobs_with_prefix_returns_matching_blob_names():
+    blob1, blob2 = MagicMock(), MagicMock()
+    blob1.name = "releases/2026-11-07/fact_sorted_by_cell-0.parquet"
+    blob2.name = "releases/2026-11-07/fact_sorted_by_cell-1.parquet"
+    bucket = MagicMock()
+    bucket.list_blobs.return_value = [blob1, blob2]
+    client = MagicMock()
+    client.bucket.return_value = bucket
+
+    result = list_blobs_with_prefix(client, "my-bucket", "releases/2026-11-07/fact_sorted_by_cell-")
+
+    bucket.list_blobs.assert_called_once_with(prefix="releases/2026-11-07/fact_sorted_by_cell-")
+    assert result == [blob1.name, blob2.name]
+
+
+def test_download_blobs_with_prefix_downloads_every_match_and_returns_a_local_glob(tmp_path):
+    blob1, blob2 = MagicMock(), MagicMock()
+    blob1.name = "releases/2026-11-07/fact_sorted_by_cell-0.parquet"
+    blob2.name = "releases/2026-11-07/fact_sorted_by_cell-1.parquet"
+    bucket = MagicMock()
+    bucket.list_blobs.return_value = [blob1, blob2]
+    client = MagicMock()
+    client.bucket.return_value = bucket
+    local_dir = str(tmp_path / "shards")
+
+    result = download_blobs_with_prefix(
+        client, "my-bucket", "releases/2026-11-07/fact_sorted_by_cell-", local_dir
     )
 
-    assert fact_stats == {
-        "fact_columns": frozenset({"cell", "specieskey", "occurrence_count"}),
-        "total_occurrence_count": 1_000_000,
-        "distinct_cell_count": 10_000,
-    }
-    assert dimension_stats == {
-        "dimension_columns": frozenset({"specieskey", "species"}),
-        "distinct_species_count": 5_000,
-    }
-    assert top_n_specieskeys == ["SP1", "SP2"]
-    assert client.extract_table.call_count == 2
+    assert result == f"{local_dir}/*.parquet"
+    assert bucket.blob.return_value.download_to_filename.call_count == 2
+    bucket.blob.return_value.download_to_filename.assert_any_call(f"{local_dir}/fact_sorted_by_cell-0.parquet")
+    bucket.blob.return_value.download_to_filename.assert_any_call(f"{local_dir}/fact_sorted_by_cell-1.parquet")
+
+
+def test_recombine_sorted_parquet_merges_shards_into_one_sorted_file(tmp_path):
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    write_parquet(
+        [{"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5}],
+        str(shard_dir / "shard0.parquet"),
+    )
+    write_parquet(
+        [{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}],
+        str(shard_dir / "shard1.parquet"),
+    )
+    output_path = str(tmp_path / "recombined.parquet")
+    con = duckdb.connect()
+
+    recombine_sorted_parquet(con, f"{shard_dir}/*.parquet", output_path)
+
+    result = read_parquet_rows(output_path)
+    assert result == [
+        {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
+        {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5},
+    ]
+
+
+def test_verify_recombined_row_count_raises_on_mismatch(tmp_path):
+    shard_path = str(tmp_path / "shard.parquet")
+    output_path = str(tmp_path / "recombined.parquet")
+    write_parquet(
+        [
+            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
+            {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5},
+        ],
+        shard_path,
+    )
+    write_parquet([{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}], output_path)
+    con = duckdb.connect()
+
+    with pytest.raises(ValueError, match="mismatch"):
+        verify_recombined_row_count(con, shard_path, output_path)
+
+
+def test_verify_recombined_row_count_passes_silently_when_counts_match(tmp_path):
+    path = str(tmp_path / "fact.parquet")
+    write_parquet([{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}], path)
+    con = duckdb.connect()
+
+    verify_recombined_row_count(con, path, path)
+
+
+def test_verify_sorted_by_cell_raises_when_row_groups_are_out_of_order(tmp_path):
+    # ROW_GROUP_SIZE only takes effect with enough rows to actually split
+    # (DuckDB won't honour it for a handful of rows) - 2048-row blocks
+    # per group, in reverse cell order, reliably produces two real row
+    # groups whose min/max ranges violate ascending order.
+    path = str(tmp_path / "fact.parquet")
+    con = duckdb.connect()
+    con.execute(f"""
+        COPY (
+            SELECT 'u4pruz' AS cell, 'SP' || i AS specieskey, i AS occurrence_count FROM range(2048) t(i)
+            UNION ALL
+            SELECT 'u4pruy', 'SP' || i, i FROM range(2048) t(i)
+        ) TO '{path}' (FORMAT PARQUET, ROW_GROUP_SIZE 2048)
+    """)
+
+    with pytest.raises(ValueError, match="not sorted"):
+        verify_sorted_by_cell(con, path)
+
+
+def test_verify_sorted_by_cell_passes_silently_when_already_sorted(tmp_path):
+    path = str(tmp_path / "fact.parquet")
+    con = duckdb.connect()
+    con.execute(f"""
+        COPY (
+            SELECT 'u4pruy' AS cell, 'SP' || i AS specieskey, i AS occurrence_count FROM range(2048) t(i)
+            UNION ALL
+            SELECT 'u4pruz', 'SP' || i, i FROM range(2048) t(i)
+        ) TO '{path}' (FORMAT PARQUET, ROW_GROUP_SIZE 2048)
+    """)
+
+    verify_sorted_by_cell(con, path)
 
 
 # --- GCS: local Parquet I/O and promotion ---------------------------------
@@ -545,31 +649,30 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
     storage_client = MagicMock()
     con = MagicMock()
 
-    fact_stats = {
-        "fact_columns": frozenset({"cell", "specieskey", "occurrence_count"}),
-        "total_occurrence_count": 1_050_000,
-        "distinct_cell_count": 10_500,
-    }
-    dimension_stats = {
-        "dimension_columns": RAW_DIMENSION_COLUMNS,
-        "distinct_species_count": 5_250,
-    }
+    current_production_stats = _healthy_run_stats()
+    target_stats = _healthy_run_stats(
+        total_occurrence_count=1_050_000, distinct_cell_count=10_500, distinct_species_count=5_250
+    )
 
     with (
-        patch.object(job, "compute_stats_from_parquet", return_value=_healthy_run_stats()),
+        patch.object(job, "generate_target_release") as mock_generate,
         patch.object(
-            job,
-            "generate_target_release",
-            return_value=(fact_stats, dimension_stats, ["SP1"]),
-        ),
+            job, "download_blobs_with_prefix", return_value=f"{tmp_path}/shards/*.parquet"
+        ) as mock_download_shards,
+        patch.object(job, "recombine_sorted_parquet") as mock_recombine,
+        patch.object(job, "verify_recombined_row_count") as mock_verify_count,
+        patch.object(job, "verify_sorted_by_cell") as mock_verify_sorted,
         patch.object(
             job,
             "download_blob_to_file",
-            side_effect=[None, None, FileNotFoundError(), None],
+            side_effect=[None, None, None, FileNotFoundError()],
         ),
+        patch.object(job, "compute_stats_from_parquet", side_effect=[current_production_stats, target_stats]),
+        patch.object(job, "compute_top_n_specieskeys", return_value=["SP1"]),
         patch.object(job, "bootstrap_cache_from_production", return_value={}),
         patch.object(job, "fetch_common_names_for_taxa", return_value=[]),
         patch.object(job, "join_common_names") as mock_join,
+        patch.object(job, "upload_file") as mock_upload,
         patch.object(job, "promote_release") as mock_promote,
     ):
         outcome = run(
@@ -582,7 +685,13 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
         )
 
     assert outcome.verdict == "pass"
+    mock_generate.assert_called_once()
+    mock_download_shards.assert_called_once()
+    mock_recombine.assert_called_once()
+    mock_verify_count.assert_called_once()
+    mock_verify_sorted.assert_called_once()
     mock_join.assert_called_once()
+    assert mock_upload.call_count == 2
     mock_promote.assert_called_once_with(
         storage_client, "my-bucket", "2026-11-07", [FACT_FILENAME, DIMENSION_FILENAME]
     )
@@ -593,28 +702,17 @@ def test_run_does_not_promote_when_guardrails_block(tmp_path):
     storage_client = MagicMock()
     con = MagicMock()
 
-    fact_stats = {
-        "fact_columns": frozenset({"cell", "specieskey", "occurrence_count"}),
-        "total_occurrence_count": 500_000,
-        "distinct_cell_count": 10_500,
-    }
-    dimension_stats = {
-        "dimension_columns": RAW_DIMENSION_COLUMNS,
-        "distinct_species_count": 5_250,
-    }
+    current_production_stats = _healthy_run_stats()
+    target_stats = _healthy_run_stats(total_occurrence_count=500_000)
 
     with (
-        patch.object(job, "compute_stats_from_parquet", return_value=_healthy_run_stats()),
-        patch.object(
-            job,
-            "generate_target_release",
-            return_value=(fact_stats, dimension_stats, ["SP1"]),
-        ),
-        patch.object(
-            job,
-            "download_blob_to_file",
-            side_effect=[None, None],
-        ),
+        patch.object(job, "generate_target_release"),
+        patch.object(job, "download_blobs_with_prefix", return_value=f"{tmp_path}/shards/*.parquet"),
+        patch.object(job, "recombine_sorted_parquet"),
+        patch.object(job, "verify_recombined_row_count"),
+        patch.object(job, "verify_sorted_by_cell"),
+        patch.object(job, "download_blob_to_file", side_effect=[None, None, None]),
+        patch.object(job, "compute_stats_from_parquet", side_effect=[current_production_stats, target_stats]),
         patch.object(job, "join_common_names") as mock_join,
         patch.object(job, "promote_release") as mock_promote,
     ):
