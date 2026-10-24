@@ -53,14 +53,14 @@ resource "google_project_iam_member" "deploy_artifact_writer" {
 
 resource "google_service_account_iam_member" "deploy_can_run_as_runtime_sa" {
   service_account_id = google_service_account.run.name
-  role                = "roles/iam.serviceAccountUser"
-  member              = "serviceAccount:${google_service_account.deploy.email}"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.deploy.email}"
 }
 
 resource "google_service_account_iam_member" "wif_can_impersonate_deploy" {
   service_account_id = google_service_account.deploy.name
-  role                = "roles/iam.workloadIdentityUser"
-  member              = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/AlexHandy1/nature-quest"
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/AlexHandy1/nature-quest"
 }
 
 output "wif_provider" {

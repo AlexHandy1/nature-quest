@@ -1,0 +1,13 @@
+# Separate from Dockerfile (the live service) - deps here (bigquery,
+# pandas, pyarrow) are specific to the monthly GBIF update Cloud Run Job
+# and would otherwise bloat the live service's cold-start-sensitive image
+# for no benefit (see the 22 Oct cold-start work and the monthly-update
+# design discussion). Only jobs/ is copied - this image never runs the
+# FastAPI app, so there's nothing to share with the main Dockerfile.
+FROM python:3.13-slim
+WORKDIR /app
+COPY app/backend/requirements-job.txt ./
+RUN pip install --no-cache-dir -r requirements-job.txt
+COPY app/backend/jobs/ ./jobs/
+
+CMD ["python", "-m", "jobs.monthly_gbif_update"]

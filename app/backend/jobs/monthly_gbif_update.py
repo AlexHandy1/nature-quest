@@ -11,7 +11,9 @@ architecture this automates (previously a manual, one-off process).
 import concurrent.futures
 import json
 import logging
+import os
 import sys
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -571,3 +573,19 @@ def run(
     promote_release(storage_client, bucket_name, release_date, [FACT_FILENAME, DIMENSION_FILENAME])
 
     return outcome
+
+
+def main() -> None:
+    """Cloud Run Job entrypoint. A verdict of "block" still exits 0 - it's
+    an expected, already-logged/alerted outcome, not a crash; only a real
+    unhandled exception (something that prevented the guardrail decision
+    from ever being reached) should surface as a failed execution and
+    trip the GCP-level backstop alert."""
+    configure_json_logging()
+    bucket_name = os.environ["INDEX_DATA_BUCKET"]
+    workdir = tempfile.mkdtemp()
+    run(bigquery.Client(), storage.Client(), duckdb.connect(), bucket_name, workdir)
+
+
+if __name__ == "__main__":
+    main()
