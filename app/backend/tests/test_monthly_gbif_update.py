@@ -28,7 +28,7 @@ from jobs.monthly_gbif_update import (
     pick_best_name,
     promote_release,
     read_parquet_rows,
-    recombine_sorted_parquet,
+    recombine_ordered_shards,
     release_blob_path,
     run,
     upload_file,
@@ -371,32 +371,32 @@ def test_fetch_common_names_for_taxa_collects_records_from_every_taxon():
 def _mock_bigquery_client():
     scan_job = MagicMock()
     scan_job.result.return_value = None
+    scan_job.session_info.session_id = "session-1"
 
-    fact_job = MagicMock()
-    fact_job.result.return_value = None
-    fact_job.destination = "project.dataset.fact_tmp"
+    fact_export_job = MagicMock()
+    fact_export_job.result.return_value = None
 
-    dimension_job = MagicMock()
-    dimension_job.result.return_value = None
-    dimension_job.destination = "project.dataset.dimension_tmp"
-
-    extract_job = MagicMock()
-    extract_job.result.return_value = None
+    dimension_export_job = MagicMock()
+    dimension_export_job.result.return_value = None
 
     client = MagicMock()
-    client.query.side_effect = [scan_job, fact_job, dimension_job]
-    client.extract_table.return_value = extract_job
+    client.query.side_effect = [scan_job, fact_export_job, dimension_export_job]
     return client
 
 
-def test_generate_target_release_derives_then_extracts_both_tables_to_gcs():
+def test_generate_target_release_derives_then_export_datas_both_tables_to_gcs():
     client = _mock_bigquery_client()
 
     generate_target_release(client, "gs://bucket/fact-*.parquet", "gs://bucket/dimension.parquet")
 
-    assert client.extract_table.call_count == 2
-    extracted_uris = [call.args[1] for call in client.extract_table.call_args_list]
-    assert extracted_uris == ["gs://bucket/fact-*.parquet", "gs://bucket/dimension.parquet"]
+    assert client.query.call_count == 3
+    fact_export_sql = client.query.call_args_list[1].args[0]
+    dimension_export_sql = client.query.call_args_list[2].args[0]
+    assert "EXPORT DATA" in fact_export_sql
+    assert "gs://bucket/fact-*.parquet" in fact_export_sql
+    assert "ORDER BY cell" in fact_export_sql
+    assert "EXPORT DATA" in dimension_export_sql
+    assert "gs://bucket/dimension.parquet" in dimension_export_sql
 
 
 def test_compute_top_n_specieskeys_selects_the_smallest_set_covering_the_threshold(tmp_path):
@@ -434,7 +434,7 @@ def test_list_blobs_with_prefix_returns_matching_blob_names():
     assert result == [blob1.name, blob2.name]
 
 
-def test_download_blobs_with_prefix_downloads_every_match_and_returns_a_local_glob(tmp_path):
+def test_download_blobs_with_prefix_downloads_every_match_and_returns_ordered_local_paths(tmp_path):
     blob1, blob2 = MagicMock(), MagicMock()
     blob1.name = "releases/2026-11-07/fact_sorted_by_cell-0.parquet"
     blob2.name = "releases/2026-11-07/fact_sorted_by_cell-1.parquet"
@@ -448,33 +448,63 @@ def test_download_blobs_with_prefix_downloads_every_match_and_returns_a_local_gl
         client, "my-bucket", "releases/2026-11-07/fact_sorted_by_cell-", local_dir
     )
 
-    assert result == f"{local_dir}/*.parquet"
+    assert result == [
+        f"{local_dir}/fact_sorted_by_cell-0.parquet",
+        f"{local_dir}/fact_sorted_by_cell-1.parquet",
+    ]
     assert bucket.blob.return_value.download_to_filename.call_count == 2
     bucket.blob.return_value.download_to_filename.assert_any_call(f"{local_dir}/fact_sorted_by_cell-0.parquet")
     bucket.blob.return_value.download_to_filename.assert_any_call(f"{local_dir}/fact_sorted_by_cell-1.parquet")
 
 
-def test_recombine_sorted_parquet_merges_shards_into_one_sorted_file(tmp_path):
+def test_recombine_ordered_shards_concatenates_in_the_given_order_without_resorting(tmp_path):
     shard_dir = tmp_path / "shards"
     shard_dir.mkdir()
-    write_parquet(
-        [{"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5}],
-        str(shard_dir / "shard0.parquet"),
-    )
+    shard0 = str(shard_dir / "shard0.parquet")
+    shard1 = str(shard_dir / "shard1.parquet")
     write_parquet(
         [{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}],
-        str(shard_dir / "shard1.parquet"),
+        shard0,
+    )
+    write_parquet(
+        [{"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5}],
+        shard1,
     )
     output_path = str(tmp_path / "recombined.parquet")
     con = duckdb.connect()
 
-    recombine_sorted_parquet(con, f"{shard_dir}/*.parquet", output_path)
+    recombine_ordered_shards(con, [shard0, shard1], output_path)
 
     result = read_parquet_rows(output_path)
     assert result == [
         {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
         {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5},
     ]
+
+
+def test_recombine_ordered_shards_preserves_shard_order_even_when_each_shard_is_locally_unsorted(tmp_path):
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    shard0 = str(shard_dir / "shard0.parquet")
+    shard1 = str(shard_dir / "shard1.parquet")
+    write_parquet(
+        [
+            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10},
+            {"cell": "u4prux", "specieskey": "SP3", "occurrence_count": 1},
+        ],
+        shard0,
+    )
+    write_parquet(
+        [{"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5}],
+        shard1,
+    )
+    output_path = str(tmp_path / "recombined.parquet")
+    con = duckdb.connect()
+
+    recombine_ordered_shards(con, [shard0, shard1], output_path)
+
+    result = read_parquet_rows(output_path)
+    assert [row["cell"] for row in result] == ["u4pruy", "u4prux", "u4pruz"]
 
 
 def test_verify_recombined_row_count_raises_on_mismatch(tmp_path):
@@ -491,7 +521,7 @@ def test_verify_recombined_row_count_raises_on_mismatch(tmp_path):
     con = duckdb.connect()
 
     with pytest.raises(ValueError, match="mismatch"):
-        verify_recombined_row_count(con, shard_path, output_path)
+        verify_recombined_row_count(con, [shard_path], output_path)
 
 
 def test_verify_recombined_row_count_passes_silently_when_counts_match(tmp_path):
@@ -499,7 +529,7 @@ def test_verify_recombined_row_count_passes_silently_when_counts_match(tmp_path)
     write_parquet([{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}], path)
     con = duckdb.connect()
 
-    verify_recombined_row_count(con, path, path)
+    verify_recombined_row_count(con, [path], path)
 
 
 def test_verify_sorted_by_cell_raises_when_row_groups_are_out_of_order(tmp_path):
@@ -657,9 +687,9 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
     with (
         patch.object(job, "generate_target_release") as mock_generate,
         patch.object(
-            job, "download_blobs_with_prefix", return_value=f"{tmp_path}/shards/*.parquet"
+            job, "download_blobs_with_prefix", return_value=[f"{tmp_path}/shards/shard0.parquet"]
         ) as mock_download_shards,
-        patch.object(job, "recombine_sorted_parquet") as mock_recombine,
+        patch.object(job, "recombine_ordered_shards") as mock_recombine,
         patch.object(job, "verify_recombined_row_count") as mock_verify_count,
         patch.object(job, "verify_sorted_by_cell") as mock_verify_sorted,
         patch.object(
@@ -707,8 +737,8 @@ def test_run_does_not_promote_when_guardrails_block(tmp_path):
 
     with (
         patch.object(job, "generate_target_release"),
-        patch.object(job, "download_blobs_with_prefix", return_value=f"{tmp_path}/shards/*.parquet"),
-        patch.object(job, "recombine_sorted_parquet"),
+        patch.object(job, "download_blobs_with_prefix", return_value=[f"{tmp_path}/shards/shard0.parquet"]),
+        patch.object(job, "recombine_ordered_shards"),
         patch.object(job, "verify_recombined_row_count"),
         patch.object(job, "verify_sorted_by_cell"),
         patch.object(job, "download_blob_to_file", side_effect=[None, None, None]),
