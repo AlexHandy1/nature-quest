@@ -387,7 +387,7 @@ def _mock_bigquery_client():
 def test_generate_target_release_derives_then_export_datas_both_tables_to_gcs():
     client = _mock_bigquery_client()
 
-    generate_target_release(client, "gs://bucket/fact-*.parquet", "gs://bucket/dimension.parquet")
+    generate_target_release(client, "gs://bucket/fact-*.parquet", "gs://bucket/dimension-*.parquet")
 
     assert client.query.call_count == 3
     fact_export_sql = client.query.call_args_list[1].args[0]
@@ -396,7 +396,7 @@ def test_generate_target_release_derives_then_export_datas_both_tables_to_gcs():
     assert "gs://bucket/fact-*.parquet" in fact_export_sql
     assert "ORDER BY cell" in fact_export_sql
     assert "EXPORT DATA" in dimension_export_sql
-    assert "gs://bucket/dimension.parquet" in dimension_export_sql
+    assert "gs://bucket/dimension-*.parquet" in dimension_export_sql
 
 
 def test_compute_top_n_specieskeys_selects_the_smallest_set_covering_the_threshold(tmp_path):
@@ -505,6 +505,28 @@ def test_recombine_ordered_shards_preserves_shard_order_even_when_each_shard_is_
 
     result = read_parquet_rows(output_path)
     assert [row["cell"] for row in result] == ["u4pruy", "u4prux", "u4pruz"]
+
+
+def test_recombine_ordered_shards_follows_the_given_list_order_not_filename_order(tmp_path):
+    # Isolates a real DuckDB assumption: read_parquet([paths]) must
+    # respect the explicit list order we pass (from GCS's guaranteed
+    # lexicographic blob listing), not silently re-sort by filename
+    # internally. Deliberately names the file with the lower cell value
+    # so it sorts AFTER the other alphabetically, to catch DuckDB
+    # reordering by filename rather than honouring the given list.
+    shard_dir = tmp_path / "shards"
+    shard_dir.mkdir()
+    path_z = str(shard_dir / "z_shard.parquet")
+    path_a = str(shard_dir / "a_shard.parquet")
+    write_parquet([{"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 10}], path_z)
+    write_parquet([{"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 5}], path_a)
+    output_path = str(tmp_path / "recombined.parquet")
+    con = duckdb.connect()
+
+    recombine_ordered_shards(con, [path_z, path_a], output_path)
+
+    result = read_parquet_rows(output_path)
+    assert [row["cell"] for row in result] == ["u4pruy", "u4pruz"]
 
 
 def test_verify_recombined_row_count_raises_on_mismatch(tmp_path):
@@ -695,7 +717,7 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
         patch.object(
             job,
             "download_blob_to_file",
-            side_effect=[None, None, None, FileNotFoundError()],
+            side_effect=[None, None, FileNotFoundError()],
         ),
         patch.object(job, "compute_stats_from_parquet", side_effect=[current_production_stats, target_stats]),
         patch.object(job, "compute_top_n_specieskeys", return_value=["SP1"]),
@@ -716,9 +738,9 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
 
     assert outcome.verdict == "pass"
     mock_generate.assert_called_once()
-    mock_download_shards.assert_called_once()
-    mock_recombine.assert_called_once()
-    mock_verify_count.assert_called_once()
+    assert mock_download_shards.call_count == 2
+    assert mock_recombine.call_count == 2
+    assert mock_verify_count.call_count == 2
     mock_verify_sorted.assert_called_once()
     mock_join.assert_called_once()
     assert mock_upload.call_count == 2
@@ -741,7 +763,7 @@ def test_run_does_not_promote_when_guardrails_block(tmp_path):
         patch.object(job, "recombine_ordered_shards"),
         patch.object(job, "verify_recombined_row_count"),
         patch.object(job, "verify_sorted_by_cell"),
-        patch.object(job, "download_blob_to_file", side_effect=[None, None, None]),
+        patch.object(job, "download_blob_to_file", side_effect=[None, None]),
         patch.object(job, "compute_stats_from_parquet", side_effect=[current_production_stats, target_stats]),
         patch.object(job, "join_common_names") as mock_join,
         patch.object(job, "promote_release") as mock_promote,
