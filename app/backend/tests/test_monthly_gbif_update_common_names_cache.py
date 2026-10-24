@@ -2,7 +2,6 @@ import duckdb
 
 from jobs.monthly_gbif_update_common_names_cache import (
     bootstrap_cache_from_production,
-    compute_top_n_specieskeys,
     merge_into_cache,
     new_entrants,
 )
@@ -59,20 +58,3 @@ def test_bootstrap_cache_from_production_keeps_only_rows_with_a_common_name(tmp_
     result = bootstrap_cache_from_production(con, dimension_path)
 
     assert result == {"SP1": "Pica pica"}
-
-
-def test_compute_top_n_specieskeys_returns_the_smallest_set_covering_the_target_coverage(tmp_path):
-    fact_path = str(tmp_path / "fact.parquet")
-    write_parquet(
-        [
-            {"cell": "u4pruy", "specieskey": "SP1", "occurrence_count": 97},
-            {"cell": "u4pruz", "specieskey": "SP2", "occurrence_count": 2},
-            {"cell": "u4prvz", "specieskey": "SP3", "occurrence_count": 1},
-        ],
-        fact_path,
-    )
-    con = duckdb.connect()
-
-    result = compute_top_n_specieskeys(con, fact_path, coverage=0.97)
-
-    assert result == ["SP1"]

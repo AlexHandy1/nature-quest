@@ -66,6 +66,37 @@ def _run_fact_and_dimension_queries(
     return fact_job.destination, dimension_job.destination
 
 
+DEFAULT_COVERAGE = 0.99
+
+
+def _compute_top_n_specieskeys(
+    client: bigquery.Client, fact_table_ref: bigquery.TableReference, coverage: float = DEFAULT_COVERAGE
+) -> list[str]:
+    """Smallest set of specieskeys (by total occurrence_count summed
+    across cells) accounting for at least `coverage` of all recorded
+    occurrences - computed server-side against the fact destination
+    table (same approach as fact_stats/dimension_stats), so this never
+    needs to read the extracted GCS file back."""
+    sql = f"""
+        WITH species_totals AS (
+            SELECT specieskey, SUM(occurrence_count) AS total_occ
+            FROM `{fact_table_ref}`
+            GROUP BY specieskey
+        ),
+        ranked AS (
+            SELECT specieskey, total_occ,
+                   SUM(total_occ) OVER (ORDER BY total_occ DESC ROWS UNBOUNDED PRECEDING) AS cum_occ
+            FROM species_totals
+        ),
+        grand_total AS (SELECT SUM(total_occ) AS t FROM species_totals)
+        SELECT specieskey
+        FROM ranked, grand_total
+        WHERE cum_occ - total_occ < {coverage} * t
+        ORDER BY cum_occ
+    """
+    return [row["specieskey"] for row in client.query(sql).result()]
+
+
 def _extract_table_to_gcs(
     client: bigquery.Client, table_ref: bigquery.TableReference, destination_uri: str
 ) -> None:
@@ -77,11 +108,12 @@ def _extract_table_to_gcs(
 
 def extract_fact_and_dimension(
     client: bigquery.Client, fact_destination_uri: str, dimension_destination_uri: str
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, list[str]]:
     """Runs the fact/dimension derivation and extracts both results
     directly to GCS (BigQuery's own server-side export), then returns
-    their schema + counts as plain stats dicts - row data for both tables
-    (the fact table alone is ~221M rows) never passes through Python."""
+    their schema + counts as plain stats dicts, plus the top-N
+    specieskeys by occurrence volume - row data for both tables (the
+    fact table alone is ~221M rows) never passes through Python."""
     fact_table_ref, dimension_table_ref = _run_fact_and_dimension_queries(client)
 
     _extract_table_to_gcs(client, fact_table_ref, fact_destination_uri)
@@ -108,4 +140,5 @@ def extract_fact_and_dimension(
         "dimension_columns": frozenset(field.name for field in dimension_table.schema),
         "distinct_species_count": dimension_stats_row["distinct_species_count"],
     }
-    return fact_stats, dimension_stats
+    top_n_specieskeys = _compute_top_n_specieskeys(client, fact_table_ref)
+    return fact_stats, dimension_stats, top_n_specieskeys

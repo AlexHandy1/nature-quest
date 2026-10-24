@@ -19,31 +19,3 @@ def bootstrap_cache_from_production(con, dimension_path: str) -> dict[str, str]:
         WHERE common_name IS NOT NULL
     """).fetchall()
     return {specieskey: common_name for specieskey, common_name in rows}
-
-
-def compute_top_n_specieskeys(con, fact_path: str, coverage: float = 0.99) -> list[str]:
-    """Smallest set of specieskeys (by total occurrence_count summed across
-    cells) accounting for at least `coverage` of all recorded occurrences -
-    see prototypes/scripts/species_common_names_batch.py for the original
-    exploration of why top-N-by-volume is the right prioritization. Runs
-    entirely as a DuckDB aggregate query against fact_path (local or
-    gs://) - the ~221M-row fact table never passes through Python, only
-    this small result (specieskeys only) does."""
-    rows = con.execute(f"""
-        WITH species_totals AS (
-            SELECT specieskey, SUM(occurrence_count) AS total_occ
-            FROM read_parquet('{fact_path}')
-            GROUP BY specieskey
-        ),
-        ranked AS (
-            SELECT specieskey, total_occ,
-                   SUM(total_occ) OVER (ORDER BY total_occ DESC ROWS UNBOUNDED PRECEDING) AS cum_occ
-            FROM species_totals
-        ),
-        grand_total AS (SELECT SUM(total_occ) AS t FROM species_totals)
-        SELECT specieskey
-        FROM ranked, grand_total
-        WHERE cum_occ - total_occ < {coverage} * t
-        ORDER BY cum_occ
-    """).fetchall()
-    return [row[0] for row in rows]

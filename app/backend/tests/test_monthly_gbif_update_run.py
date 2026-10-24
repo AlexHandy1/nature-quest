@@ -41,11 +41,16 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
             orchestrator, "compute_stats_from_parquet", return_value=_healthy_stats()
         ),
         patch.object(
-            orchestrator, "extract_fact_and_dimension", return_value=(fact_stats, dimension_stats)
+            orchestrator,
+            "extract_fact_and_dimension",
+            return_value=(fact_stats, dimension_stats, ["SP1"]),
         ),
-        patch.object(orchestrator, "download_blob_to_file", side_effect=FileNotFoundError),
+        patch.object(
+            orchestrator,
+            "download_blob_to_file",
+            side_effect=[None, None, FileNotFoundError(), None],
+        ),
         patch.object(orchestrator, "bootstrap_cache_from_production", return_value={}),
-        patch.object(orchestrator, "compute_top_n_specieskeys", return_value=["SP1"]),
         patch.object(orchestrator, "fetch_common_names_for_taxa", return_value=[]),
         patch.object(orchestrator, "join_common_names") as mock_join,
         patch.object(orchestrator, "promote_release") as mock_promote,
@@ -86,11 +91,16 @@ def test_run_does_not_promote_when_guardrails_block(tmp_path):
             orchestrator, "compute_stats_from_parquet", return_value=_healthy_stats()
         ),
         patch.object(
-            orchestrator, "extract_fact_and_dimension", return_value=(fact_stats, dimension_stats)
+            orchestrator,
+            "extract_fact_and_dimension",
+            return_value=(fact_stats, dimension_stats, ["SP1"]),
         ),
-        patch.object(orchestrator, "download_blob_to_file", side_effect=FileNotFoundError),
+        patch.object(
+            orchestrator,
+            "download_blob_to_file",
+            side_effect=[None, None, FileNotFoundError(), None],
+        ),
         patch.object(orchestrator, "bootstrap_cache_from_production", return_value={}),
-        patch.object(orchestrator, "compute_top_n_specieskeys", return_value=["SP1"]),
         patch.object(orchestrator, "fetch_common_names_for_taxa", return_value=[]),
         patch.object(orchestrator, "join_common_names"),
         patch.object(orchestrator, "promote_release") as mock_promote,

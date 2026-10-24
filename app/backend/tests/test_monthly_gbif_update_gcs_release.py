@@ -5,10 +5,10 @@ import duckdb
 from jobs.monthly_gbif_update_gcs_release import (
     download_blob_to_file,
     join_common_names,
-    open_gcs_write_connection,
     promote_release,
     read_parquet_rows,
     release_blob_path,
+    upload_file,
     write_parquet,
 )
 
@@ -67,11 +67,16 @@ def test_read_parquet_rows_reads_back_what_write_parquet_wrote(tmp_path):
     assert result == rows
 
 
-def test_open_gcs_write_connection_configures_gcs_auth():
-    con = open_gcs_write_connection("fake-key-id", "fake-secret")
+def test_upload_file_uploads_to_the_given_blob_path():
+    bucket = MagicMock()
+    client = MagicMock()
+    client.bucket.return_value = bucket
 
-    secrets = con.execute("SELECT type FROM duckdb_secrets()").fetchall()
-    assert secrets == [("gcs",)]
+    upload_file(client, "my-bucket", "common_names_cache.parquet", "/tmp/cache.parquet")
+
+    blob = bucket.blob.return_value
+    bucket.blob.assert_called_once_with("common_names_cache.parquet")
+    blob.upload_from_filename.assert_called_once_with("/tmp/cache.parquet")
 
 
 def test_join_common_names_joins_the_cache_onto_the_dimension_rows(tmp_path):

@@ -30,9 +30,18 @@ def _mock_client():
     fact_stats_job.result.return_value = [fact_stats_row]
     dimension_stats_job = MagicMock()
     dimension_stats_job.result.return_value = [dimension_stats_row]
+    top_n_job = MagicMock()
+    top_n_job.result.return_value = [{"specieskey": "SP1"}, {"specieskey": "SP2"}]
 
     client = MagicMock()
-    client.query.side_effect = [scan_job, fact_job, dimension_job, fact_stats_job, dimension_stats_job]
+    client.query.side_effect = [
+        scan_job,
+        fact_job,
+        dimension_job,
+        fact_stats_job,
+        dimension_stats_job,
+        top_n_job,
+    ]
     client.extract_table.return_value = extract_job
 
     fact_table = MagicMock()
@@ -47,7 +56,7 @@ def _mock_client():
 def test_extract_fact_and_dimension_extracts_both_tables_and_returns_their_stats():
     client, _extract_job = _mock_client()
 
-    fact_stats, dimension_stats = extract_fact_and_dimension(
+    fact_stats, dimension_stats, top_n_specieskeys = extract_fact_and_dimension(
         client, "gs://bucket/fact.parquet", "gs://bucket/dimension.parquet"
     )
 
@@ -60,4 +69,5 @@ def test_extract_fact_and_dimension_extracts_both_tables_and_returns_their_stats
         "dimension_columns": frozenset({"specieskey", "species"}),
         "distinct_species_count": 5_000,
     }
+    assert top_n_specieskeys == ["SP1", "SP2"]
     assert client.extract_table.call_count == 2
