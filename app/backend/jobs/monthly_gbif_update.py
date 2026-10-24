@@ -1,21 +1,26 @@
 """Monthly GBIF data-update pipeline - the Cloud Run Job entrypoint.
 
-Flow: generate a target release from BigQuery (with its own summary
-stats) -> read current production's summary stats -> compare guardrails
--> if not blocked, join common names and promote the release to
-production. See docs/decisions/ADR-016/017 and
+Flow: generate a target release from BigQuery and export it to GCS
+(sharded for the fact table, single-file for the dimension table) ->
+download and recombine the fact shards locally into one correctly-
+sorted file -> read current production's summary stats -> compute the
+target release's own summary stats from the local (recombined fact +
+raw dimension) files and compare guardrails -> if not blocked, join
+common names and promote the release to production. See
+docs/decisions/ADR-016/017 and
 docs/status_docs/PLANNING_DUCKDB_MIGRATION_201026.md for the surrounding
 architecture this automates (previously a manual, one-off process).
 """
 
 import concurrent.futures
+import itertools
 import json
 import logging
 import os
 import sys
 import tempfile
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import ClassVar, Literal
 
@@ -29,9 +34,17 @@ logger = logging.getLogger("monthly_gbif_update")
 # --- File/path layout --------------------------------------------------
 
 FACT_FILENAME = "fact_sorted_by_cell.parquet"
+FACT_SHARD_PREFIX = "fact_sorted_by_cell-"
 RAW_DIMENSION_FILENAME = "raw_dimension.parquet"
 DIMENSION_FILENAME = "species_dimension_with_common_names.parquet"
 CACHE_BLOB_PATH = "common_names_cache.parquet"
+
+# Matches the pandas/pyarrow default (2**20 rows) that production's
+# existing fact/dimension files were already written with - pinned
+# explicitly here so the recombine step below can't silently drift to
+# DuckDB's own smaller default (122,880 rows), even though this session
+# empirically confirmed that difference doesn't regress query pruning.
+PRODUCTION_ROW_GROUP_SIZE = 1_048_576
 
 
 def release_blob_path(release_date: str, filename: str) -> str:
@@ -201,16 +214,18 @@ _SCAN_INTO_TEMP_TABLE_SQL = f"""
     CREATE TEMP TABLE agg AS
     SELECT
         ST_GEOHASH(ST_GEOGPOINT(decimallongitude, decimallatitude), 6) AS cell,
-        specieskey, species, kingdom, phylum, class, `order`, family, genus
+        specieskey, species, kingdom, phylum, class, `order`, family, genus,
+        COUNT(*) AS occurrence_count
     FROM `{RAW_OCCURRENCES_TABLE}`
     WHERE occurrencestatus = 'PRESENT'
       AND specieskey IS NOT NULL
       AND decimallatitude IS NOT NULL
       AND decimallongitude IS NOT NULL
+    GROUP BY cell, specieskey, species, kingdom, phylum, class, `order`, family, genus
 """
 
 _FACT_SELECT_SQL = """
-    SELECT cell, specieskey, COUNT(*) AS occurrence_count
+    SELECT cell, specieskey, SUM(occurrence_count) AS occurrence_count
     FROM agg
     GROUP BY cell, specieskey
     HAVING occurrence_count > 1
@@ -227,9 +242,15 @@ def _run_fact_and_dimension_queries(
     client: bigquery.Client,
 ) -> tuple[bigquery.TableReference, bigquery.TableReference]:
     """One BigQuery session: a single scan of the raw public occurrences
-    table into a TEMP TABLE, then two cheap derived SELECTs against it
-    (fact, dimension) - so the 393GB raw-table scan only ever happens
-    once per run."""
+    table, grouped by (cell, specieskey, taxonomy) into a TEMP TABLE -
+    same shape as the original manual process's species_cell_index_
+    global_g6 (8 Oct session), ~549M rows rather than the ~3.6B raw
+    per-occurrence rows. Both derived SELECTs (fact, dimension) read
+    from this much smaller aggregated intermediate, not the raw table
+    or its unaggregated row count - confirmed empirically this session
+    that skipping this aggregation (reading the raw ~3.6B-row shape
+    directly) cost ~700GB across the two derived queries alone, on top
+    of the ~393GB raw scan."""
     session_job_config = bigquery.QueryJobConfig(create_session=True, maximum_bytes_billed=MAXIMUM_BYTES_BILLED)
     scan_job = client.query(_SCAN_INTO_TEMP_TABLE_SQL, job_config=session_job_config)
     scan_job.result()
@@ -248,17 +269,18 @@ def _run_fact_and_dimension_queries(
     return fact_job.destination, dimension_job.destination
 
 
-def _compute_top_n_specieskeys(
-    client: bigquery.Client, fact_table_ref: bigquery.TableReference, coverage: float = TOP_N_COVERAGE
+def compute_top_n_specieskeys(
+    con: duckdb.DuckDBPyConnection, fact_path: str, coverage: float = TOP_N_COVERAGE
 ) -> list[str]:
     """Smallest set of specieskeys (by total occurrence_count summed
     across cells) accounting for at least `coverage` of all recorded
-    occurrences - computed server-side against the fact destination
-    table, so this never needs to read the extracted GCS file back."""
+    occurrences - computed locally against the already-downloaded/
+    recombined fact file, since by the time this runs we already have
+    it on disk for the ordering/row-count verification checks."""
     sql = f"""
         WITH species_totals AS (
             SELECT specieskey, SUM(occurrence_count) AS total_occ
-            FROM `{fact_table_ref}`
+            FROM read_parquet('{fact_path}')
             GROUP BY specieskey
         ),
         ranked AS (
@@ -272,10 +294,15 @@ def _compute_top_n_specieskeys(
         WHERE cum_occ - total_occ < {coverage} * t
         ORDER BY cum_occ
     """
-    return [row["specieskey"] for row in client.query(sql).result()]
+    return [row[0] for row in con.execute(sql).fetchall()]
 
 
 def _extract_table_to_gcs(client: bigquery.Client, table_ref: bigquery.TableReference, destination_uri: str) -> None:
+    """destination_uri may be a plain gs:// path (single file, used for
+    the dimension table - confirmed well under BigQuery's ~1GB logical
+    single-file export limit) or contain a `*` wildcard (required for
+    the fact table, which exceeds that limit and must be sharded into a
+    non-deterministic number of files)."""
     extract_job = client.extract_table(
         table_ref, destination_uri, job_config=bigquery.ExtractJobConfig(destination_format="PARQUET")
     )
@@ -284,47 +311,18 @@ def _extract_table_to_gcs(client: bigquery.Client, table_ref: bigquery.TableRefe
 
 def generate_target_release(
     client: bigquery.Client, fact_destination_uri: str, dimension_destination_uri: str
-) -> tuple[dict, dict, list[str]]:
+) -> None:
     """Runs the fact/dimension derivation and extracts both results
-    directly to GCS (BigQuery's own server-side export), then returns
-    their schema + counts as plain stats dicts, plus the top-N
-    specieskeys by occurrence volume - row data for either table (the
-    fact table alone is ~221M rows) never passes through Python."""
+    directly to GCS (BigQuery's own server-side export) - row data for
+    either table (the fact table alone is ~221M rows) never passes
+    through Python here. Stats, top-N, and schema checks are computed
+    later, locally, from the downloaded (and, for the fact table,
+    shard-recombined) files - this keeps guardrails evaluating the
+    actual bytes that would be promoted, not a separate BigQuery-side
+    estimate of them."""
     fact_table_ref, dimension_table_ref = _run_fact_and_dimension_queries(client)
-
     _extract_table_to_gcs(client, fact_table_ref, fact_destination_uri)
     _extract_table_to_gcs(client, dimension_table_ref, dimension_destination_uri)
-
-    fact_table = client.get_table(fact_table_ref)
-    dimension_table = client.get_table(dimension_table_ref)
-
-    fact_stats_row = next(
-        iter(
-            client.query(f"""
-        SELECT SUM(occurrence_count) AS total_occurrence_count, COUNT(DISTINCT cell) AS distinct_cell_count
-        FROM `{fact_table_ref}`
-    """).result()
-        )
-    )
-    dimension_stats_row = next(
-        iter(
-            client.query(
-                f"SELECT COUNT(DISTINCT specieskey) AS distinct_species_count FROM `{dimension_table_ref}`"
-            ).result()
-        )
-    )
-
-    fact_stats = {
-        "fact_columns": frozenset(field.name for field in fact_table.schema),
-        "total_occurrence_count": fact_stats_row["total_occurrence_count"],
-        "distinct_cell_count": fact_stats_row["distinct_cell_count"],
-    }
-    dimension_stats = {
-        "dimension_columns": frozenset(field.name for field in dimension_table.schema),
-        "distinct_species_count": dimension_stats_row["distinct_species_count"],
-    }
-    top_n_specieskeys = _compute_top_n_specieskeys(client, fact_table_ref)
-    return fact_stats, dimension_stats, top_n_specieskeys
 
 
 # --- GCS: local Parquet I/O and promotion -----------------------------------
@@ -345,6 +343,74 @@ def read_parquet_rows(path: str) -> list[dict]:
 
 def download_blob_to_file(client: storage.Client, bucket_name: str, blob_path: str, local_path: str) -> None:
     client.bucket(bucket_name).blob(blob_path).download_to_filename(local_path)
+
+
+def list_blobs_with_prefix(client: storage.Client, bucket_name: str, prefix: str) -> list[str]:
+    return [blob.name for blob in client.bucket(bucket_name).list_blobs(prefix=prefix)]
+
+
+def download_blobs_with_prefix(client: storage.Client, bucket_name: str, prefix: str, local_dir: str) -> str:
+    """Downloads every blob matching prefix (BigQuery's sharded export
+    output - a non-deterministic number of files) into local_dir, and
+    returns a local glob pattern matching all of them."""
+    os.makedirs(local_dir, exist_ok=True)
+    for blob_name in list_blobs_with_prefix(client, bucket_name, prefix):
+        download_blob_to_file(client, bucket_name, blob_name, f"{local_dir}/{os.path.basename(blob_name)}")
+    return f"{local_dir}/*.parquet"
+
+
+def recombine_sorted_parquet(
+    con: duckdb.DuckDBPyConnection,
+    input_glob: str,
+    output_path: str,
+    sort_column: str = "cell",
+    row_group_size: int = PRODUCTION_ROW_GROUP_SIZE,
+) -> None:
+    """Reads every file matching input_glob (BigQuery's sharded export
+    shards, in whatever order the filesystem/glob returns them) and
+    writes them back out as a single, explicitly-sorted file - BigQuery
+    extract jobs do not guarantee row order is preserved once sharded,
+    so this is the step that actually guarantees the production-serving
+    file is ordered by cell, rather than relying on that as an
+    assumption about BigQuery's export behaviour."""
+    con.execute(f"""
+        COPY (
+            SELECT * FROM read_parquet('{input_glob}') ORDER BY {sort_column}
+        ) TO '{output_path}' (FORMAT PARQUET, ROW_GROUP_SIZE {row_group_size})
+    """)
+
+
+def verify_recombined_row_count(con: duckdb.DuckDBPyConnection, input_glob: str, output_path: str) -> None:
+    """Raises if the recombine step silently dropped or duplicated rows
+    - a mechanism failure, not a data-quality signal, so this is a hard
+    failure (crashes the job, trips the GCP-level backstop alert) rather
+    than a soft guardrail outcome."""
+    (shard_total,) = con.execute(f"SELECT COUNT(*) FROM read_parquet('{input_glob}')").fetchone()  # type: ignore[misc]
+    (recombined_total,) = con.execute(f"SELECT COUNT(*) FROM read_parquet('{output_path}')").fetchone()  # type: ignore[misc]
+    if shard_total != recombined_total:
+        raise ValueError(
+            f"Recombine row-count mismatch: {shard_total} shard rows vs {recombined_total} recombined rows"
+        )
+
+
+def verify_sorted_by_cell(con: duckdb.DuckDBPyConnection, path: str, sort_column: str = "cell") -> None:
+    """Raises if the recombined file's row groups are not monotonically
+    ordered by sort_column - a mechanism failure (the ORDER BY in
+    recombine_sorted_parquet should make this impossible), checked
+    directly via Parquet row-group statistics rather than assumed."""
+    rows = con.execute(f"""
+        SELECT row_group_id, min(stats_min_value) AS group_min, max(stats_max_value) AS group_max
+        FROM parquet_metadata('{path}')
+        WHERE path_in_schema = '{sort_column}'
+        GROUP BY row_group_id
+        ORDER BY row_group_id
+    """).fetchall()
+    for previous, current in itertools.pairwise(rows):
+        if previous[2] > current[1]:
+            raise ValueError(
+                f"Recombined file is not sorted by {sort_column}: row group {previous[0]} max "
+                f"({previous[2]}) > row group {current[0]} min ({current[1]})"
+            )
 
 
 def upload_file(client: storage.Client, bucket_name: str, blob_path: str, local_path: str) -> None:
@@ -503,12 +569,30 @@ def run(
     locally-downloaded files, never gs:// paths directly."""
     release_date = release_date or datetime.now(UTC).date().isoformat()
 
-    # 1. Generate the target release in BigQuery and its summary stats.
+    # 1. Generate the target release in BigQuery, export it to the dated
+    # GCS path (fact table sharded - exceeds BigQuery's single-file
+    # export limit; dimension table single-file - confirmed well under
+    # it), then download and recombine the fact shards into one
+    # correctly-sorted local file.
     logger.info("Step 1/5: generating target release from BigQuery", extra={"release_date": release_date})
-    release_fact_uri = f"gs://{bucket_name}/{release_blob_path(release_date, FACT_FILENAME)}"
-    release_raw_dim_uri = f"gs://{bucket_name}/{release_blob_path(release_date, RAW_DIMENSION_FILENAME)}"
-    target_fact_stats, target_dimension_stats, top_n_specieskeys = generate_target_release(
-        bigquery_client, release_fact_uri, release_raw_dim_uri
+    fact_shard_uri = f"gs://{bucket_name}/{release_blob_path(release_date, f'{FACT_SHARD_PREFIX}*.parquet')}"
+    raw_dim_uri = f"gs://{bucket_name}/{release_blob_path(release_date, RAW_DIMENSION_FILENAME)}"
+    generate_target_release(bigquery_client, fact_shard_uri, raw_dim_uri)
+
+    shard_glob = download_blobs_with_prefix(
+        storage_client,
+        bucket_name,
+        release_blob_path(release_date, FACT_SHARD_PREFIX),
+        f"{workdir}/fact_shards",
+    )
+    target_fact_path = f"{workdir}/{FACT_FILENAME}"
+    recombine_sorted_parquet(con, shard_glob, target_fact_path)
+    verify_recombined_row_count(con, shard_glob, target_fact_path)
+    verify_sorted_by_cell(con, target_fact_path)
+
+    raw_dim_path = f"{workdir}/{RAW_DIMENSION_FILENAME}"
+    download_blob_to_file(
+        storage_client, bucket_name, release_blob_path(release_date, RAW_DIMENSION_FILENAME), raw_dim_path
     )
 
     # 2. Read current production's summary stats.
@@ -519,15 +603,18 @@ def run(
     download_blob_to_file(storage_client, bucket_name, DIMENSION_FILENAME, prod_dim_path)
     current_production_stats = compute_stats_from_parquet(con, prod_fact_path, prod_dim_path)
 
-    # 3. Compare guardrails.
+    # 3. Compare guardrails - computed from the local recombined fact
+    # file and the local raw (pre-common-names-join) dimension file.
+    # Using the pre-join dimension file loses no verification power: a
+    # LEFT JOIN never changes row count or the specieskey set, so its
+    # distinct_species_count is identical before/after the join; the
+    # "will common_name exist" part of the schema check is guaranteed
+    # by join_common_names's own structure, not by anything data-
+    # dependent, so it's asserted here rather than re-derived from a
+    # file that (by design) doesn't exist yet at this point in the flow.
     logger.info("Step 3/5: evaluating guardrails")
-    target_release_stats = RunStats(
-        fact_columns=target_fact_stats["fact_columns"],
-        dimension_columns=target_dimension_stats["dimension_columns"] | {"common_name"},
-        total_occurrence_count=target_fact_stats["total_occurrence_count"],
-        distinct_cell_count=target_fact_stats["distinct_cell_count"],
-        distinct_species_count=target_dimension_stats["distinct_species_count"],
-    )
+    target_stats = compute_stats_from_parquet(con, target_fact_path, raw_dim_path)
+    target_release_stats = replace(target_stats, dimension_columns=target_stats.dimension_columns | {"common_name"})
     outcome = evaluate(target_release_stats, current_production_stats)
     for check in outcome.checks:
         logger.info(
@@ -541,6 +628,7 @@ def run(
 
     # 4. Common names join.
     logger.info("Step 4/5: joining common names")
+    top_n_specieskeys = compute_top_n_specieskeys(con, target_fact_path)
     cache_path = f"{workdir}/{CACHE_BLOB_PATH}"
     try:
         download_blob_to_file(storage_client, bucket_name, CACHE_BLOB_PATH, cache_path)
@@ -560,12 +648,14 @@ def run(
         write_parquet([{"specieskey": k, "common_name": v} for k, v in cache.items()], new_cache_path)
         upload_file(storage_client, bucket_name, CACHE_BLOB_PATH, new_cache_path)
 
-    raw_dim_path = f"{workdir}/{RAW_DIMENSION_FILENAME}"
     joined_dim_path = f"{workdir}/{DIMENSION_FILENAME}"
-    download_blob_to_file(
-        storage_client, bucket_name, release_blob_path(release_date, RAW_DIMENSION_FILENAME), raw_dim_path
-    )
     join_common_names(con, raw_dim_path, cache, joined_dim_path)
+
+    # Upload the single recombined fact file to the dated release path
+    # under its proper (non-sharded) name, alongside the raw shards
+    # already there - promote_release always copies this single-file
+    # name, regardless of how many shards BigQuery's export produced.
+    upload_file(storage_client, bucket_name, release_blob_path(release_date, FACT_FILENAME), target_fact_path)
     upload_file(storage_client, bucket_name, release_blob_path(release_date, DIMENSION_FILENAME), joined_dim_path)
 
     # 5. Release to production by copying.
