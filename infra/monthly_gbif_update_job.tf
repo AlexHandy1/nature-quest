@@ -57,14 +57,19 @@ resource "google_cloud_run_v2_job" "monthly_gbif_update" {
 
         resources {
           limits = {
-            # ~700MB peak measured locally against the real ~750MB fact
-            # file (see docs/status_docs/) for the guardrail/common-names
-            # queries alone, plus the downloaded file's own bytes - 4Gi
-            # keeps real margin without being a cost concern (Cloud Run
-            # Jobs pricing means the difference between 1Gi and 4Gi over
-            # a ~30min monthly run is a fraction of a cent either way).
-            memory = "4Gi"
-            cpu    = "2"
+            # 4Gi OOM-killed a real execution on 24 Oct 2026 (exit
+            # condition: "The configured memory limit was reached") during
+            # the fact-shard recombine step. Measured locally against the
+            # real ~1GB/221M-row shard set from that same run: the
+            # recombine's DuckDB ORDER BY sort peaks at ~8.4GB RSS / ~13GB
+            # peak memory footprint (no memory_limit pragma is set, so
+            # DuckDB never spills - and Cloud Run's default filesystem is
+            # memory-backed anyway, so spilling to disk wouldn't relieve
+            # this without also provisioning a real disk-backed volume).
+            # 16Gi gives ~3x margin above that measured peak; cost is still
+            # negligible for a ~30min monthly run (Cloud Run Jobs pricing).
+            memory = "16Gi"
+            cpu    = "4"
           }
         }
 
