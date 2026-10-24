@@ -1,11 +1,12 @@
 """Monthly GBIF data-update pipeline - the Cloud Run Job entrypoint.
 
 Flow: generate a target release from BigQuery via EXPORT DATA straight
-to GCS (sharded for the fact table, single-file for the dimension
-table - BigQuery guarantees the fact shards' global ORDER BY cell is
-preserved sequentially across them) -> download the fact shards and
-concatenate them locally into one file, in order, with no re-sort ->
-read current production's summary stats -> compute the target
+to GCS (both tables write as shard(s) under a wildcard - EXPORT DATA's
+uri option always requires one - and BigQuery guarantees the fact
+shards' global ORDER BY cell is preserved sequentially across them) ->
+download each table's shards and concatenate them locally into one
+file, in order, with no re-sort -> read current production's summary
+stats -> compute the target
 release's own summary stats from the local (recombined fact + raw
 dimension) files and compare guardrails -> if not blocked, join common
 names and promote the release to production. See
@@ -38,6 +39,7 @@ logger = logging.getLogger("monthly_gbif_update")
 FACT_FILENAME = "fact_sorted_by_cell.parquet"
 FACT_SHARD_PREFIX = "fact_sorted_by_cell-"
 RAW_DIMENSION_FILENAME = "raw_dimension.parquet"
+RAW_DIMENSION_SHARD_PREFIX = "raw_dimension-"
 DIMENSION_FILENAME = "species_dimension_with_common_names.parquet"
 CACHE_BLOB_PATH = "common_names_cache.parquet"
 
@@ -592,15 +594,19 @@ def run(
     locally-downloaded files, never gs:// paths directly."""
     release_date = release_date or datetime.now(UTC).date().isoformat()
 
-    # 1. Generate the target release in BigQuery, export it to the dated
-    # GCS path (fact table sharded - exceeds BigQuery's single-file
-    # export limit; dimension table single-file - confirmed well under
-    # it), then download and recombine the fact shards into one
-    # correctly-sorted local file.
+    # 1. Generate the target release in BigQuery, EXPORT DATA it to the
+    # dated GCS path (both tables write as shard(s) under a wildcard -
+    # EXPORT DATA's uri option always requires one, regardless of
+    # size, unlike extract_table()), then download and recombine each
+    # table's shards locally - a real re-sort for the fact table's
+    # shards is unnecessary since EXPORT DATA's ORDER BY cell is
+    # already preserved globally across them; the dimension table has
+    # no ordering requirement at all, so its shard(s) are just
+    # concatenated and row-count-verified.
     logger.info("Step 1/5: generating target release from BigQuery", extra={"release_date": release_date})
     fact_shard_uri = f"gs://{bucket_name}/{release_blob_path(release_date, f'{FACT_SHARD_PREFIX}*.parquet')}"
-    raw_dim_uri = f"gs://{bucket_name}/{release_blob_path(release_date, RAW_DIMENSION_FILENAME)}"
-    generate_target_release(bigquery_client, fact_shard_uri, raw_dim_uri)
+    raw_dim_shard_uri = f"gs://{bucket_name}/{release_blob_path(release_date, f'{RAW_DIMENSION_SHARD_PREFIX}*.parquet')}"
+    generate_target_release(bigquery_client, fact_shard_uri, raw_dim_shard_uri)
 
     shard_paths = download_blobs_with_prefix(
         storage_client,
@@ -613,10 +619,15 @@ def run(
     verify_recombined_row_count(con, shard_paths, target_fact_path)
     verify_sorted_by_cell(con, target_fact_path)
 
-    raw_dim_path = f"{workdir}/{RAW_DIMENSION_FILENAME}"
-    download_blob_to_file(
-        storage_client, bucket_name, release_blob_path(release_date, RAW_DIMENSION_FILENAME), raw_dim_path
+    raw_dim_shard_paths = download_blobs_with_prefix(
+        storage_client,
+        bucket_name,
+        release_blob_path(release_date, RAW_DIMENSION_SHARD_PREFIX),
+        f"{workdir}/raw_dimension_shards",
     )
+    raw_dim_path = f"{workdir}/{RAW_DIMENSION_FILENAME}"
+    recombine_ordered_shards(con, raw_dim_shard_paths, raw_dim_path)
+    verify_recombined_row_count(con, raw_dim_shard_paths, raw_dim_path)
 
     # 2. Read current production's summary stats.
     logger.info("Step 2/5: reading current production baseline")
