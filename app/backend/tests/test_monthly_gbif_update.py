@@ -6,6 +6,7 @@ import pytest
 
 import jobs.monthly_gbif_update as job
 from jobs.monthly_gbif_update import (
+    CACHE_BLOB_PATH,
     DIMENSION_FILENAME,
     EXPECTED_DIMENSION_COLUMNS,
     EXPECTED_FACT_COLUMNS,
@@ -18,6 +19,7 @@ from jobs.monthly_gbif_update import (
     download_blob_to_file,
     download_blobs_with_prefix,
     evaluate,
+    fetch_and_merge_common_names,
     fetch_common_names_for_taxa,
     generate_target_release,
     join_common_names,
@@ -272,6 +274,18 @@ def test_new_entrants_is_empty_when_every_top_n_specieskey_is_already_cached():
     assert result == []
 
 
+def test_new_entrants_excludes_a_specieskey_cached_as_confirmed_no_name():
+    # A cache entry with common_name=None means "already looked up,
+    # ChecklistBank has nothing" - must be excluded from new_entrants
+    # exactly like a real name would be, not re-fetched forever.
+    top_n = ["SP1", "SP2"]
+    existing_cache = {"SP1": None}
+
+    result = new_entrants(top_n, existing_cache)
+
+    assert result == ["SP2"]
+
+
 def test_merge_into_cache_adds_newly_fetched_entries():
     existing_cache = {"SP1": "Pica pica"}
     newly_fetched = {"SP2": "House Sparrow"}
@@ -363,6 +377,42 @@ def test_fetch_common_names_for_taxa_collects_records_from_every_taxon():
         {"taxonID": "SP1", "name": "Name for SP1"},
         {"taxonID": "SP2", "name": "Name for SP2"},
     ]
+
+
+def test_fetch_and_merge_common_names_records_confirmed_empty_entrants_as_none():
+    # SP1 gets a real name, SP2's lookup succeeds but returns nothing -
+    # both must end up in the merged cache, SP2 explicitly as None, not
+    # silently dropped (the bug this function fixes).
+    def fake_fetch(dataset_key, taxon_id):
+        return [{"name": "Pica pica"}] if taxon_id == "SP1" else []
+
+    result = fetch_and_merge_common_names({}, ["SP1", "SP2"], 315557, fetch_fn=fake_fetch)
+
+    assert result == {"SP1": "Pica pica", "SP2": None}
+
+
+def test_fetch_and_merge_common_names_keeps_existing_entries_untouched():
+    existing_cache = {"SP0": "Existing Name"}
+
+    def fake_fetch(dataset_key, taxon_id):
+        return []
+
+    result = fetch_and_merge_common_names(existing_cache, ["SP1"], 315557, fetch_fn=fake_fetch)
+
+    assert result == {"SP0": "Existing Name", "SP1": None}
+
+
+def test_fetch_and_merge_common_names_returns_existing_cache_unchanged_on_fetch_failure(caplog):
+    existing_cache = {"SP0": "Existing Name"}
+
+    def failing_fetch(dataset_key, taxon_id):
+        raise ConnectionError("simulated network failure")
+
+    with caplog.at_level("ERROR"):
+        result = fetch_and_merge_common_names(existing_cache, ["SP1"], 315557, fetch_fn=failing_fetch)
+
+    assert result == {"SP0": "Existing Name"}
+    assert "SP1" not in result
 
 
 # --- BigQuery: generate the target release --------------------------------
@@ -706,6 +756,9 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
         total_occurrence_count=1_050_000, distinct_cell_count=10_500, distinct_species_count=5_250
     )
 
+    def fake_fetch(dataset_key, taxon_id):
+        return [{"name": "Pica pica"}] if taxon_id == "SP1" else []
+
     with (
         patch.object(job, "generate_target_release") as mock_generate,
         patch.object(
@@ -720,9 +773,8 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
             side_effect=[None, None, FileNotFoundError()],
         ),
         patch.object(job, "compute_stats_from_parquet", side_effect=[current_production_stats, target_stats]),
-        patch.object(job, "compute_top_n_specieskeys", return_value=["SP1"]),
+        patch.object(job, "compute_top_n_specieskeys", return_value=["SP1", "SP2"]),
         patch.object(job, "bootstrap_cache_from_production", return_value={}),
-        patch.object(job, "fetch_common_names_for_taxa", return_value=[]),
         patch.object(job, "join_common_names") as mock_join,
         patch.object(job, "upload_file") as mock_upload,
         patch.object(job, "promote_release") as mock_promote,
@@ -734,6 +786,7 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
             "my-bucket",
             workdir=str(tmp_path),
             release_date="2026-11-07",
+            fetch_fn=fake_fetch,
         )
 
     assert outcome.verdict == "pass"
@@ -743,7 +796,18 @@ def test_run_promotes_the_release_on_a_clean_pass(tmp_path):
     assert mock_verify_count.call_count == 2
     mock_verify_sorted.assert_called_once()
     mock_join.assert_called_once()
-    assert mock_upload.call_count == 2
+    # fact + dimension uploads, plus the cache upload now that a
+    # genuinely new entrant (SP1, real name) and a confirmed-empty one
+    # (SP2, no name) both need recording
+    assert mock_upload.call_count == 3
+    cache_upload_call = next(call for call in mock_upload.call_args_list if call.args[2] == CACHE_BLOB_PATH)
+    uploaded_cache_path = cache_upload_call.args[3]
+    assert sorted(read_parquet_rows(uploaded_cache_path), key=lambda r: r["specieskey"]) == [
+        {"specieskey": "SP1", "common_name": "Pica pica"},
+        {"specieskey": "SP2", "common_name": None},
+    ]
+    joined_cache_arg = mock_join.call_args.args[2]
+    assert joined_cache_arg == {"SP1": "Pica pica", "SP2": None}
     mock_promote.assert_called_once_with(
         storage_client, "my-bucket", "2026-11-07", [FACT_FILENAME, DIMENSION_FILENAME]
     )

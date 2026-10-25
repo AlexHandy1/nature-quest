@@ -474,11 +474,13 @@ DEFAULT_MAX_WORKERS = 20
 CHECKLISTBANK_COL_XR_DATASET_KEY = 315557
 
 
-def new_entrants(top_n_specieskeys: list[str], existing_cache: dict[str, str]) -> list[str]:
+def new_entrants(top_n_specieskeys: list[str], existing_cache: dict[str, str | None]) -> list[str]:
     return [key for key in top_n_specieskeys if key not in existing_cache]
 
 
-def merge_into_cache(existing_cache: dict[str, str], newly_fetched: dict[str, str]) -> dict[str, str]:
+def merge_into_cache(
+    existing_cache: dict[str, str | None], newly_fetched: dict[str, str | None]
+) -> dict[str, str | None]:
     return {**newly_fetched, **existing_cache}
 
 
@@ -495,7 +497,7 @@ def bootstrap_cache_from_production(con: duckdb.DuckDBPyConnection, dimension_pa
 
 
 def join_common_names(
-    con: duckdb.DuckDBPyConnection, dimension_path: str, cache: dict[str, str], output_path: str
+    con: duckdb.DuckDBPyConnection, dimension_path: str, cache: dict[str, str | None], output_path: str
 ) -> None:
     """Joins the common-names cache onto the dimension table entirely
     within DuckDB on local paths - dimension rows never pass through
@@ -565,6 +567,35 @@ def fetch_common_names_for_taxa(
             for name_row in future.result():
                 records.append({"taxonID": taxon_id, "name": name_row["name"]})
     return records
+
+
+def fetch_and_merge_common_names(
+    cache: dict[str, str | None],
+    entrants: list[str],
+    dataset_key: int,
+    fetch_fn: Callable[[int, str], list[dict]],
+) -> dict[str, str | None]:
+    """Fetches common names for entrants and merges the result into cache -
+    recording common_name=None for any entrant ChecklistBank genuinely had
+    no English name for, not just silently dropping it. Without this, a
+    confirmed-empty lookup is indistinguishable from one never attempted,
+    so new_entrants() re-fetches (and re-drops) the same batch every run
+    forever - the bug this function exists to fix. A failure partway
+    through fetching (e.g. a real HTTP error on one of potentially
+    thousands of real calls) is swallowed here and the existing cache is
+    returned unchanged - better to skip this run's enrichment entirely
+    than to record negatives for entrants we never got a clean answer
+    for."""
+    try:
+        records = fetch_common_names_for_taxa(dataset_key, entrants, fetch_fn=fetch_fn)
+        found = build_common_name_map(records)
+        confirmed_no_name: dict[str, str | None] = {
+            taxon_id: None for taxon_id in entrants if taxon_id not in found
+        }
+        return merge_into_cache(cache, {**found, **confirmed_no_name})
+    except Exception:
+        logger.exception("Common-names fetch failed - continuing with the existing cache")
+        return cache
 
 
 def _default_checklistbank_fetch(dataset_key: int, taxon_id: str) -> list[dict]:
@@ -670,12 +701,8 @@ def run(
     except Exception:  # noqa: BLE001 - deliberate: no cache yet (first run) falls back to bootstrap
         cache = bootstrap_cache_from_production(con, prod_dim_path)
 
-    try:
-        entrants = new_entrants(top_n_specieskeys, cache)
-        records = fetch_common_names_for_taxa(CHECKLISTBANK_COL_XR_DATASET_KEY, entrants, fetch_fn=fetch_fn)
-        cache = merge_into_cache(cache, build_common_name_map(records))
-    except Exception:
-        logger.exception("Common-names fetch failed - continuing with the existing cache")
+    entrants = new_entrants(top_n_specieskeys, cache)
+    cache = fetch_and_merge_common_names(cache, entrants, CHECKLISTBANK_COL_XR_DATASET_KEY, fetch_fn)
 
     if cache:
         new_cache_path = f"{workdir}/new_{CACHE_BLOB_PATH}"
