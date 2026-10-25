@@ -415,6 +415,23 @@ def test_fetch_and_merge_common_names_returns_existing_cache_unchanged_on_fetch_
     assert "SP1" not in result
 
 
+def test_fetch_and_merge_common_names_is_a_cheap_noop_with_zero_entrants():
+    # The expected steady-state case once the cache is fully backfilled:
+    # no genuinely new specieskeys this run, so no real calls should be
+    # made at all, and the cache returns unchanged.
+    existing_cache = {"SP1": "Pica pica", "SP2": None}
+    fetch_fn_calls = []
+
+    def tracking_fetch(dataset_key, taxon_id):
+        fetch_fn_calls.append(taxon_id)
+        return []
+
+    result = fetch_and_merge_common_names(existing_cache, [], 315557, fetch_fn=tracking_fetch)
+
+    assert result == existing_cache
+    assert fetch_fn_calls == []
+
+
 # --- BigQuery: generate the target release --------------------------------
 
 
