@@ -50,3 +50,11 @@ Broaden what the eval and smoke-test suites cover beyond the current query → s
   - **Map drawing**: assert the generated route, waypoints, and species markers actually render on the map (correct positions, ordering, clustering behaviour), not just that the underlying data is produced.
   - **Audio assessment**: now that AI audio accompaniment is built, assert audio is generated per waypoint/species, plays back, and matches the narrative text.
 - **Narration assessment — low-observation cases**: add more evaluations to cover low-observation scenarios (sparse taxa, thin areas, fallback-year guards), where the narrative has less real data to draw on and is potentially more likely to hallucinate, over-claim, or produce generic filler.
+
+## Semantic species search (Wikipedia embeddings)
+
+Let a query match species by description, not just taxonomy — "show me pollinators" or "animals that might live in a pond" — using an off-the-shelf pretrained text-embedding model over each species' existing Wikipedia extract, as a cheap fallback/complement to the LLM taxon resolver rather than a replacement for it. See `PLANNING_EMBEDDINGS_FEATURES_291026.md` for the detailed design.
+
+## Embedding-powered recommendations (upfront + follow-on)
+
+Beyond search, use a custom-trained embedding space over species co-occurrence (+ taxonomy, + Wikipedia text, + satellite-derived landscape per cell) to power dynamic recommendations: a live "what might be here" preview as an area is drawn, before any query, and "similar species elsewhere" / "similar places" suggestions after a walk resolves. Distinct from the semantic-search idea above — this is a bigger investment (custom training, not just an off-the-shelf model) justified by serving multiple surfaces from one space. See `PLANNING_EMBEDDINGS_FEATURES_291026.md` for the detailed design.
