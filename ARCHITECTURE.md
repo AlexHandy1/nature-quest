@@ -239,7 +239,10 @@ monthly_gbif_update.py    Cloud Run Job entrypoint (separate Dockerfile.job, sep
                              computes guardrail stats from those local files and compares against
                              current production (schema checks + 3 count-metric checks, each
                              independently pass/warn/block), joins an incrementally-updated
-                             ChecklistBank common-names cache onto the dimension table, and —
+                             ChecklistBank common-names cache onto the dimension table — the cache
+                             records a confirmed-empty lookup explicitly (common_name=None), not
+                             just hits, so a species ChecklistBank has no English name for isn't
+                             silently re-fetched every run forever; see ADR-020 — and —
                              unless guardrails return "block" — promotes both files to the bucket
                              root the live app reads from. A "warn" verdict still promotes; only
                              "block" stops short of it. Every run's dated release folder
