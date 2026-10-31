@@ -263,7 +263,9 @@ def classify_group(taxonomy: dict) -> str:
         return "bird"
     if cls == "Mammalia":
         return "mammal"
-    if cls in FISH_CLASSES:
+    if cls in FISH_CLASSES or (phylum == "Chordata" and cls is None):
+        # GBIF's backbone leaves class empty for ray-finned fish (verified
+        # live: Salmo trutta, Gadus morhua, Mola mola all return class=None).
         return "fish"
     if cls in REPTILE_CLASSES:
         return "reptile"
@@ -300,12 +302,41 @@ def derive_common_name(scientific_name: str, wikipedia_title: str | None,
                        gbif_english_names: list[str]) -> tuple[str | None, str | None]:
     """Wikipedia's article title is the cleanest common name when the
     scientific-name lookup redirected to a vernacular title; otherwise fall
-    back to GBIF's first English vernacular name."""
-    if wikipedia_title and wikipedia_title.strip().lower() != scientific_name.strip().lower():
+    back to the English GBIF vernacular name cited by the most sources (the
+    first-listed one is often an oddity, e.g. "Native Scots Pinewood")."""
+    if wikipedia_title and not _looks_scientific(wikipedia_title, scientific_name):
         return wikipedia_title, "wikipedia_title"
-    if gbif_english_names:
-        return gbif_english_names[0], "gbif_vernacular"
+    vernacular = _most_cited(gbif_english_names)
+    if vernacular:
+        return vernacular, "gbif_vernacular"
     return None, None
+
+
+def _looks_scientific(title: str, scientific_name: str) -> bool:
+    """A title sharing the genus or epithet is a scientific name (exact,
+    re-spelt like "Atropa bella-donna", genus-only, or a renamed genus like
+    "Pulchriphyllium giganteum"), not a common name."""
+    genus, _, epithet = scientific_name.strip().lower().partition(" ")
+    words = title.strip().lower().split()
+    return words[0] == genus or words[-1] == epithet
+
+
+def _most_cited(names: list[str]) -> str | None:
+    counts: dict[str, int] = {}
+    first_seen: dict[str, str] = {}
+    for raw in names:
+        for part in raw.split(","):
+            name = part.strip()
+            if not name:
+                continue
+            key = name.lower()
+            counts[key] = counts.get(key, 0) + 1
+            first_seen.setdefault(key, name)
+    if not counts:
+        return None
+    best = max(counts, key=lambda k: counts[k])  # max() keeps the first-seen key on ties
+    name = first_seen[best]
+    return name[0].upper() + name[1:]
 
 
 def select_balanced(records: list[dict], n: int) -> list[dict]:

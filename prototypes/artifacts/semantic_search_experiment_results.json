@@ -1,0 +1,1887 @@
+{
+  "generated_at": "2026-10-31T21:08:11",
+  "k": 5,
+  "repeats": 20,
+  "cold_start_ms": {
+    "import_ms": 7771.894103000022,
+    "model_load_ms": 1114.7676820000925,
+    "db_connect_ms": 77.48983200008297,
+    "first_query_ms": 152.2115489999578
+  },
+  "warm_latency_ms": {
+    "embed": {
+      "n": 540,
+      "mean_ms": 21.81856268518956,
+      "p50_ms": 15.17744800003129,
+      "p95_ms": 56.767716999956974,
+      "max_ms": 215.89650199985044
+    },
+    "duckdb_search": {
+      "n": 540,
+      "mean_ms": 9.139168481474119,
+      "p50_ms": 5.889174999992974,
+      "p95_ms": 24.12444299989147,
+      "max_ms": 64.6852489999219
+    },
+    "total": {
+      "n": 540,
+      "mean_ms": 30.957731166663674,
+      "p50_ms": 23.885281000048053,
+      "p95_ms": 66.73871699990741,
+      "max_ms": 250.41533399985383
+    }
+  },
+  "http_latency_ms": {
+    "client_round_trip": {
+      "n": 135,
+      "mean_ms": 38.57182438518302,
+      "p50_ms": 32.39344500002517,
+      "p95_ms": 65.27349099997082,
+      "max_ms": 197.6742510000804
+    },
+    "server_total": {
+      "n": 135,
+      "mean_ms": 32.52410619260176,
+      "p50_ms": 26.811828000063542,
+      "p95_ms": 56.202686000006,
+      "max_ms": 193.30036399992423
+    }
+  },
+  "hit_at_5": 23,
+  "scenario_count": 24,
+  "mean_precision_at_5": 0.6,
+  "scenarios": [
+    {
+      "id": "flies_birds",
+      "query": "something that flies",
+      "relevance": {
+        "groups": [
+          "bird"
+        ]
+      },
+      "note": "brief: birds in top 5",
+      "hit_at_5": false,
+      "precision_at_5": 0.0,
+      "top1_score": 0.4101654589176178,
+      "results": [
+        {
+          "common_name": "Spanish Fly",
+          "scientific_name": "Lytta vesicatoria",
+          "group": "beetle",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "venomous"
+          ],
+          "score": 0.4101654589176178,
+          "relevant": false
+        },
+        {
+          "common_name": "Fly Agaric",
+          "scientific_name": "Amanita muscaria",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [
+            "venomous"
+          ],
+          "score": 0.3942570984363556,
+          "relevant": false
+        },
+        {
+          "common_name": "Housefly",
+          "scientific_name": "Musca domestica",
+          "group": "other_insect",
+          "tier": "mid",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.3809310793876648,
+          "relevant": false
+        },
+        {
+          "common_name": "Emperor dragonfly",
+          "scientific_name": "Anax imperator",
+          "group": "dragonfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "freshwater",
+            "predator"
+          ],
+          "score": 0.33732524514198303,
+          "relevant": false
+        },
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.33726584911346436,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "swims_fish",
+      "query": "something that swims",
+      "relevance": {
+        "groups": [
+          "fish"
+        ]
+      },
+      "note": "brief: fish in top 5",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.28107112646102905,
+      "results": [
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.28107112646102905,
+          "relevant": false
+        },
+        {
+          "common_name": "Blue mussel",
+          "scientific_name": "Mytilus edulis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "marine",
+            "shell"
+          ],
+          "score": 0.2558757960796356,
+          "relevant": false
+        },
+        {
+          "common_name": "Short-snouted seahorse",
+          "scientific_name": "Hippocampus hippocampus",
+          "group": "fish",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine"
+          ],
+          "score": 0.25392812490463257,
+          "relevant": true
+        },
+        {
+          "common_name": "West Indian Ocean coelacanth",
+          "scientific_name": "Latimeria chalumnae",
+          "group": "fish",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine",
+            "threatened"
+          ],
+          "score": 0.2531469464302063,
+          "relevant": true
+        },
+        {
+          "common_name": "Common chameleon",
+          "scientific_name": "Chamaeleo chamaeleon",
+          "group": "reptile",
+          "tier": "rare",
+          "tags": [
+            "predator"
+          ],
+          "score": 0.24601557850837708,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "camo_wings_butterflies",
+      "query": "something with colourful wings that use camouflage",
+      "relevance": {
+        "groups": [
+          "butterfly"
+        ]
+      },
+      "note": "brief: butterflies in top 5",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.45051810145378113,
+      "results": [
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.45051810145378113,
+          "relevant": true
+        },
+        {
+          "common_name": "Monarch butterfly",
+          "scientific_name": "Danaus plexippus",
+          "group": "butterfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.435604989528656,
+          "relevant": true
+        },
+        {
+          "common_name": "Asian hornet",
+          "scientific_name": "Vespa velutina",
+          "group": "ant_wasp",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "venomous",
+            "predator"
+          ],
+          "score": 0.4178108870983124,
+          "relevant": false
+        },
+        {
+          "common_name": "Emperor dragonfly",
+          "scientific_name": "Anax imperator",
+          "group": "dragonfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "freshwater",
+            "predator"
+          ],
+          "score": 0.39687269926071167,
+          "relevant": false
+        },
+        {
+          "common_name": "Housefly",
+          "scientific_name": "Musca domestica",
+          "group": "other_insect",
+          "tier": "mid",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.3794077932834625,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "pollinators",
+      "query": "I want to see pollinators",
+      "relevance": {
+        "tags": [
+          "pollinator"
+        ]
+      },
+      "note": "brief: headline thematic query",
+      "hit_at_5": true,
+      "precision_at_5": 0.8,
+      "top1_score": 0.3112148642539978,
+      "results": [
+        {
+          "common_name": "Red Mason Bee",
+          "scientific_name": "Osmia bicornis",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.3112148642539978,
+          "relevant": true
+        },
+        {
+          "common_name": "Buff-tailed Bumblebee",
+          "scientific_name": "Bombus terrestris",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.30924123525619507,
+          "relevant": true
+        },
+        {
+          "common_name": "Monarch butterfly",
+          "scientific_name": "Danaus plexippus",
+          "group": "butterfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.2598511278629303,
+          "relevant": true
+        },
+        {
+          "common_name": "Franklin's bumblebee",
+          "scientific_name": "Bombus franklini",
+          "group": "bee",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous",
+            "threatened"
+          ],
+          "score": 0.2430238276720047,
+          "relevant": true
+        },
+        {
+          "common_name": "Leaf-cutter ant",
+          "scientific_name": "Atta cephalotes",
+          "group": "ant_wasp",
+          "tier": "rare",
+          "tags": [],
+          "score": 0.23887670040130615,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "flying_animals",
+      "query": "flying animals",
+      "relevance": {
+        "tags": [
+          "flies"
+        ]
+      },
+      "note": "paraphrase",
+      "hit_at_5": true,
+      "precision_at_5": 0.8,
+      "top1_score": 0.43895912170410156,
+      "results": [
+        {
+          "common_name": "Housefly",
+          "scientific_name": "Musca domestica",
+          "group": "other_insect",
+          "tier": "mid",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.43895912170410156,
+          "relevant": true
+        },
+        {
+          "common_name": "Fly Agaric",
+          "scientific_name": "Amanita muscaria",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [
+            "venomous"
+          ],
+          "score": 0.3841407895088196,
+          "relevant": false
+        },
+        {
+          "common_name": "Queen Alexandra's birdwing",
+          "scientific_name": "Ornithoptera alexandrae",
+          "group": "butterfly",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator",
+            "threatened"
+          ],
+          "score": 0.37449315190315247,
+          "relevant": true
+        },
+        {
+          "common_name": "Spanish Fly",
+          "scientific_name": "Lytta vesicatoria",
+          "group": "beetle",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "venomous"
+          ],
+          "score": 0.3566427230834961,
+          "relevant": true
+        },
+        {
+          "common_name": "Emperor dragonfly",
+          "scientific_name": "Anax imperator",
+          "group": "dragonfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "freshwater",
+            "predator"
+          ],
+          "score": 0.353739857673645,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "aquatic_animals",
+      "query": "aquatic animals",
+      "relevance": {
+        "tags": [
+          "swims",
+          "freshwater",
+          "marine"
+        ]
+      },
+      "note": "paraphrase",
+      "hit_at_5": true,
+      "precision_at_5": 1.0,
+      "top1_score": 0.4361322522163391,
+      "results": [
+        {
+          "common_name": "West Indian Ocean coelacanth",
+          "scientific_name": "Latimeria chalumnae",
+          "group": "fish",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine",
+            "threatened"
+          ],
+          "score": 0.4361322522163391,
+          "relevant": true
+        },
+        {
+          "common_name": "Short-snouted seahorse",
+          "scientific_name": "Hippocampus hippocampus",
+          "group": "fish",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine"
+          ],
+          "score": 0.4300828278064728,
+          "relevant": true
+        },
+        {
+          "common_name": "Swamp lymnaea",
+          "scientific_name": "Lymnaea stagnalis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell"
+          ],
+          "score": 0.39743945002555847,
+          "relevant": true
+        },
+        {
+          "common_name": "Brown trout",
+          "scientific_name": "Salmo trutta",
+          "group": "fish",
+          "tier": "common",
+          "tags": [
+            "swims",
+            "freshwater"
+          ],
+          "score": 0.38158589601516724,
+          "relevant": true
+        },
+        {
+          "common_name": "White-clawed crayfish",
+          "scientific_name": "Austropotamobius pallipes",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell",
+            "threatened"
+          ],
+          "score": 0.3783601224422455,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "camo_butterflies",
+      "query": "camouflaged butterflies",
+      "relevance": {
+        "groups": [
+          "butterfly"
+        ]
+      },
+      "note": "paraphrase",
+      "hit_at_5": true,
+      "precision_at_5": 1.0,
+      "top1_score": 0.5337361693382263,
+      "results": [
+        {
+          "common_name": "Monarch butterfly",
+          "scientific_name": "Danaus plexippus",
+          "group": "butterfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.5337361693382263,
+          "relevant": true
+        },
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.4904002547264099,
+          "relevant": true
+        },
+        {
+          "common_name": "Queen Alexandra's birdwing",
+          "scientific_name": "Ornithoptera alexandrae",
+          "group": "butterfly",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator",
+            "threatened"
+          ],
+          "score": 0.4811176657676697,
+          "relevant": true
+        },
+        {
+          "common_name": "Dead Leaf",
+          "scientific_name": "Kallima inachus",
+          "group": "butterfly",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.4476776719093323,
+          "relevant": true
+        },
+        {
+          "common_name": "Swallowtail",
+          "scientific_name": "Papilio machaon",
+          "group": "butterfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.42364034056663513,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "flowers_bees_visit",
+      "query": "insects that visit flowers",
+      "relevance": {
+        "tags": [
+          "pollinator"
+        ]
+      },
+      "note": "paraphrase",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.5124533176422119,
+      "results": [
+        {
+          "common_name": "Giant Leaf Insect",
+          "scientific_name": "Phyllium giganteum",
+          "group": "other_insect",
+          "tier": "rare",
+          "tags": [],
+          "score": 0.5124533176422119,
+          "relevant": false
+        },
+        {
+          "common_name": "Common Dandelion",
+          "scientific_name": "Taraxacum officinale",
+          "group": "plant",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.4732731580734253,
+          "relevant": false
+        },
+        {
+          "common_name": "Buff-tailed Bumblebee",
+          "scientific_name": "Bombus terrestris",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.4513997733592987,
+          "relevant": true
+        },
+        {
+          "common_name": "Queen Alexandra's birdwing",
+          "scientific_name": "Ornithoptera alexandrae",
+          "group": "butterfly",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator",
+            "threatened"
+          ],
+          "score": 0.4488925039768219,
+          "relevant": true
+        },
+        {
+          "common_name": "Glow-worm",
+          "scientific_name": "Lampyris noctiluca",
+          "group": "beetle",
+          "tier": "mid",
+          "tags": [
+            "nocturnal"
+          ],
+          "score": 0.4359685182571411,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "pond",
+      "query": "animals that might live in a pond",
+      "relevance": {
+        "tags": [
+          "freshwater"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 1.0,
+      "top1_score": 0.48299387097358704,
+      "results": [
+        {
+          "common_name": "Swamp lymnaea",
+          "scientific_name": "Lymnaea stagnalis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell"
+          ],
+          "score": 0.48299387097358704,
+          "relevant": true
+        },
+        {
+          "common_name": "Common frog",
+          "scientific_name": "Rana temporaria",
+          "group": "amphibian",
+          "tier": "mid",
+          "tags": [
+            "swims",
+            "freshwater"
+          ],
+          "score": 0.40437403321266174,
+          "relevant": true
+        },
+        {
+          "common_name": "White-clawed crayfish",
+          "scientific_name": "Austropotamobius pallipes",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell",
+            "threatened"
+          ],
+          "score": 0.37301525473594666,
+          "relevant": true
+        },
+        {
+          "common_name": "Common carp",
+          "scientific_name": "Cyprinus carpio",
+          "group": "fish",
+          "tier": "mid",
+          "tags": [
+            "swims",
+            "freshwater"
+          ],
+          "score": 0.36486920714378357,
+          "relevant": true
+        },
+        {
+          "common_name": "Blue-tailed damselfly",
+          "scientific_name": "Ischnura elegans",
+          "group": "dragonfly",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "freshwater",
+            "predator"
+          ],
+          "score": 0.3415990173816681,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "night",
+      "query": "creatures that come out at night",
+      "relevance": {
+        "tags": [
+          "nocturnal"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.6,
+      "top1_score": 0.36294758319854736,
+      "results": [
+        {
+          "common_name": "Glow-worm",
+          "scientific_name": "Lampyris noctiluca",
+          "group": "beetle",
+          "tier": "mid",
+          "tags": [
+            "nocturnal"
+          ],
+          "score": 0.36294758319854736,
+          "relevant": true
+        },
+        {
+          "common_name": "Housefly",
+          "scientific_name": "Musca domestica",
+          "group": "other_insect",
+          "tier": "mid",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.3610605299472809,
+          "relevant": false
+        },
+        {
+          "common_name": "K\u0101k\u0101p\u014d",
+          "scientific_name": "Strigops habroptilus",
+          "group": "bird",
+          "tier": "rare",
+          "tags": [
+            "nocturnal",
+            "threatened"
+          ],
+          "score": 0.3535325229167938,
+          "relevant": true
+        },
+        {
+          "common_name": "Red fox",
+          "scientific_name": "Vulpes vulpes",
+          "group": "mammal",
+          "tier": "common",
+          "tags": [
+            "nocturnal",
+            "predator"
+          ],
+          "score": 0.34217914938926697,
+          "relevant": true
+        },
+        {
+          "common_name": "Swamp lymnaea",
+          "scientific_name": "Lymnaea stagnalis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell"
+          ],
+          "score": 0.3161127269268036,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "venomous",
+      "query": "something venomous or poisonous",
+      "relevance": {
+        "tags": [
+          "venomous"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.8,
+      "top1_score": 0.42196008563041687,
+      "results": [
+        {
+          "common_name": "Golden poison frog",
+          "scientific_name": "Phyllobates terribilis",
+          "group": "amphibian",
+          "tier": "rare",
+          "tags": [
+            "venomous",
+            "threatened"
+          ],
+          "score": 0.42196008563041687,
+          "relevant": true
+        },
+        {
+          "common_name": "Southern black widow",
+          "scientific_name": "Latrodectus mactans",
+          "group": "arachnid",
+          "tier": "mid",
+          "tags": [
+            "predator",
+            "venomous"
+          ],
+          "score": 0.4126818776130676,
+          "relevant": true
+        },
+        {
+          "common_name": "Adder",
+          "scientific_name": "Vipera berus",
+          "group": "reptile",
+          "tier": "mid",
+          "tags": [
+            "venomous",
+            "predator"
+          ],
+          "score": 0.37696829438209534,
+          "relevant": true
+        },
+        {
+          "common_name": "Death Cap",
+          "scientific_name": "Amanita phalloides",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [
+            "venomous"
+          ],
+          "score": 0.3698688745498657,
+          "relevant": true
+        },
+        {
+          "common_name": "Common Pill Woodlouse",
+          "scientific_name": "Armadillidium vulgare",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "nocturnal",
+            "shell"
+          ],
+          "score": 0.3599243760108948,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "raptors",
+      "query": "birds of prey",
+      "relevance": {
+        "tags": [
+          "raptor"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.2,
+      "top1_score": 0.5110637545585632,
+      "results": [
+        {
+          "common_name": "Golden eagle",
+          "scientific_name": "Aquila chrysaetos",
+          "group": "bird",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "predator",
+            "raptor"
+          ],
+          "score": 0.5110637545585632,
+          "relevant": true
+        },
+        {
+          "common_name": "Hummingbird hawk-moth",
+          "scientific_name": "Macroglossum stellatarum",
+          "group": "moth",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.47319310903549194,
+          "relevant": false
+        },
+        {
+          "common_name": "Common blackbird",
+          "scientific_name": "Turdus merula",
+          "group": "bird",
+          "tier": "common",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.4566599726676941,
+          "relevant": false
+        },
+        {
+          "common_name": "House sparrow",
+          "scientific_name": "Passer domesticus",
+          "group": "bird",
+          "tier": "common",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.41548898816108704,
+          "relevant": false
+        },
+        {
+          "common_name": "Red fox",
+          "scientific_name": "Vulpes vulpes",
+          "group": "mammal",
+          "tier": "common",
+          "tags": [
+            "nocturnal",
+            "predator"
+          ],
+          "score": 0.39972516894340515,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "trees",
+      "query": "tall trees",
+      "relevance": {
+        "tags": [
+          "tree"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.5324406623840332,
+      "results": [
+        {
+          "common_name": "Wellingtonia",
+          "scientific_name": "Sequoiadendron giganteum",
+          "group": "plant",
+          "tier": "mid",
+          "tags": [
+            "tree",
+            "threatened"
+          ],
+          "score": 0.5324406623840332,
+          "relevant": true
+        },
+        {
+          "common_name": "Pedunculate Oak",
+          "scientific_name": "Quercus robur",
+          "group": "plant",
+          "tier": "common",
+          "tags": [
+            "tree"
+          ],
+          "score": 0.355305552482605,
+          "relevant": true
+        },
+        {
+          "common_name": "Giant Leaf Insect",
+          "scientific_name": "Phyllium giganteum",
+          "group": "other_insect",
+          "tier": "rare",
+          "tags": [],
+          "score": 0.3112083971500397,
+          "relevant": false
+        },
+        {
+          "common_name": "Leaf-cutter ant",
+          "scientific_name": "Atta cephalotes",
+          "group": "ant_wasp",
+          "tier": "rare",
+          "tags": [],
+          "score": 0.2647652328014374,
+          "relevant": false
+        },
+        {
+          "common_name": "Queen Alexandra's birdwing",
+          "scientific_name": "Ornithoptera alexandrae",
+          "group": "butterfly",
+          "tier": "rare",
+          "tags": [
+            "flies",
+            "pollinator",
+            "threatened"
+          ],
+          "score": 0.2505292296409607,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "endangered",
+      "query": "endangered animals",
+      "relevance": {
+        "tags": [
+          "threatened"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.4240029752254486,
+      "results": [
+        {
+          "common_name": "Red fox",
+          "scientific_name": "Vulpes vulpes",
+          "group": "mammal",
+          "tier": "common",
+          "tags": [
+            "nocturnal",
+            "predator"
+          ],
+          "score": 0.4240029752254486,
+          "relevant": false
+        },
+        {
+          "common_name": "White-clawed crayfish",
+          "scientific_name": "Austropotamobius pallipes",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell",
+            "threatened"
+          ],
+          "score": 0.3386498987674713,
+          "relevant": true
+        },
+        {
+          "common_name": "European badger",
+          "scientific_name": "Meles meles",
+          "group": "mammal",
+          "tier": "mid",
+          "tags": [
+            "nocturnal"
+          ],
+          "score": 0.3233923614025116,
+          "relevant": false
+        },
+        {
+          "common_name": "Golden poison frog",
+          "scientific_name": "Phyllobates terribilis",
+          "group": "amphibian",
+          "tier": "rare",
+          "tags": [
+            "venomous",
+            "threatened"
+          ],
+          "score": 0.31709524989128113,
+          "relevant": true
+        },
+        {
+          "common_name": "European hedgehog",
+          "scientific_name": "Erinaceus europaeus",
+          "group": "mammal",
+          "tier": "mid",
+          "tags": [
+            "nocturnal"
+          ],
+          "score": 0.31654486060142517,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "ocean",
+      "query": "something that lives in the ocean",
+      "relevance": {
+        "tags": [
+          "marine"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 1.0,
+      "top1_score": 0.35722988843917847,
+      "results": [
+        {
+          "common_name": "Blue mussel",
+          "scientific_name": "Mytilus edulis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "marine",
+            "shell"
+          ],
+          "score": 0.35722988843917847,
+          "relevant": true
+        },
+        {
+          "common_name": "West Indian Ocean coelacanth",
+          "scientific_name": "Latimeria chalumnae",
+          "group": "fish",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine",
+            "threatened"
+          ],
+          "score": 0.3508418798446655,
+          "relevant": true
+        },
+        {
+          "common_name": "Green sea turtle",
+          "scientific_name": "Chelonia mydas",
+          "group": "reptile",
+          "tier": "mid",
+          "tags": [
+            "swims",
+            "marine",
+            "threatened",
+            "shell"
+          ],
+          "score": 0.3420366048812866,
+          "relevant": true
+        },
+        {
+          "common_name": "Vaquita",
+          "scientific_name": "Phocoena sinus",
+          "group": "mammal",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "marine",
+            "threatened"
+          ],
+          "score": 0.3370027244091034,
+          "relevant": true
+        },
+        {
+          "common_name": "Common octopus",
+          "scientific_name": "Octopus vulgaris",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "swims",
+            "marine",
+            "predator"
+          ],
+          "score": 0.32691478729248047,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "shells",
+      "query": "animals with shells",
+      "relevance": {
+        "tags": [
+          "shell"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.342155784368515,
+      "results": [
+        {
+          "common_name": "European hornet",
+          "scientific_name": "Vespa crabro",
+          "group": "ant_wasp",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "venomous",
+            "predator"
+          ],
+          "score": 0.342155784368515,
+          "relevant": false
+        },
+        {
+          "common_name": "Oyster Mushroom",
+          "scientific_name": "Pleurotus ostreatus",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.3212040662765503,
+          "relevant": false
+        },
+        {
+          "common_name": "Common toad",
+          "scientific_name": "Bufo bufo",
+          "group": "amphibian",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "nocturnal",
+            "venomous"
+          ],
+          "score": 0.31788909435272217,
+          "relevant": false
+        },
+        {
+          "common_name": "Blue mussel",
+          "scientific_name": "Mytilus edulis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "marine",
+            "shell"
+          ],
+          "score": 0.314670592546463,
+          "relevant": true
+        },
+        {
+          "common_name": "White-clawed crayfish",
+          "scientific_name": "Austropotamobius pallipes",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell",
+            "threatened"
+          ],
+          "score": 0.3108842670917511,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "predator",
+      "query": "a big predator",
+      "relevance": {
+        "tags": [
+          "predator"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.42368295788764954,
+      "results": [
+        {
+          "common_name": "Red fox",
+          "scientific_name": "Vulpes vulpes",
+          "group": "mammal",
+          "tier": "common",
+          "tags": [
+            "nocturnal",
+            "predator"
+          ],
+          "score": 0.42368295788764954,
+          "relevant": true
+        },
+        {
+          "common_name": "Giant Leaf Insect",
+          "scientific_name": "Phyllium giganteum",
+          "group": "other_insect",
+          "tier": "rare",
+          "tags": [],
+          "score": 0.3368167579174042,
+          "relevant": false
+        },
+        {
+          "common_name": "Asian hornet",
+          "scientific_name": "Vespa velutina",
+          "group": "ant_wasp",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "venomous",
+            "predator"
+          ],
+          "score": 0.333076536655426,
+          "relevant": true
+        },
+        {
+          "common_name": "Axolotl",
+          "scientific_name": "Ambystoma mexicanum",
+          "group": "amphibian",
+          "tier": "rare",
+          "tags": [
+            "swims",
+            "freshwater",
+            "threatened"
+          ],
+          "score": 0.32432428002357483,
+          "relevant": false
+        },
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.32212647795677185,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "eight_legs",
+      "query": "creepy crawlies with eight legs",
+      "relevance": {
+        "groups": [
+          "arachnid"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.4,
+      "top1_score": 0.32817819714546204,
+      "results": [
+        {
+          "common_name": "Southern black widow",
+          "scientific_name": "Latrodectus mactans",
+          "group": "arachnid",
+          "tier": "mid",
+          "tags": [
+            "predator",
+            "venomous"
+          ],
+          "score": 0.32817819714546204,
+          "relevant": true
+        },
+        {
+          "common_name": "Common Pill Woodlouse",
+          "scientific_name": "Armadillidium vulgare",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "nocturnal",
+            "shell"
+          ],
+          "score": 0.30917176604270935,
+          "relevant": false
+        },
+        {
+          "common_name": "Tarantula wolf spider",
+          "scientific_name": "Lycosa tarantula",
+          "group": "arachnid",
+          "tier": "rare",
+          "tags": [
+            "predator",
+            "venomous",
+            "nocturnal"
+          ],
+          "score": 0.30737489461898804,
+          "relevant": true
+        },
+        {
+          "common_name": "Luna moth",
+          "scientific_name": "Actias luna",
+          "group": "moth",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "nocturnal"
+          ],
+          "score": 0.2798687815666199,
+          "relevant": false
+        },
+        {
+          "common_name": "Sevenspotted Lady Beetle",
+          "scientific_name": "Coccinella septempunctata",
+          "group": "beetle",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "predator"
+          ],
+          "score": 0.2780018150806427,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "slimy",
+      "query": "something slimy",
+      "relevance": {
+        "groups": [
+          "amphibian",
+          "mollusc"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.2,
+      "top1_score": 0.17947658896446228,
+      "results": [
+        {
+          "common_name": "Common Pill Woodlouse",
+          "scientific_name": "Armadillidium vulgare",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "nocturnal",
+            "shell"
+          ],
+          "score": 0.17947658896446228,
+          "relevant": false
+        },
+        {
+          "common_name": "Buff-tailed Bumblebee",
+          "scientific_name": "Bombus terrestris",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.15421992540359497,
+          "relevant": false
+        },
+        {
+          "common_name": "Blue mussel",
+          "scientific_name": "Mytilus edulis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "marine",
+            "shell"
+          ],
+          "score": 0.14943458139896393,
+          "relevant": true
+        },
+        {
+          "common_name": "Southern black widow",
+          "scientific_name": "Latrodectus mactans",
+          "group": "arachnid",
+          "tier": "mid",
+          "tags": [
+            "predator",
+            "venomous"
+          ],
+          "score": 0.14788247644901276,
+          "relevant": false
+        },
+        {
+          "common_name": "Cep",
+          "scientific_name": "Boletus edulis",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.1443653255701065,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "colourful_birds",
+      "query": "colourful birds",
+      "relevance": {
+        "groups": [
+          "bird"
+        ]
+      },
+      "note": "thematic",
+      "hit_at_5": true,
+      "precision_at_5": 0.6,
+      "top1_score": 0.44875985383987427,
+      "results": [
+        {
+          "common_name": "Golden eagle",
+          "scientific_name": "Aquila chrysaetos",
+          "group": "bird",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "predator",
+            "raptor"
+          ],
+          "score": 0.44875985383987427,
+          "relevant": true
+        },
+        {
+          "common_name": "Common blackbird",
+          "scientific_name": "Turdus merula",
+          "group": "bird",
+          "tier": "common",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.4322355091571808,
+          "relevant": true
+        },
+        {
+          "common_name": "Hummingbird hawk-moth",
+          "scientific_name": "Macroglossum stellatarum",
+          "group": "moth",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.4002377390861511,
+          "relevant": false
+        },
+        {
+          "common_name": "House sparrow",
+          "scientific_name": "Passer domesticus",
+          "group": "bird",
+          "tier": "common",
+          "tags": [
+            "flies"
+          ],
+          "score": 0.37708282470703125,
+          "relevant": true
+        },
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.3732801675796509,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "bees",
+      "query": "bees",
+      "relevance": {
+        "groups": [
+          "bee"
+        ]
+      },
+      "note": "lexical control",
+      "hit_at_5": true,
+      "precision_at_5": 1.0,
+      "top1_score": 0.594704270362854,
+      "results": [
+        {
+          "common_name": "Western honey bee",
+          "scientific_name": "Apis mellifera",
+          "group": "bee",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.594704270362854,
+          "relevant": true
+        },
+        {
+          "common_name": "Red Mason Bee",
+          "scientific_name": "Osmia bicornis",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.5775361657142639,
+          "relevant": true
+        },
+        {
+          "common_name": "Violet Carpenter Bee",
+          "scientific_name": "Xylocopa violacea",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.5106260776519775,
+          "relevant": true
+        },
+        {
+          "common_name": "Tawny mining bee",
+          "scientific_name": "Andrena fulva",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.501497209072113,
+          "relevant": true
+        },
+        {
+          "common_name": "Buff-tailed Bumblebee",
+          "scientific_name": "Bombus terrestris",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator",
+            "venomous"
+          ],
+          "score": 0.4913722574710846,
+          "relevant": true
+        }
+      ]
+    },
+    {
+      "id": "frogs",
+      "query": "frogs and toads",
+      "relevance": {
+        "groups": [
+          "amphibian"
+        ]
+      },
+      "note": "lexical control",
+      "hit_at_5": true,
+      "precision_at_5": 0.8,
+      "top1_score": 0.6017633676528931,
+      "results": [
+        {
+          "common_name": "Common toad",
+          "scientific_name": "Bufo bufo",
+          "group": "amphibian",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "nocturnal",
+            "venomous"
+          ],
+          "score": 0.6017633676528931,
+          "relevant": true
+        },
+        {
+          "common_name": "Common frog",
+          "scientific_name": "Rana temporaria",
+          "group": "amphibian",
+          "tier": "mid",
+          "tags": [
+            "swims",
+            "freshwater"
+          ],
+          "score": 0.5984274744987488,
+          "relevant": true
+        },
+        {
+          "common_name": "Panamanian golden frog",
+          "scientific_name": "Atelopus zeteki",
+          "group": "amphibian",
+          "tier": "rare",
+          "tags": [
+            "venomous",
+            "threatened"
+          ],
+          "score": 0.4276857376098633,
+          "relevant": true
+        },
+        {
+          "common_name": "Golden poison frog",
+          "scientific_name": "Phyllobates terribilis",
+          "group": "amphibian",
+          "tier": "rare",
+          "tags": [
+            "venomous",
+            "threatened"
+          ],
+          "score": 0.41243231296539307,
+          "relevant": true
+        },
+        {
+          "common_name": "Swamp lymnaea",
+          "scientific_name": "Lymnaea stagnalis",
+          "group": "mollusc",
+          "tier": "mid",
+          "tags": [
+            "freshwater",
+            "shell"
+          ],
+          "score": 0.37073078751564026,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "mushrooms",
+      "query": "mushrooms",
+      "relevance": {
+        "groups": [
+          "fungus"
+        ]
+      },
+      "note": "lexical control",
+      "hit_at_5": true,
+      "precision_at_5": 0.8,
+      "top1_score": 0.5123085379600525,
+      "results": [
+        {
+          "common_name": "Oyster Mushroom",
+          "scientific_name": "Pleurotus ostreatus",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.5123085379600525,
+          "relevant": true
+        },
+        {
+          "common_name": "Fly Agaric",
+          "scientific_name": "Amanita muscaria",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [
+            "venomous"
+          ],
+          "score": 0.4587116837501526,
+          "relevant": true
+        },
+        {
+          "common_name": "Cep",
+          "scientific_name": "Boletus edulis",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.4583793878555298,
+          "relevant": true
+        },
+        {
+          "common_name": "Death Cap",
+          "scientific_name": "Amanita phalloides",
+          "group": "fungus",
+          "tier": "mid",
+          "tags": [
+            "venomous"
+          ],
+          "score": 0.4036139249801636,
+          "relevant": true
+        },
+        {
+          "common_name": "Common Pill Woodlouse",
+          "scientific_name": "Armadillidium vulgare",
+          "group": "crustacean",
+          "tier": "mid",
+          "tags": [
+            "nocturnal",
+            "shell"
+          ],
+          "score": 0.32041892409324646,
+          "relevant": false
+        }
+      ]
+    },
+    {
+      "id": "flowers",
+      "query": "flowers",
+      "relevance": {
+        "groups": [
+          "plant"
+        ]
+      },
+      "note": "lexical control",
+      "hit_at_5": true,
+      "precision_at_5": 0.6,
+      "top1_score": 0.48946383595466614,
+      "results": [
+        {
+          "common_name": "Common Dandelion",
+          "scientific_name": "Taraxacum officinale",
+          "group": "plant",
+          "tier": "mid",
+          "tags": [],
+          "score": 0.48946383595466614,
+          "relevant": true
+        },
+        {
+          "common_name": "Daisy",
+          "scientific_name": "Bellis perennis",
+          "group": "plant",
+          "tier": "common",
+          "tags": [],
+          "score": 0.4682840406894684,
+          "relevant": true
+        },
+        {
+          "common_name": "Arnold's rafflesia",
+          "scientific_name": "Rafflesia arnoldii",
+          "group": "plant",
+          "tier": "rare",
+          "tags": [
+            "threatened"
+          ],
+          "score": 0.3476230204105377,
+          "relevant": true
+        },
+        {
+          "common_name": "Red Mason Bee",
+          "scientific_name": "Osmia bicornis",
+          "group": "bee",
+          "tier": "mid",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.28204166889190674,
+          "relevant": false
+        },
+        {
+          "common_name": "Red Admiral",
+          "scientific_name": "Vanessa atalanta",
+          "group": "butterfly",
+          "tier": "common",
+          "tags": [
+            "flies",
+            "pollinator"
+          ],
+          "score": 0.27906110882759094,
+          "relevant": false
+        }
+      ]
+    }
+  ],
+  "out_of_domain": [
+    {
+      "query": "quarterly tax return spreadsheet",
+      "top1_score": 0.1348290890455246,
+      "top5": [
+        "Tadpole Shrimp",
+        "Brown garden snail",
+        "Swamp lymnaea",
+        "Glow-worm",
+        "Common Pill Woodlouse"
+      ]
+    },
+    {
+      "query": "best pizza in Madrid",
+      "top1_score": 0.22504250705242157,
+      "top5": [
+        "Iberian lynx",
+        "Oyster Mushroom",
+        "Peppered moth",
+        "Tarantula wolf spider",
+        "Chanterelle"
+      ]
+    },
+    {
+      "query": "how do I reset my router password",
+      "top1_score": 0.11017990112304688,
+      "top5": [
+        "Atlantic cod",
+        "House sparrow",
+        "West Indian Ocean coelacanth",
+        "Spanish Fly",
+        "Field Cricket"
+      ]
+    }
+  ],
+  "tier_mix": {
+    "corpus": {
+      "common": 12,
+      "rare": 23,
+      "mid": 65
+    },
+    "results": {
+      "rare": 28,
+      "mid": 73,
+      "common": 19
+    }
+  }
+}

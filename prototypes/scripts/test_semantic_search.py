@@ -46,6 +46,8 @@ def make_record(**overrides):
         ({"kingdom": "Animalia", "class": "Mammalia"}, "mammal"),
         ({"kingdom": "Animalia", "class": "Actinopterygii"}, "fish"),
         ({"kingdom": "Animalia", "class": "Elasmobranchii"}, "fish"),
+        # GBIF's backbone leaves class empty for ray-finned fish
+        ({"kingdom": "Animalia", "phylum": "Chordata", "class": None, "order": "Salmoniformes"}, "fish"),
         ({"kingdom": "Animalia", "class": "Insecta", "order": "Lepidoptera", "family": "Nymphalidae"}, "butterfly"),
         ({"kingdom": "Animalia", "class": "Insecta", "order": "Lepidoptera", "family": "Sphingidae"}, "moth"),
         ({"kingdom": "Animalia", "class": "Insecta", "order": "Hymenoptera", "family": "Apidae"}, "bee"),
@@ -98,6 +100,24 @@ def test_common_name_title_comparison_ignores_case():
 
 def test_common_name_is_none_when_no_source_has_one():
     assert derive_common_name("Foo bar", "Foo bar", []) == (None, None)
+
+
+@pytest.mark.parametrize("title", ["Atropa bella-donna", "Dryococelus", "Pulchriphyllium giganteum"])
+def test_common_name_treats_scientific_looking_titles_as_not_a_common_name(title):
+    scientific = {"Atropa bella-donna": "Atropa belladonna", "Dryococelus": "Dryococelus australis",
+                  "Pulchriphyllium giganteum": "Phyllium giganteum"}[title]
+    name, source = derive_common_name(scientific, title, ["Some name"])
+    assert source == "gbif_vernacular"
+
+
+def test_common_name_picks_most_cited_gbif_vernacular():
+    names = ["Native Scots Pinewood", "Scots pine", "scots pine", "Scotch pine"]
+    assert derive_common_name("Pinus sylvestris", "Pinus sylvestris", names) == ("Scots pine", "gbif_vernacular")
+
+
+def test_common_name_splits_comma_separated_gbif_vernaculars():
+    names = ["Geography cone, Geographer cone", "Geographer cone"]
+    assert derive_common_name("Conus geographus", None, names)[0] == "Geographer cone"
 
 
 # ── select_balanced ─────────────────────────────────────────────────────
