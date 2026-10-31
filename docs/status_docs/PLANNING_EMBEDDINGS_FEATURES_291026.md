@@ -64,6 +64,8 @@ pretraining, not a training set for it.
 Offline only: embed ~200 extracts, run ~10 thematic test queries, manually judge
 precision@5. No production code, no API spend beyond the one-time embedding batch.
 
+**Run 31 Oct 2026** (100 species, 24 queries): hit@5 23/24, mean P@5 0.60, ~25ms/query warm; "something that flies" fails on a lexical "fly" pull. Full results, batch-cost estimate for ~106k species, and next steps: `semantic_search_experiment_report_311026.md`.
+
 ## Track B — Embedding-powered recommendations
 
 ### Problem

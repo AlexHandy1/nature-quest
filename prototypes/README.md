@@ -76,4 +76,12 @@ A separate track exploring whether a pre-aggregated local index, rebuilt monthly
   - Candidate-cell generation (bbox grid-sampling) is copied from `duckdb_parquet_prototype.py`, per the standalone-scripts convention — the one exception to that rule is the `app/backend/services` imports noted above, not this.
   - Common names/GBIF links and the polygon→cells geometry refinement were explicitly out of scope — species shown by scientific name only, fixed Retiro polygon only (no draw tool, already covered by §8).
 
+### 13. Semantic species search (Wikipedia embeddings, Track A)
+Offline validation of Track A in `docs/status_docs/PLANNING_EMBEDDINGS_FEATURES_291026.md` — can an off-the-shelf sentence encoder over Wikipedia extracts answer descriptive queries ("I want to see pollinators") that the LLM→taxonomy resolver can't? Results and the ~106k-species batch-cost estimate are in `docs/status_docs/semantic_search_experiment_report_311026.md`.
+- **`semantic_search_corpus.py`** — 159 hand-curated global candidates → GBIF match/global count/vernacular names + Wikipedia REST summary, every request timed → balanced 100-species selection across 18 taxon groups and 3 prevalence tiers. Hand trait tags are for judging only, never embedded.
+- **`semantic_search_index.py`** — `all-MiniLM-L6-v2` embeddings stored as a DuckDB `FLOAT[384]` column (`artifacts/semantic_search.duckdb`), searched with `array_cosine_similarity`. `server_semantic_search.py`/`semantic_search_experiment.py`/`semantic_search_ablation.py` import its search path (same thin-wrapper exception as `server.py`).
+- **`server_semantic_search.py`** + **`web/index_semantic_search.html`** — search-only UI reskinned from `ux/species_detail_*_prototype.html` (no map, no LLM).
+- **`semantic_search_experiment.py`** (latency + 24 scored query scenarios), **`semantic_search_ablation.py`** (embedded-text recipe), **`semantic_search_scale_probe.py`** (synthetic 106k-row DuckDB search cost), **`test_semantic_search.py`**.
+- Extra deps: `sentence-transformers`, `duckdb`, `numpy`, and CPU-only `torch` (`pip install torch --index-url https://download.pytorch.org/whl/cpu`).
+
 See `docs/status_docs/` for the full session-by-session history, current status, and open items behind these decisions.
