@@ -58,6 +58,9 @@ BUTTERFLY_FAMILIES = {
 FISH_CLASSES = {"Actinopterygii", "Elasmobranchii", "Chondrichthyes", "Sarcopterygii", "Coelacanthi",
                 "Holocephali", "Petromyzonti", "Myxini"}
 REPTILE_CLASSES = {"Reptilia", "Squamata", "Testudines", "Crocodylia", "Sphenodontia"}
+CRUSTACEAN_CLASSES = {"Malacostraca", "Branchiopoda"}
+BEE_FAMILIES = {"Apidae", "Megachilidae", "Andrenidae", "Halictidae", "Colletidae"}
+TIERS = ("common", "mid", "rare")
 
 # Trait tags (hand-assigned, used only for experiment relevance judgement):
 #   flies, swims, freshwater, marine, nocturnal, pollinator,
@@ -273,7 +276,7 @@ def classify_group(taxonomy: dict) -> str:
         return "amphibian"
     if cls == "Arachnida":
         return "arachnid"
-    if cls == "Malacostraca" or cls == "Branchiopoda":
+    if cls in CRUSTACEAN_CLASSES:
         return "crustacean"
     if phylum == "Mollusca":
         return "mollusc"
@@ -281,7 +284,7 @@ def classify_group(taxonomy: dict) -> str:
         if order == "Lepidoptera":
             return "butterfly" if family in BUTTERFLY_FAMILIES else "moth"
         if order == "Hymenoptera":
-            return "bee" if family in {"Apidae", "Megachilidae", "Andrenidae", "Halictidae", "Colletidae"} else "ant_wasp"
+            return "bee" if family in BEE_FAMILIES else "ant_wasp"
         if order == "Coleoptera":
             return "beetle"
         if order == "Odonata":
@@ -361,8 +364,7 @@ def _tier_interleaved(members: list[dict]) -> list[dict]:
     for member in members:
         by_tier.setdefault(member["tier"], []).append(member)
     ordered: list[dict] = []
-    tiers = [t for t in ("common", "mid", "rare") if t in by_tier] + \
-            [t for t in by_tier if t not in ("common", "mid", "rare")]
+    tiers = [t for t in TIERS if t in by_tier]
     while any(by_tier[t] for t in tiers):
         for tier in tiers:
             if by_tier[tier]:
@@ -471,8 +473,8 @@ def main() -> None:
     for r in selected:
         groups.setdefault(r["group"], []).append(r["tier"])
     for g, tiers in sorted(groups.items()):
-        print(f"  {g:14} {len(tiers):3}  " + ", ".join(f"{t}={tiers.count(t)}" for t in ("common", "mid", "rare")))
-    print("\nSelected by tier:", {t: sum(r["tier"] == t for r in selected) for t in ("common", "mid", "rare")})
+        print(f"  {g:14} {len(tiers):3}  " + ", ".join(f"{t}={tiers.count(t)}" for t in TIERS))
+    print("\nSelected by tier:", {t: sum(r["tier"] == t for r in selected) for t in TIERS})
     print("\nTiming summary (ms):")
     for stage, s in timing_summary.items():
         if isinstance(s, dict):
