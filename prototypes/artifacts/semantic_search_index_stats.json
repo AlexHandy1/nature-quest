@@ -1,0 +1,14 @@
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "species": 100,
+  "model_load_ms": 17717.324708999968,
+  "batch_encode_ms": 3599.595119000014,
+  "batch_ms_per_species": 35.99595119000014,
+  "single_encode_ms_per_species": 95.01667420000217,
+  "store_write_ms": 658.196758000031,
+  "token_count_mean": 98.13,
+  "token_count_max": 387,
+  "truncated_count": 1,
+  "max_seq_length": 256,
+  "cpu_threads": 8
+}

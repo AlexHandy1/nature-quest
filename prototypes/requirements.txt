@@ -5,3 +5,7 @@ python-dotenv
 pytest
 flask
 httpx
+sentence-transformers
+duckdb
+numpy
+# torch CPU wheel (much smaller than default CUDA build): pip install torch --index-url https://download.pytorch.org/whl/cpu

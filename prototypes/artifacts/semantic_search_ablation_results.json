@@ -1,0 +1,888 @@
+{
+  "summary": {
+    "name+extract": {
+      "hit_at_5": 23,
+      "mean_precision_at_5": 0.6
+    },
+    "extract_only": {
+      "hit_at_5": 22,
+      "mean_precision_at_5": 0.6
+    },
+    "name_only": {
+      "hit_at_5": 20,
+      "mean_precision_at_5": 0.43333333333333335
+    }
+  },
+  "detail": {
+    "name+extract": [
+      {
+        "id": "flies_birds",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Spanish Fly",
+          "Fly Agaric",
+          "Housefly",
+          "Emperor dragonfly",
+          "Red Admiral"
+        ]
+      },
+      {
+        "id": "swims_fish",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red Admiral",
+          "Blue mussel",
+          "Short-snouted seahorse",
+          "West Indian Ocean coelacanth",
+          "Common chameleon"
+        ]
+      },
+      {
+        "id": "camo_wings_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red Admiral",
+          "Monarch butterfly",
+          "Asian hornet",
+          "Emperor dragonfly",
+          "Housefly"
+        ]
+      },
+      {
+        "id": "pollinators",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Red Mason Bee",
+          "Buff-tailed Bumblebee",
+          "Monarch butterfly",
+          "Franklin's bumblebee",
+          "Leaf-cutter ant"
+        ]
+      },
+      {
+        "id": "flying_animals",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Housefly",
+          "Fly Agaric",
+          "Queen Alexandra's birdwing",
+          "Spanish Fly",
+          "Emperor dragonfly"
+        ]
+      },
+      {
+        "id": "aquatic_animals",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "West Indian Ocean coelacanth",
+          "Short-snouted seahorse",
+          "Swamp lymnaea",
+          "Brown trout",
+          "White-clawed crayfish"
+        ]
+      },
+      {
+        "id": "camo_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Monarch butterfly",
+          "Red Admiral",
+          "Queen Alexandra's birdwing",
+          "Dead Leaf",
+          "Swallowtail"
+        ]
+      },
+      {
+        "id": "flowers_bees_visit",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Giant Leaf Insect",
+          "Common Dandelion",
+          "Buff-tailed Bumblebee",
+          "Queen Alexandra's birdwing",
+          "Glow-worm"
+        ]
+      },
+      {
+        "id": "pond",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Swamp lymnaea",
+          "Common frog",
+          "White-clawed crayfish",
+          "Common carp",
+          "Blue-tailed damselfly"
+        ]
+      },
+      {
+        "id": "night",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Glow-worm",
+          "Housefly",
+          "Kākāpō",
+          "Red fox",
+          "Swamp lymnaea"
+        ]
+      },
+      {
+        "id": "venomous",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Golden poison frog",
+          "Southern black widow",
+          "Adder",
+          "Death Cap",
+          "Common Pill Woodlouse"
+        ]
+      },
+      {
+        "id": "raptors",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Golden eagle",
+          "Hummingbird hawk-moth",
+          "Common blackbird",
+          "House sparrow",
+          "Red fox"
+        ]
+      },
+      {
+        "id": "trees",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Wellingtonia",
+          "Pedunculate Oak",
+          "Giant Leaf Insect",
+          "Leaf-cutter ant",
+          "Queen Alexandra's birdwing"
+        ]
+      },
+      {
+        "id": "endangered",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red fox",
+          "White-clawed crayfish",
+          "European badger",
+          "Golden poison frog",
+          "European hedgehog"
+        ]
+      },
+      {
+        "id": "ocean",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Blue mussel",
+          "West Indian Ocean coelacanth",
+          "Green sea turtle",
+          "Vaquita",
+          "Common octopus"
+        ]
+      },
+      {
+        "id": "shells",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "European hornet",
+          "Oyster Mushroom",
+          "Common toad",
+          "Blue mussel",
+          "White-clawed crayfish"
+        ]
+      },
+      {
+        "id": "predator",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red fox",
+          "Giant Leaf Insect",
+          "Asian hornet",
+          "Axolotl",
+          "Red Admiral"
+        ]
+      },
+      {
+        "id": "eight_legs",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Southern black widow",
+          "Common Pill Woodlouse",
+          "Tarantula wolf spider",
+          "Luna moth",
+          "Sevenspotted Lady Beetle"
+        ]
+      },
+      {
+        "id": "slimy",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Common Pill Woodlouse",
+          "Buff-tailed Bumblebee",
+          "Blue mussel",
+          "Southern black widow",
+          "Cep"
+        ]
+      },
+      {
+        "id": "colourful_birds",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Golden eagle",
+          "Common blackbird",
+          "Hummingbird hawk-moth",
+          "House sparrow",
+          "Red Admiral"
+        ]
+      },
+      {
+        "id": "bees",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Western honey bee",
+          "Red Mason Bee",
+          "Violet Carpenter Bee",
+          "Tawny mining bee",
+          "Buff-tailed Bumblebee"
+        ]
+      },
+      {
+        "id": "frogs",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Common toad",
+          "Common frog",
+          "Panamanian golden frog",
+          "Golden poison frog",
+          "Swamp lymnaea"
+        ]
+      },
+      {
+        "id": "mushrooms",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Oyster Mushroom",
+          "Fly Agaric",
+          "Cep",
+          "Death Cap",
+          "Common Pill Woodlouse"
+        ]
+      },
+      {
+        "id": "flowers",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Common Dandelion",
+          "Daisy",
+          "Arnold's rafflesia",
+          "Red Mason Bee",
+          "Red Admiral"
+        ]
+      }
+    ],
+    "extract_only": [
+      {
+        "id": "flies_birds",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Spanish Fly",
+          "Fly Agaric",
+          "Housefly",
+          "Red Admiral",
+          "Emperor dragonfly"
+        ]
+      },
+      {
+        "id": "swims_fish",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Red Admiral",
+          "Vaquita",
+          "West Indian Ocean coelacanth",
+          "Blue mussel",
+          "Common chameleon"
+        ]
+      },
+      {
+        "id": "camo_wings_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red Admiral",
+          "Monarch butterfly",
+          "Emperor dragonfly",
+          "Common darter",
+          "Asian hornet"
+        ]
+      },
+      {
+        "id": "pollinators",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Red Mason Bee",
+          "Buff-tailed Bumblebee",
+          "Leaf-cutter ant",
+          "Monarch butterfly",
+          "Franklin's bumblebee"
+        ]
+      },
+      {
+        "id": "flying_animals",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Housefly",
+          "Queen Alexandra's birdwing",
+          "Fly Agaric",
+          "Emperor dragonfly",
+          "Common darter"
+        ]
+      },
+      {
+        "id": "aquatic_animals",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "West Indian Ocean coelacanth",
+          "Short-snouted seahorse",
+          "Brown trout",
+          "Swamp lymnaea",
+          "Blue mussel"
+        ]
+      },
+      {
+        "id": "camo_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Monarch butterfly",
+          "Red Admiral",
+          "Queen Alexandra's birdwing",
+          "Dead Leaf",
+          "Peacock"
+        ]
+      },
+      {
+        "id": "flowers_bees_visit",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Giant Leaf Insect",
+          "Common Dandelion",
+          "Queen Alexandra's birdwing",
+          "Daisy",
+          "Glow-worm"
+        ]
+      },
+      {
+        "id": "pond",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Swamp lymnaea",
+          "Common frog",
+          "White-clawed crayfish",
+          "Common carp",
+          "Brown trout"
+        ]
+      },
+      {
+        "id": "night",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Housefly",
+          "Kākāpō",
+          "Glow-worm",
+          "Spanish Fly",
+          "Peppered moth"
+        ]
+      },
+      {
+        "id": "venomous",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Southern black widow",
+          "Golden poison frog",
+          "Adder",
+          "Death Cap",
+          "Common Pill Woodlouse"
+        ]
+      },
+      {
+        "id": "raptors",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Hummingbird hawk-moth",
+          "Golden eagle",
+          "Common blackbird",
+          "House sparrow",
+          "Rock dove"
+        ]
+      },
+      {
+        "id": "trees",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Wellingtonia",
+          "Pedunculate Oak",
+          "Giant Leaf Insect",
+          "Queen Alexandra's birdwing",
+          "Hercules beetle"
+        ]
+      },
+      {
+        "id": "endangered",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Red fox",
+          "European badger",
+          "White-clawed crayfish",
+          "Vaquita",
+          "West Indian Ocean coelacanth"
+        ]
+      },
+      {
+        "id": "ocean",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Blue mussel",
+          "Vaquita",
+          "Common octopus",
+          "Atlantic cod",
+          "Green sea turtle"
+        ]
+      },
+      {
+        "id": "shells",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "European hornet",
+          "Blue mussel",
+          "Common Lobster",
+          "Death's Head Hawkmoth",
+          "Oyster Mushroom"
+        ]
+      },
+      {
+        "id": "predator",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Red fox",
+          "Queen Alexandra's birdwing",
+          "Asian hornet",
+          "Axolotl",
+          "Komodo dragon"
+        ]
+      },
+      {
+        "id": "eight_legs",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Southern black widow",
+          "Tarantula wolf spider",
+          "European mantis",
+          "Common Pill Woodlouse",
+          "Queen Alexandra's birdwing"
+        ]
+      },
+      {
+        "id": "slimy",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Cep",
+          "Southern black widow",
+          "Buff-tailed Bumblebee",
+          "Common Pill Woodlouse",
+          "Oyster Mushroom"
+        ]
+      },
+      {
+        "id": "colourful_birds",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Golden eagle",
+          "Common blackbird",
+          "Hummingbird hawk-moth",
+          "House sparrow",
+          "Kākāpō"
+        ]
+      },
+      {
+        "id": "bees",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Western honey bee",
+          "Red Mason Bee",
+          "Tawny mining bee",
+          "Franklin's bumblebee",
+          "Violet Carpenter Bee"
+        ]
+      },
+      {
+        "id": "frogs",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Common toad",
+          "Common frog",
+          "Panamanian golden frog",
+          "Golden poison frog",
+          "Swamp lymnaea"
+        ]
+      },
+      {
+        "id": "mushrooms",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Oyster Mushroom",
+          "Cep",
+          "Fly Agaric",
+          "Death Cap",
+          "Common Pill Woodlouse"
+        ]
+      },
+      {
+        "id": "flowers",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Common Dandelion",
+          "Daisy",
+          "Arnold's rafflesia",
+          "Red Mason Bee",
+          "Red Admiral"
+        ]
+      }
+    ],
+    "name_only": [
+      {
+        "id": "flies_birds",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Fly Agaric",
+          "Housefly",
+          "Spanish Fly",
+          "Marmalade Hoverfly",
+          "Monarch butterfly"
+        ]
+      },
+      {
+        "id": "swims_fish",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Hercules beetle",
+          "Green sea turtle",
+          "Shore Crab",
+          "Swallowtail",
+          "Rock dove"
+        ]
+      },
+      {
+        "id": "camo_wings_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Asian hornet",
+          "Monarch butterfly",
+          "European hornet",
+          "Housefly",
+          "Hummingbird hawk-moth"
+        ]
+      },
+      {
+        "id": "pollinators",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Monarch butterfly",
+          "Blue-tailed damselfly",
+          "Emperor dragonfly",
+          "Arnold's rafflesia",
+          "Buff-tailed Bumblebee"
+        ]
+      },
+      {
+        "id": "flying_animals",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Fly Agaric",
+          "Monarch butterfly",
+          "Housefly",
+          "Hummingbird hawk-moth",
+          "Spanish Fly"
+        ]
+      },
+      {
+        "id": "aquatic_animals",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Short-snouted seahorse",
+          "Green sea turtle",
+          "White-clawed crayfish",
+          "Common starfish",
+          "Atlantic cod"
+        ]
+      },
+      {
+        "id": "camo_butterflies",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Monarch butterfly",
+          "Hummingbird hawk-moth",
+          "Wasp Spider",
+          "Housefly",
+          "Peppered moth"
+        ]
+      },
+      {
+        "id": "flowers_bees_visit",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Giant Leaf Insect",
+          "Sevenspotted Lady Beetle",
+          "Stag Beetle",
+          "Monarch butterfly",
+          "Wasp Spider"
+        ]
+      },
+      {
+        "id": "pond",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Tadpole Shrimp",
+          "Great diving beetle",
+          "Blue-tailed damselfly",
+          "Common frog",
+          "Brown trout"
+        ]
+      },
+      {
+        "id": "night",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Red fox",
+          "Glow-worm",
+          "Housefly",
+          "Blue-tailed damselfly",
+          "Northern House Mosquito"
+        ]
+      },
+      {
+        "id": "venomous",
+        "hit_at_5": true,
+        "precision_at_5": 0.6,
+        "top5": [
+          "Golden poison frog",
+          "Wasp Spider",
+          "Tarantula wolf spider",
+          "Common yellow scorpion",
+          "Stag Beetle"
+        ]
+      },
+      {
+        "id": "raptors",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Common blackbird",
+          "House sparrow",
+          "Hummingbird hawk-moth",
+          "Red fox",
+          "Monarch butterfly"
+        ]
+      },
+      {
+        "id": "trees",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Pedunculate Oak",
+          "Wellingtonia",
+          "Shore Crab",
+          "Dead Leaf",
+          "Red Mason Bee"
+        ]
+      },
+      {
+        "id": "endangered",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Monarch butterfly",
+          "European badger",
+          "Red squirrel",
+          "Panamanian golden frog",
+          "Red fox"
+        ]
+      },
+      {
+        "id": "ocean",
+        "hit_at_5": true,
+        "precision_at_5": 1.0,
+        "top5": [
+          "Shore Crab",
+          "Atlantic cod",
+          "West Indian Ocean coelacanth",
+          "Green sea turtle",
+          "Common octopus"
+        ]
+      },
+      {
+        "id": "shells",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "White-clawed crayfish",
+          "Oyster Mushroom",
+          "Brown garden snail",
+          "Tadpole Shrimp",
+          "European badger"
+        ]
+      },
+      {
+        "id": "predator",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Asian hornet",
+          "Red fox",
+          "Red squirrel",
+          "Housefly",
+          "Common Wall Lizard"
+        ]
+      },
+      {
+        "id": "eight_legs",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Tarantula wolf spider",
+          "Sevenspotted Lady Beetle",
+          "Luna moth",
+          "Hercules beetle",
+          "Stag Beetle"
+        ]
+      },
+      {
+        "id": "slimy",
+        "hit_at_5": false,
+        "precision_at_5": 0.0,
+        "top5": [
+          "Swallowtail",
+          "Rock dove",
+          "Hercules beetle",
+          "Buff-tailed Bumblebee",
+          "Oyster Mushroom"
+        ]
+      },
+      {
+        "id": "colourful_birds",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Common blackbird",
+          "Eurasian eagle-owl",
+          "House sparrow",
+          "Golden eagle",
+          "Red fox"
+        ]
+      },
+      {
+        "id": "bees",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Western honey bee",
+          "Violet Carpenter Bee",
+          "Red Mason Bee",
+          "Tawny mining bee",
+          "Luna moth"
+        ]
+      },
+      {
+        "id": "frogs",
+        "hit_at_5": true,
+        "precision_at_5": 0.8,
+        "top5": [
+          "Common frog",
+          "Common toad",
+          "Golden poison frog",
+          "Panamanian golden frog",
+          "Common Wall Lizard"
+        ]
+      },
+      {
+        "id": "mushrooms",
+        "hit_at_5": true,
+        "precision_at_5": 0.2,
+        "top5": [
+          "Oyster Mushroom",
+          "Shore Crab",
+          "Common toad",
+          "Common Pill Woodlouse",
+          "Kākāpō"
+        ]
+      },
+      {
+        "id": "flowers",
+        "hit_at_5": true,
+        "precision_at_5": 0.4,
+        "top5": [
+          "Daisy",
+          "Moon Jelly",
+          "Beadlet anemone",
+          "Common Dandelion",
+          "Luna moth"
+        ]
+      }
+    ]
+  }
+}

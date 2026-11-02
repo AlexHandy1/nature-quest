@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — prototypes/web/index_semantic_search.html
+Backed by server_semantic_search.py. Reskins the trail-guide design tokens,
+nav bar, pill buttons and accordion species rows from
+ux/species_detail_mobile_prototype.html / _desktop_prototype.html, with
+everything except semantic search dropped: no map, no area control, no LLM
+query, no narration. Free text → POST /search → top 5 species (from the
+100-species embedding index) with similarity score, group/prevalence chips
+and an expandable Wikipedia extract.
+
+Question this answers: does semantic species search return sensible species
+for descriptive queries, quickly enough to feel instant? Throwaway. Do not
+promote to production.
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — Semantic species search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --text: #5a4f3d;
+    --text-h: #2c2417;
+    --bg: #f7f1e1;
+    --border: #d9c9a3;
+    --surface: #ede2c9;
+    --accent: #3f6b4a;
+    --accent-hover: #345a3d;
+    --accent-text: #fbf7ec;
+    --error: #8b2a1d;
+    --display: 'Fraunces', Georgia, serif;
+    --sans: 'Work Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; background: var(--bg); font-family: var(--sans); color: var(--text); }
+
+  .nav {
+    position: sticky; top: 0; z-index: 10; height: 56px; padding: 0 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .nav__brand { font-family: var(--display); font-weight: 600; font-size: 17px; color: var(--text-h); white-space: nowrap; }
+  .count-badge {
+    font-size: 11px; font-weight: 600; color: var(--text-h); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-family: var(--display); font-weight: 600; font-size: 28px; color: var(--text-h); margin: 0 0 6px; }
+  .lede { margin: 0 0 20px; font-size: 14px; line-height: 1.5; }
+
+  .search {
+    display: flex; gap: 8px; background: #fffaf0; border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 6px 6px 18px; box-shadow: 0 4px 14px rgba(44,36,23,.08);
+  }
+  .search input {
+    flex: 1; min-width: 0; border: none; background: transparent; font: inherit; font-size: 15px;
+    color: var(--text-h); outline: none;
+  }
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; min-height: 40px;
+    border-radius: 999px; background: var(--accent); color: var(--accent-text);
+    font-family: var(--sans); font-weight: 600; font-size: 13.5px; border: none; cursor: pointer;
+  }
+  .pill-btn:hover { background: var(--accent-hover); }
+  .pill-btn:disabled { opacity: .6; cursor: wait; }
+  .pill-btn--ghost { background: var(--surface); color: var(--text-h); border: 1px solid var(--border); min-height: 32px; padding: 5px 12px; font-size: 12.5px; }
+  .pill-btn--ghost:hover { background: var(--border); }
+
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+
+  .status { margin: 18px 0 0; font-size: 13px; min-height: 18px; }
+  .status.error { color: var(--error); font-weight: 600; }
+
+  .results { margin-top: 10px; border: 1px solid var(--border); border-radius: 16px; background: #fffaf0; overflow: hidden; display: none; }
+  .results.visible { display: block; }
+  .results__header { padding: 14px 18px 8px; font-weight: 600; font-size: 13px; color: var(--text-h); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .results__timing { font-weight: 400; color: var(--text); font-size: 12px; }
+
+  .row {
+    all: unset; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
+    padding: 10px 18px; min-height: 60px; cursor: pointer; border-top: 1px solid var(--surface);
+  }
+  .row:hover { background: var(--bg); }
+  .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .row__rank {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12.5px; flex: 0 0 auto;
+  }
+  .row__thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: var(--surface); }
+  .row__name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .row__name b { font-size: 14px; color: var(--text-h); font-weight: 600; }
+  .sci-name { font-style: italic; color: var(--text); font-size: 12px; }
+  .row__score { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto; font-size: 11px; }
+  .bar { width: 64px; height: 5px; border-radius: 999px; background: var(--surface); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--accent); }
+  .row__chevron { font-size: 12px; transition: transform .15s ease; }
+  .row.expanded .row__chevron { transform: rotate(90deg); }
+
+  .detail { display: none; padding: 0 18px 16px 56px; font-size: 13px; line-height: 1.55; }
+  .row.expanded + .detail { display: block; }
+  .detail img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+  .detail a { color: var(--accent); font-weight: 600; }
+
+  .note { margin-top: 22px; font-size: 12px; line-height: 1.5; color: var(--text); }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 23px; }
+    .row__score .bar { display: none; }
+    .detail { padding-left: 18px; }
+  }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <span class="nav__brand">Nature Quest</span>
+  <span class="count-badge">Prototype · 100 species</span>
+</nav>
+<main>
+  <h1>What would you like to see?</h1>
+  <p class="lede">Describe it in your own words. We match your description against Wikipedia summaries of 100 species and show the 5 closest.</p>
+
+  <form class="search" id="search-form">
+    <input id="query" type="text" maxlength="200" autocomplete="off" placeholder='e.g. "I want to see pollinators"' aria-label="Describe what you want to see"/>
+    <button class="pill-btn" id="go" type="submit">Search</button>
+  </form>
+  <div class="examples" id="examples"></div>
+
+  <div class="status" id="status" role="status"></div>
+  <section class="results" id="results" aria-live="polite"></section>
+
+  <p class="note">Semantic search only: there's no map, no area filter and no LLM. Scores are cosine similarity between your query and each species' embedded summary (all-MiniLM-L6-v2).</p>
+</main>
+
+<script>
+const EXAMPLES = [
+  'I want to see pollinators', 'something that flies', 'something that swims',
+  'something with colourful wings that use camouflage', 'animals that might live in a pond',
+  'creatures that come out at night',
+];
+
+const examplesEl = document.getElementById('examples');
+EXAMPLES.forEach(text => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pill-btn pill-btn--ghost';
+  b.textContent = text;
+  b.onclick = () => { document.getElementById('query').value = text; runSearch(); };
+  examplesEl.appendChild(b);
+});
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else node.setAttribute(k, v);
+  });
+  children.forEach(c => node.appendChild(c));
+  return node;
+}
+
+const GROUP_LABELS = {
+  ant_wasp: 'ant / wasp', other_insect: 'other insect', other_animal: 'other animal',
+};
+
+function renderResults(data) {
+  const section = document.getElementById('results');
+  section.replaceChildren();
+  const t = data.timings_ms;
+  section.appendChild(el('div', { class: 'results__header' }, [
+    el('span', { text: `Top ${data.results.length} for “${data.query}”` }),
+    el('span', { class: 'results__timing', text: `embed ${t.embed.toFixed(0)}ms · search ${t.search.toFixed(1)}ms · round trip ${data.roundTripMs.toFixed(0)}ms` }),
+  ]));
+
+  data.results.forEach((r, i) => {
+    const thumb = r.image_url
+      ? el('img', { class: 'row__thumb', src: r.image_url, alt: '', loading: 'lazy' })
+      : el('div', { class: 'row__thumb' });
+    const pct = Math.max(0, Math.min(1, r.score)) * 100;
+    const row = el('button', { class: 'row', type: 'button', 'aria-expanded': 'false' }, [
+      el('span', { class: 'row__rank', text: String(i + 1) }),
+      thumb,
+      el('span', { class: 'row__name' }, [
+        el('b', { text: r.common_name }),
+        el('span', { class: 'sci-name', text: r.scientific_name }),
+      ]),
+      el('span', { class: 'row__score' }, [
+        el('span', { text: r.score.toFixed(3) }),
+        el('span', { class: 'bar' }, [el('span', { style: `width:${pct.toFixed(0)}%` })]),
+      ]),
+      el('span', { class: 'row__chevron', text: '▶' }),
+    ]);
+    const detailChildren = [];
+    if (r.image_url) detailChildren.push(el('img', { src: r.image_url, alt: r.common_name, loading: 'lazy' }));
+    detailChildren.push(el('div', { class: 'chips' }, [
+      el('span', { class: 'count-badge', text: GROUP_LABELS[r.group] || r.group }),
+      el('span', { class: 'count-badge', text: `${r.tier} · ${Number(r.occurrence_count).toLocaleString()} GBIF records` }),
+    ]));
+    detailChildren.push(el('p', { text: r.extract }));
+    if (r.wiki_url) detailChildren.push(el('a', { href: r.wiki_url, target: '_blank', rel: 'noopener', text: 'Read on Wikipedia →' }));
+    const detail = el('div', { class: 'detail' }, detailChildren);
+    row.onclick = () => {
+      const open = row.classList.toggle('expanded');
+      row.setAttribute('aria-expanded', String(open));
+    };
+    section.appendChild(row);
+    section.appendChild(detail);
+  });
+  section.classList.add('visible');
+}
+
+function setStatus(message, isError) {
+  const s = document.getElementById('status');
+  s.textContent = message;
+  s.classList.toggle('error', !!isError);
+}
+
+async function runSearch() {
+  const query = document.getElementById('query').value.trim();
+  if (!query) return;
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  setStatus('Searching…');
+  const t0 = performance.now();
+  try {
+    const resp = await fetch('/search', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      setStatus(data.message || 'Something went wrong.', true);
+      return;
+    }
+    data.roundTripMs = performance.now() - t0;
+    setStatus('');
+    renderResults(data);
+  } catch (err) {
+    setStatus('Could not reach the server: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('search-form').onsubmit = (e) => { e.preventDefault(); runSearch(); };
+</script>
+</body>
+</html>
