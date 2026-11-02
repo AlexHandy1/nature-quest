@@ -1,0 +1,14 @@
+{
+  "cold_start_ms": {
+    "import_ms": 754.1539809899405,
+    "model_load_ms": 236.0355129931122,
+    "first_query_ms": 4.439215001184493,
+    "total_ready_ms": 994.6287089842372
+  },
+  "batch_embed_ms": 4295.809591014404,
+  "per_species_ms": 42.95809591014404,
+  "warm_p50_ms": 2.0391209982335567,
+  "corpus_size": 100,
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "dim": 384
+}

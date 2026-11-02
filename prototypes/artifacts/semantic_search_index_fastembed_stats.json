@@ -1,0 +1,11 @@
+{
+  "model": "sentence-transformers/all-MiniLM-L6-v2",
+  "backend": "fastembed/onnxruntime",
+  "species": 100,
+  "model_load_ms": 976.472721027676,
+  "batch_embed_ms": 4860.208973987028,
+  "batch_ms_per_species": 48.60208973987028,
+  "single_embed_ms_per_species": 18.34318714973051,
+  "store_write_ms": 3842.093195009511,
+  "cpu_threads": 8
+}
