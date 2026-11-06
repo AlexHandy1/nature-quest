@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-11-06T14:00:02",
+  "min_occurrence_count": 1,
+  "title_dump_count": 19353576,
+  "sanity_check_hits": 100,
+  "sanity_check_total": 100,
+  "target_species_count": 917827,
+  "sci_name_match": 239247,
+  "common_name_match": 20387,
+  "either_match": 239880,
+  "hit_rate": 0.26135644298980093
+}

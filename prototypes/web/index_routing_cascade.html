@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<!--
+PROTOTYPE — prototypes/web/index_routing_cascade.html
+Backed by server_routing_cascade.py. Reskin of index_semantic_search.html
+with two additions that script didn't need: a branch indicator (LLM resolved
+vs semantic fallback vs no match) and the full per-stage latency breakdown,
+since the thing being tested here is the routing cascade itself, not just
+semantic search in isolation.
+
+Question this answers: does the LLM-first / semantic-fallback cascade
+produce sensible species lists, and how much does each stage cost, against a
+fixed real polygon (Retiro Park)? Throwaway. Do not promote to production.
+-->
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>PROTOTYPE — Routing cascade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=Work+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --text: #5a4f3d;
+    --text-h: #2c2417;
+    --bg: #f7f1e1;
+    --border: #d9c9a3;
+    --surface: #ede2c9;
+    --accent: #3f6b4a;
+    --accent-hover: #345a3d;
+    --accent-text: #fbf7ec;
+    --error: #8b2a1d;
+    --llm: #2c5f8a;
+    --semantic: #8a5a2c;
+    --display: 'Fraunces', Georgia, serif;
+    --sans: 'Work Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; min-height: 100%; background: var(--bg); font-family: var(--sans); color: var(--text); }
+
+  .nav {
+    position: sticky; top: 0; z-index: 10; height: 56px; padding: 0 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+  }
+  .nav__brand { font-family: var(--display); font-weight: 600; font-size: 17px; color: var(--text-h); white-space: nowrap; }
+  .count-badge {
+    font-size: 11px; font-weight: 600; color: var(--text-h); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  }
+
+  main { max-width: 680px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-family: var(--display); font-weight: 600; font-size: 28px; color: var(--text-h); margin: 0 0 6px; }
+  .lede { margin: 0 0 20px; font-size: 14px; line-height: 1.5; }
+
+  .search {
+    display: flex; gap: 8px; background: #fffaf0; border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 6px 6px 18px; box-shadow: 0 4px 14px rgba(44,36,23,.08);
+  }
+  .search input {
+    flex: 1; min-width: 0; border: none; background: transparent; font: inherit; font-size: 15px;
+    color: var(--text-h); outline: none;
+  }
+  .pill-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 18px; min-height: 40px;
+    border-radius: 999px; background: var(--accent); color: var(--accent-text);
+    font-family: var(--sans); font-weight: 600; font-size: 13.5px; border: none; cursor: pointer;
+  }
+  .pill-btn:hover { background: var(--accent-hover); }
+  .pill-btn:disabled { opacity: .6; cursor: wait; }
+  .pill-btn--ghost { background: var(--surface); color: var(--text-h); border: 1px solid var(--border); min-height: 32px; padding: 5px 12px; font-size: 12.5px; }
+  .pill-btn--ghost:hover { background: var(--border); }
+
+  .examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+
+  .status { margin: 18px 0 0; font-size: 13px; min-height: 18px; }
+  .status.error { color: var(--error); font-weight: 600; }
+
+  .branch {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 14px; padding: 5px 14px;
+    border-radius: 999px; font-size: 12px; font-weight: 600; color: var(--accent-text);
+  }
+  .branch--llm_resolved { background: var(--llm); }
+  .branch--semantic_fallback { background: var(--semantic); }
+  .branch--none { background: var(--error); }
+
+  .timings { margin: 8px 0 0; font-size: 11.5px; color: var(--text); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .timings span b { color: var(--text-h); }
+
+  .results { margin-top: 14px; border: 1px solid var(--border); border-radius: 16px; background: #fffaf0; overflow: hidden; display: none; }
+  .results.visible { display: block; }
+  .results__header { padding: 14px 18px 8px; font-weight: 600; font-size: 13px; color: var(--text-h); }
+
+  .row {
+    all: unset; display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
+    padding: 10px 18px; min-height: 60px; cursor: pointer; border-top: 1px solid var(--surface);
+  }
+  .row:hover { background: var(--bg); }
+  .row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .row__rank {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-text);
+    display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12.5px; flex: 0 0 auto;
+  }
+  .row__thumb { width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex: 0 0 auto; background: var(--surface); }
+  .row__name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .row__name b { font-size: 14px; color: var(--text-h); font-weight: 600; }
+  .sci-name { font-style: italic; color: var(--text); font-size: 12px; }
+  .row__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: 0 0 auto; font-size: 11px; }
+  .row__chevron { font-size: 12px; transition: transform .15s ease; margin-left: 8px; }
+  .row.expanded .row__chevron { transform: rotate(90deg); }
+
+  .detail { display: none; padding: 0 18px 16px 56px; font-size: 13px; line-height: 1.55; }
+  .row.expanded + .detail { display: block; }
+  .detail img { width: 100%; max-height: 200px; object-fit: cover; border-radius: 12px; margin-bottom: 10px; }
+  .detail a { color: var(--accent); font-weight: 600; }
+
+  .note { margin-top: 22px; font-size: 12px; line-height: 1.5; color: var(--text); }
+
+  @media (max-width: 480px) {
+    h1 { font-size: 23px; }
+    .detail { padding-left: 18px; }
+  }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <span class="nav__brand">Nature Quest</span>
+  <span class="count-badge">Prototype · routing cascade · Retiro Park (fixed)</span>
+</nav>
+<main>
+  <h1>What would you like to see?</h1>
+  <p class="lede">Every query goes to the real LLM taxon-resolver first. Only if it can't match a taxon does this fall back to semantic search over the 98-species embedding index, restricted to species actually present in Retiro Park.</p>
+
+  <form class="search" id="search-form">
+    <input id="query" type="text" maxlength="200" autocomplete="off" placeholder='e.g. "birds" or "something that flies"' aria-label="Describe what you want to see"/>
+    <button class="pill-btn" id="go" type="submit">Search</button>
+  </form>
+  <div class="examples" id="examples"></div>
+
+  <div class="status" id="status" role="status"></div>
+  <div id="branch-box"></div>
+  <section class="results" id="results" aria-live="polite"></section>
+
+  <p class="note">Branch colours: blue = LLM resolved a taxon (today's production path). Brown = LLM returned no taxon match, semantic fallback ran instead. Red = neither found anything in Retiro Park.</p>
+</main>
+
+<script>
+const EXAMPLES = [
+  'birds', 'turtles', 'I want to see pollinators', 'something that flies',
+  'something that swims', 'creatures that come out at night', 'birds and insects',
+];
+
+const examplesEl = document.getElementById('examples');
+EXAMPLES.forEach(text => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'pill-btn pill-btn--ghost';
+  b.textContent = text;
+  b.onclick = () => { document.getElementById('query').value = text; runQuery(); };
+  examplesEl.appendChild(b);
+});
+
+function el(tag, attrs = {}, children = []) {
+  const node = document.createElement(tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else node.setAttribute(k, v);
+  });
+  children.forEach(c => node.appendChild(c));
+  return node;
+}
+
+const BRANCH_LABELS = {
+  llm_resolved: 'LLM resolved a taxon',
+  semantic_fallback: 'Semantic fallback',
+};
+
+function renderBranch(data) {
+  const box = document.getElementById('branch-box');
+  box.replaceChildren();
+  const hasResults = data.species && data.species.length > 0;
+  const cls = hasResults ? data.branch : 'none';
+  const label = hasResults
+    ? BRANCH_LABELS[data.branch]
+    : (data.branch === 'llm_resolved' ? 'LLM resolved, but no species found here' : 'No taxon match and nothing found here');
+  box.appendChild(el('div', { class: `branch branch--${cls}`, text: label }));
+
+  if (data.branch === 'semantic_fallback') {
+    box.appendChild(el('div', { class: 'timings' }, [
+      el('span', {}, [document.createTextNode('candidates in polygon: '), el('b', { text: String(data.candidate_count) })]),
+    ]));
+  }
+
+  const t = data.timings_ms;
+  const stageLabels = Object.keys(t).filter(k => k !== 'total');
+  box.appendChild(el('div', { class: 'timings' }, [
+    ...stageLabels.map(k => el('span', {}, [document.createTextNode(k + ': '), el('b', { text: `${t[k].toFixed(0)}ms` })])),
+    el('span', {}, [document.createTextNode('total: '), el('b', { text: `${t.total.toFixed(0)}ms` })]),
+  ]));
+
+  if (data.taxon_filters && data.taxon_filters.length) {
+    box.appendChild(el('div', { class: 'timings' }, [
+      el('span', {}, [document.createTextNode('taxon filters: '), el('b', { text: data.taxon_filters.map(f => `${f.taxonRank}:${f.taxonValue}`).join(', ') })]),
+    ]));
+  }
+}
+
+function renderResults(data) {
+  const section = document.getElementById('results');
+  section.replaceChildren();
+  if (!data.species || data.species.length === 0) {
+    section.classList.remove('visible');
+    return;
+  }
+  section.appendChild(el('div', { class: 'results__header', text: `${data.species.length} species for "${data.query}"` }));
+
+  data.species.forEach((r, i) => {
+    const name = r.common_name || r.species || r.scientific_name;
+    const sci = r.scientific_name || r.species || '';
+    const thumb = r.image_url
+      ? el('img', { class: 'row__thumb', src: r.image_url, alt: '', loading: 'lazy' })
+      : el('div', { class: 'row__thumb' });
+    const metaChildren = [];
+    if (typeof r.score === 'number') metaChildren.push(el('span', { text: r.score.toFixed(3) }));
+    if (typeof r.occurrence_count === 'number') metaChildren.push(el('span', { text: `${r.occurrence_count.toLocaleString()} records` }));
+    const row = el('button', { class: 'row', type: 'button', 'aria-expanded': 'false' }, [
+      el('span', { class: 'row__rank', text: String(i + 1) }),
+      thumb,
+      el('span', { class: 'row__name' }, [
+        el('b', { text: name }),
+        el('span', { class: 'sci-name', text: sci }),
+      ]),
+      el('span', { class: 'row__meta' }, metaChildren),
+      el('span', { class: 'row__chevron', text: '▶' }),
+    ]);
+    const detailChildren = [];
+    if (r.image_url) detailChildren.push(el('img', { src: r.image_url, alt: name, loading: 'lazy' }));
+    if (r.extract) detailChildren.push(el('p', { text: r.extract }));
+    if (r.wiki_url) detailChildren.push(el('a', { href: r.wiki_url, target: '_blank', rel: 'noopener', text: 'Read on Wikipedia →' }));
+    const detail = el('div', { class: 'detail' }, detailChildren);
+    row.onclick = () => {
+      const open = row.classList.toggle('expanded');
+      row.setAttribute('aria-expanded', String(open));
+    };
+    section.appendChild(row);
+    section.appendChild(detail);
+  });
+  section.classList.add('visible');
+}
+
+function setStatus(message, isError) {
+  const s = document.getElementById('status');
+  s.textContent = message;
+  s.classList.toggle('error', !!isError);
+}
+
+async function runQuery() {
+  const query = document.getElementById('query').value.trim();
+  if (!query) return;
+  const btn = document.getElementById('go');
+  btn.disabled = true;
+  setStatus('Running LLM resolver…');
+  document.getElementById('branch-box').replaceChildren();
+  try {
+    const resp = await fetch('/query', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.status !== 'ok') {
+      setStatus(data.message || 'Something went wrong.', true);
+      return;
+    }
+    setStatus('');
+    renderBranch(data);
+    renderResults(data);
+  } catch (err) {
+    setStatus('Could not reach the server: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('search-form').onsubmit = (e) => { e.preventDefault(); runQuery(); };
+</script>
+</body>
+</html>
