@@ -82,6 +82,44 @@ Offline validation of Track A in `docs/status_docs/PLANNING_EMBEDDINGS_FEATURES_
 - **`semantic_search_index.py`** — `all-MiniLM-L6-v2` embeddings stored as a DuckDB `FLOAT[384]` column (`artifacts/semantic_search.duckdb`), searched with `array_cosine_similarity`. `server_semantic_search.py`/`semantic_search_experiment.py`/`semantic_search_ablation.py` import its search path (same thin-wrapper exception as `server.py`).
 - **`server_semantic_search.py`** + **`web/index_semantic_search.html`** — search-only UI reskinned from `ux/species_detail_*_prototype.html` (no map, no LLM).
 - **`semantic_search_experiment.py`** (latency + 24 scored query scenarios), **`semantic_search_ablation.py`** (embedded-text recipe), **`semantic_search_scale_probe.py`** (synthetic 106k-row DuckDB search cost), **`test_semantic_search.py`**.
-- Extra deps: `sentence-transformers`, `duckdb`, `numpy`, and CPU-only `torch` (`pip install torch --index-url https://download.pytorch.org/whl/cpu`).
+- **`semantic_search_index_fastembed.py`** / **`server_semantic_search_fastembed.py`** / **`semantic_search_fastembed_cold_start.py`** / **`server_semantic_search_fastembed_cold_start.py`** — fastembed/ONNX Runtime counterparts to the above (same corpus, same embedding-text recipe, same model), built to A/B cold-start cost against the sentence-transformers/torch versions. ~8-9x faster cold start in isolation, ~5-6x in a real Flask server process, no `torch` dependency, same quality/throughput — confirmed as the production model-loading approach. See `docs/status_docs/WORK_SUMMARY_021126.md`.
+- Extra deps: `sentence-transformers`, `duckdb`, `numpy`, `fastembed`, and CPU-only `torch` (`pip install torch --index-url https://download.pytorch.org/whl/cpu`) — `torch`/`sentence-transformers` are only needed for the original (non-fastembed) scripts above.
+
+### 14. Routing cascade (LLM-first, semantic fallback) and Wikipedia coverage check
+Prototypes the production routing decision for Track A: always call the existing LLM
+taxon-resolver first; fall back to cell-restricted semantic search only when it returns
+`taxonFilters: []`. Session and findings in `docs/status_docs/WORK_SUMMARY_061126.md`.
+- **`semantic_search_index_colxr.py`** — re-keys the 100-species corpus by Catalogue of
+  Life (COL XR) id instead of GBIF's numeric backbone `usageKey` (the id-space mismatch
+  documented in §12 above applies to this corpus too, and blocks the cell-restriction
+  join below if left unfixed). Resolves each species' COL XR id via a join on scientific
+  name against the production dimension table (98/100 resolved). Builds
+  `artifacts/semantic_search_colxr.duckdb`.
+- **`routing_cascade.py`** — the cascade logic: `resolve_species_for_query()` calls the
+  production LLM resolver first; only on an empty result does it run `species_in_cells()`
+  (new — every species present in the drawn polygon's cells, unfiltered by taxon, doesn't
+  exist in production) and `semantic_rank_in_cells()` (ranks only that cell-restricted
+  set — never a global top-k filtered down afterward). Returns branch taken, species, and
+  a per-stage latency breakdown.
+- **`server_routing_cascade.py`** + **`web/index_routing_cascade.html`** — Flask wrapper
+  (port 5059) + UI against the fixed Retiro polygon, showing which branch fired and the
+  latency breakdown per stage.
+- **`conftest.py`** + **`test_routing_cascade_eval.py`** — eval suite in the same shape as
+  `app/backend/tests/evals/*`, intended to be lifted there once the design is confirmed.
+  Real LLM/GBIF calls, no mocking: regression tests confirm the LLM-resolved branch is
+  unchanged from production; cascade tests confirm grounding to the polygon, descending
+  rank order, no fallback when a resolved taxon has zero local occurrences, and that
+  verified semantic species output matches expected GBIF classes.
+- **`wikipedia_coverage_check.py`** — the open unknown flagged in
+  `semantic_search_experiment_report_311026.md` §5 (Wikipedia hit rate on the long tail):
+  downloads `enwiki-latest-all-titles-in-ns0.gz` once (`scratch/`, gitignored, ~110MB,
+  ~19.4M titles) and does a fully local, offline title match against the full production
+  fact/dimension tables — no per-species API calls. Of 917,827 species with
+  `occurrence_count > 1`, ~26.1% (239,880) have a matching English Wikipedia title.
+  Writes `artifacts/wikipedia_coverage_match_manifest.parquet` — the real starter species
+  list for the production batch embedding job, replacing the earlier "106k vs 918k"
+  framing.
+- Extra deps: `openai` (OpenRouter client, same API shape), reuses `fastembed`/`duckdb`
+  from §13, `httpx` (already listed) for live GBIF verification in the eval suite.
 
 See `docs/status_docs/` for the full session-by-session history, current status, and open items behind these decisions.
