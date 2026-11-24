@@ -163,3 +163,105 @@ approach at ~1h instead of ~20h:
    generation script (`prototypes/scripts/wikipedia_coverage_check.py`) into
    `app/backend/jobs/`, per the user's explicit call to defer this since the
    existing prototype-generated manifest isn't a blocker for the fetch work.
+
+## Session 2 — 24 November 2026
+
+### What was explored / learnt
+
+- **Clarified the Action API's `prop=extracts` parameter contract**, since the
+  batched approach above uses it and its options weren't fully understood:
+  `exintro` is a scope switch (lead section only vs. whole article eligible);
+  `exsentences` (1–10) and `exchars` (max 1,200) are length caps applied
+  *within* whichever scope `exintro` selected — independent, composable knobs,
+  not alternatives to each other. `exlimit` caps how many titles' extracts
+  come back per request (confirmed 20 via `limits.extracts` in live
+  responses). `redirects` resolves redirects server-side, reporting the
+  mapping in a `redirects` array.
+- **Confirmed live that dropping `exintro` (to get full-article text) breaks
+  batching**, independent of any length cap: a batch of 3–4 titles requesting
+  full-article text (with or without `exchars=1200`/`exsentences=10`) returned
+  real content for only the first title large enough to fill the response
+  budget; the rest came back with empty extracts. This is the TextExtracts
+  extension's documented "exlimit lowered automatically for whole-article
+  requests" behaviour — the expensive step is rendering the full article
+  server-side, not the final truncated payload size, so a length cap alone
+  doesn't restore batching. Only `exintro=1` (restricting scope to the cheap
+  lead-section render) keeps batching intact.
+- **The REST endpoint (`/api/rest_v1/page/summary/{title}`) cannot batch at
+  all** — titles are part of the URL path (one resource per request), with no
+  parameter equivalent to the Action API's pipe-separated `titles=`. The
+  batching win is specific to the Action API.
+- **The original 31 Oct precision@5 validation (hit@5 23/24, mean P@5 0.60)
+  was built on REST `page/summary` text**, confirmed via
+  `semantic_search_corpus.py`'s own docstring and code
+  (`WIKIPEDIA_SUMMARY_URL = ".../rest_v1/page/summary"`, no parameters). The
+  production plan's chosen fetch method (Action API, `exintro=1`) returns
+  different — generally longer — text for the same species than what was
+  actually retrieval-tested, since the two services apply different
+  extraction logic even when both are nominally "the lead."
+- **Quantified the REST vs. Action-API text-length/truncation difference** on
+  real data: loaded the two existing PoC result files
+  (`wikipedia_batch_rate_limit_poc_results.json`,
+  `wikipedia_batch_action_api_poc_results.json` — same 1,000-species
+  stratified sample, same seed) and compared the 399 species present with a
+  successful extract in both. Used the real MiniLM tokenizer
+  (`sentence-transformers/all-MiniLM-L6-v2`'s cached `tokenizer.json`, loaded
+  directly via the `tokenizers` library with `no_truncation()` — bypassing
+  fastembed's `token_count()`/`TextEmbedding`, both of which silently cap
+  their reported count at 256 regardless of true length, confirmed via a
+  500+-word test string that still reported exactly 256).
+
+  | | mean chars | mean tokens | p95 tokens | max tokens | truncated @256 |
+  |---|---|---|---|---|---|
+  | REST `page/summary` | 230 | 130 | 128 | 268 | 1/399 (0.3%) |
+  | Action API `exintro=1` | 322 | 140 | 220 | 446 | 12/399 (3.0%) |
+
+  Action's intro text is 1.41x longer on average (char-length ratio), but the
+  median ratio is 1.00x — for half the sampled species, the two sources
+  return identical-length text (short stub articles where the lead is a
+  single paragraph either way); the difference is concentrated in species
+  with longer, multi-paragraph leads. Truncation at the model's 256-token
+  limit rises from negligible (0.3%) to modest (3.0%).
+
+### Decisions and trade-offs
+
+- **Decision: accept Action API (`exintro=1`) text as equivalent to the
+  REST-sourced text the 31 Oct precision@5 result was validated against,
+  without re-running that evaluation.** **Why:** the user judged the
+  confirmed length/truncation difference (1.41x mean chars, 3.0% vs. 0.3%
+  truncation) small enough not to warrant re-validation right now.
+  **Trade-off:** the production embeddings will be built on text that hasn't
+  itself been precision-tested — only its REST-sourced predecessor has. If
+  retrieval quality in production looks off, this swap is the first thing to
+  revisit.
+- **Decision: for species whose extract exceeds the model's 256-token limit
+  (confirmed 3.0% of a 399-species sample), do nothing special — let the
+  tokenizer's default truncation apply.** **Why:** lead paragraphs are
+  written summary-first, so truncation mostly drops later supporting detail,
+  not core thematic content; this matches what the already-validated 31 Oct
+  corpus did by default (no special truncation handling there either).
+  Chunking + mean-pooling multiple segments was considered and rejected for
+  this slice — real complexity (chunk splitting, multiple embed calls, a
+  pooling step) for a ~3% edge case, with a genuine risk of diluting the
+  retrieval signal (later article sections — taxonomy tables, distribution
+  lists, references — are more likely to add noise than help a thematic
+  query like "pollinators"). **Trade-off:** the ~3% of species with longer
+  leads lose their tail content from the embedding; accepted as low-stakes
+  given the above.
+- **Decision: store the full (untruncated) extract text in the production
+  fetch output, regardless of the 256-token embedding limit.** **Why:** keeps
+  the option open to revisit truncation handling (e.g. chunking, a different
+  model, bounding the fetch with `exsentences`) later without re-fetching from
+  Wikipedia. **Trade-off:** marginally more storage for the ~3% of species
+  whose full extract exceeds what the current model uses; judged negligible
+  at this scale.
+
+### Next steps (updated)
+
+Supersedes item 1 above with the now-confirmed fetch-text decision: the
+production fetch script (`app/backend/jobs/wikipedia_extracts_fetch.py`) should
+request `exintro=1&explaintext=1&exlimit=max&redirects=1` (no `exsentences`/
+`exchars` cap) and store the full returned extract text per species
+unmodified; truncation to 256 tokens happens only at embed time, via the
+embedding model's own default behaviour, with no custom truncation logic in
+the fetch or embed scripts for this slice.
