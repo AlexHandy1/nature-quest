@@ -1,12 +1,18 @@
 import itertools
 import time
 
+import duckdb
+
 from jobs.wikipedia_extracts_fetch import (
     RateLimiter,
     append_results,
+    chunk,
+    fetch_extracts_for_batch,
+    load_manifest,
     read_fetched_specieskeys,
     records_to_fetch,
     resolve_batch_response,
+    run,
 )
 
 
@@ -207,3 +213,224 @@ def test_rate_limiter_gives_every_concurrent_caller_a_distinct_non_overlapping_s
     slots.sort()
     gaps = [round(b - a, 6) for a, b in itertools.pairwise(slots)]
     assert all(gap >= round(limiter.min_interval, 6) for gap in gaps)
+
+
+# --- Batch fetch: combines a manifest batch with a fetch_fn's response -----
+
+
+def test_fetch_extracts_for_batch_attaches_the_extract_to_each_record_with_its_manifest_fields():
+    records = [
+        {
+            "specieskey": "SP1",
+            "species": "Turdus merula",
+            "common_name": "Common Blackbird",
+            "total_occurrence": 500,
+            "matched_title": "Turdus merula",
+        },
+    ]
+
+    def fake_fetch(titles):
+        return {"query": {"pages": {"1": {"title": "Turdus merula", "extract": "A common garden bird."}}}}
+
+    result = fetch_extracts_for_batch(records, fetch_fn=fake_fetch)
+
+    assert result == [
+        {
+            "specieskey": "SP1",
+            "species": "Turdus merula",
+            "common_name": "Common Blackbird",
+            "total_occurrence": 500,
+            "matched_title": "Turdus merula",
+            "status": "ok",
+            "extract": "A common garden bird.",
+        },
+    ]
+
+
+def test_fetch_extracts_for_batch_records_a_missing_page_with_a_null_extract():
+    records = [
+        {
+            "specieskey": "SP2",
+            "species": "Nonexistent Species",
+            "common_name": None,
+            "total_occurrence": 10,
+            "matched_title": "Nonexistent Species",
+        },
+    ]
+
+    def fake_fetch(titles):
+        return {"query": {"pages": {"-1": {"title": "Nonexistent Species", "missing": ""}}}}
+
+    result = fetch_extracts_for_batch(records, fetch_fn=fake_fetch)
+
+    assert result == [
+        {
+            "specieskey": "SP2",
+            "species": "Nonexistent Species",
+            "common_name": None,
+            "total_occurrence": 10,
+            "matched_title": "Nonexistent Species",
+            "status": "missing",
+            "extract": None,
+        },
+    ]
+
+
+def test_fetch_extracts_for_batch_resolves_every_record_in_a_mixed_batch_independently():
+    records = [
+        {"specieskey": "SP1", "species": "Turdus merula", "common_name": "Blackbird",
+         "total_occurrence": 500, "matched_title": "Turdus merula"},
+        {"specieskey": "SP2", "species": "Blue tit", "common_name": "Blue tit",
+         "total_occurrence": 300, "matched_title": "Blue tit"},
+    ]
+
+    def fake_fetch(titles):
+        return {
+            "query": {
+                "redirects": [{"from": "Blue tit", "to": "Eurasian blue tit"}],
+                "pages": {
+                    "1": {"title": "Turdus merula", "extract": "A common garden bird."},
+                    "2": {"title": "Eurasian blue tit", "extract": "A small, colourful passerine."},
+                },
+            }
+        }
+
+    result = fetch_extracts_for_batch(records, fetch_fn=fake_fetch)
+
+    by_key = {row["specieskey"]: row for row in result}
+    assert by_key["SP1"]["status"] == "ok"
+    assert by_key["SP1"]["extract"] == "A common garden bird."
+    assert by_key["SP2"]["status"] == "ok"
+    assert by_key["SP2"]["extract"] == "A small, colourful passerine."
+
+
+# --- Chunking and manifest loading ------------------------------------------
+
+
+def test_chunk_splits_into_groups_of_the_given_size():
+    result = chunk([1, 2, 3, 4, 5], size=2)
+
+    assert result == [[1, 2], [3, 4], [5]]
+
+
+def test_chunk_returns_a_single_group_when_items_fit_within_the_size():
+    result = chunk([1, 2], size=20)
+
+    assert result == [[1, 2]]
+
+
+def test_load_manifest_reads_the_expected_columns_from_a_parquet_file(tmp_path):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    con = duckdb.connect()
+    con.execute(f"""
+        COPY (
+            SELECT * FROM (VALUES
+                ('SP1', 'Turdus merula', 'Common Blackbird', 500, 'Turdus merula')
+            ) AS t(specieskey, species, common_name, total_occurrence, matched_title)
+        ) TO '{manifest_path}' (FORMAT PARQUET)
+    """)
+
+    result = load_manifest(manifest_path)
+
+    assert result == [
+        {
+            "specieskey": "SP1",
+            "species": "Turdus merula",
+            "common_name": "Common Blackbird",
+            "total_occurrence": 500,
+            "matched_title": "Turdus merula",
+        }
+    ]
+
+
+# --- Orchestration -----------------------------------------------------------
+
+
+def _write_manifest(path: str, rows: list[tuple]) -> None:
+    con = duckdb.connect()
+    values = ", ".join(
+        "(" + ", ".join(
+            "NULL" if v is None else f"'{v}'" if isinstance(v, str) else str(v) for v in row
+        ) + ")"
+        for row in rows
+    )
+    con.execute(f"""
+        COPY (
+            SELECT * FROM (VALUES {values})
+            AS t(specieskey, species, common_name, total_occurrence, matched_title)
+        ) TO '{path}' (FORMAT PARQUET)
+    """)
+
+
+def test_run_fetches_every_species_and_appends_results_to_the_output_file(tmp_path):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [
+        ("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula"),
+        ("SP2", "Parus caeruleus", "Blue tit", 300, "Blue tit"),
+    ])
+
+    def fake_fetch(titles):
+        return {
+            "query": {
+                "redirects": [{"from": "Blue tit", "to": "Eurasian blue tit"}],
+                "pages": {
+                    "1": {"title": "Turdus merula", "extract": "A common garden bird."},
+                    "2": {"title": "Eurasian blue tit", "extract": "A small, colourful passerine."},
+                },
+            }
+        }
+
+    summary = run(manifest_path, output_path, fetch_fn=fake_fetch, batch_size=20, max_workers=1,
+                   rate_limiter=RateLimiter(rate_per_min=1_000_000))
+
+    assert summary == {"total_species": 2, "already_fetched": 0, "fetched_this_run": 2, "ok": 2, "not_ok": 0}
+    assert read_fetched_specieskeys(output_path) == {"SP1", "SP2"}
+
+
+def test_run_skips_species_already_present_in_the_output_file_from_a_previous_run(tmp_path):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [
+        ("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula"),
+        ("SP2", "Parus caeruleus", "Blue tit", 300, "Blue tit"),
+    ])
+    append_results(output_path, [
+        {"specieskey": "SP1", "species": "Turdus merula", "common_name": "Common Blackbird",
+         "total_occurrence": 500, "matched_title": "Turdus merula", "status": "ok",
+         "extract": "A common garden bird."},
+    ])
+    fetch_calls = []
+
+    def fake_fetch(titles):
+        fetch_calls.append(titles)
+        return {"query": {"pages": {"1": {"title": "Blue tit", "extract": "A small, colourful passerine."}}}}
+
+    summary = run(manifest_path, output_path, fetch_fn=fake_fetch, batch_size=20, max_workers=1,
+                   rate_limiter=RateLimiter(rate_per_min=1_000_000))
+
+    assert summary == {"total_species": 2, "already_fetched": 1, "fetched_this_run": 1, "ok": 1, "not_ok": 0}
+    assert fetch_calls == [["Blue tit"]]
+    assert read_fetched_specieskeys(output_path) == {"SP1", "SP2"}
+
+
+def test_run_is_a_cheap_noop_when_every_species_is_already_fetched(tmp_path):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula")])
+    append_results(output_path, [
+        {"specieskey": "SP1", "species": "Turdus merula", "common_name": "Common Blackbird",
+         "total_occurrence": 500, "matched_title": "Turdus merula", "status": "ok",
+         "extract": "A common garden bird."},
+    ])
+    fetch_calls = []
+
+    def tracking_fetch(titles):
+        fetch_calls.append(titles)
+        return {"query": {"pages": {}}}
+
+    summary = run(manifest_path, output_path, fetch_fn=tracking_fetch, max_workers=1,
+                   rate_limiter=RateLimiter(rate_per_min=1_000_000))
+
+    assert summary == {"total_species": 1, "already_fetched": 1, "fetched_this_run": 0, "ok": 0, "not_ok": 0}
+    assert fetch_calls == []

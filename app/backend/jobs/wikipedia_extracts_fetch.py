@@ -17,10 +17,56 @@ specieskeys not already present - no chunk/offset tracking beyond that,
 since a full run is only expected to take ~1h.
 """
 
+import concurrent.futures
 import json
+import logging
 import os
+import sys
 import threading
 import time
+from collections.abc import Callable
+
+import duckdb
+import requests
+
+logger = logging.getLogger("wikipedia_extracts_fetch")
+
+MANIFEST_COLUMNS = ["specieskey", "species", "common_name", "total_occurrence", "matched_title"]
+BATCH_SIZE = 20  # confirmed server max for prop=extracts (limits.extracts in the response)
+TARGET_RATE_PER_MIN = 200  # Wikimedia's documented ceiling
+DEFAULT_MAX_WORKERS = 3
+ACTION_API_URL = "https://en.wikipedia.org/w/api.php"
+REQUEST_TIMEOUT = 30.0
+MAX_RETRIES = 1
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Duplicated from jobs/monthly_gbif_update.py rather than shared - each
+    job script is a separate, independently runnable process."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        reserved = set(logging.makeLogRecord({}).__dict__.keys())
+        payload = {"severity": record.levelname, "message": record.getMessage()}
+        payload.update({k: v for k, v in record.__dict__.items() if k not in reserved})
+        return json.dumps(payload)
+
+
+def configure_json_logging() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLogFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+
+def chunk(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def load_manifest(manifest_path: str) -> list[dict]:
+    con = duckdb.connect()
+    rows = con.execute(
+        f"SELECT {', '.join(MANIFEST_COLUMNS)} FROM read_parquet('{manifest_path}')"
+    ).fetchall()
+    return [dict(zip(MANIFEST_COLUMNS, row, strict=True)) for row in rows]
 
 
 class RateLimiter:
@@ -72,6 +118,20 @@ def append_results(output_path: str, rows: list[dict]) -> None:
             f.flush()
 
 
+def fetch_extracts_for_batch(records: list[dict], fetch_fn) -> list[dict]:
+    """Fetches extracts for one batch of manifest records (fetch_fn takes
+    the batch's titles and returns the raw Action API JSON) and attaches
+    each record's resolved status/extract to its own manifest fields."""
+    titles = [record["matched_title"] for record in records]
+    data = fetch_fn(titles)
+    resolved = resolve_batch_response(data, titles)
+    return [
+        {**record, "status": resolved[record["matched_title"]]["status"],
+         "extract": resolved[record["matched_title"]]["extract"]}
+        for record in records
+    ]
+
+
 def resolve_batch_response(data: dict, requested_titles: list[str]) -> dict[str, dict]:
     """Maps each originally-requested title to its final extract/status,
     following the normalized -> redirects -> pages chain the Action API
@@ -106,3 +166,103 @@ def resolve_batch_response(data: dict, requested_titles: list[str]) -> dict[str,
                 "final_title": final_title,
             }
     return resolved
+
+
+def _build_user_agent() -> str:
+    contact = os.environ.get("WIKIPEDIA_CONTACT_EMAIL")
+    return (
+        f"nature-quest/0.1 ({contact})"
+        if contact
+        else "nature-quest/0.1 (contact set via WIKIPEDIA_CONTACT_EMAIL env var)"
+    )
+
+
+def _default_action_api_fetch(titles: list[str]) -> dict:
+    """Real network call - validated in
+    prototypes/scripts/wikipedia_batch_action_api_poc.py (1,000/1,000 OK, 0
+    failures, 0 429s at this exact request shape/pacing). Not unit tested
+    directly, same as monthly_gbif_update.py's _default_checklistbank_fetch -
+    run() takes fetch_fn so tests inject a fake instead."""
+    params = {
+        "action": "query",
+        "prop": "extracts",
+        "exintro": "1",
+        "explaintext": "1",
+        "exlimit": "max",
+        "redirects": "1",
+        "format": "json",
+        "titles": "|".join(titles),
+    }
+    headers = {"User-Agent": _build_user_agent()}
+    response = None
+    for attempt in range(MAX_RETRIES + 1):
+        response = requests.get(ACTION_API_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 429 and attempt < MAX_RETRIES:
+            retry_after = response.headers.get("Retry-After")
+            time.sleep(float(retry_after) if retry_after else 5.0)
+            continue
+        break
+    assert response is not None
+    response.raise_for_status()
+    return response.json()
+
+
+def run(
+    manifest_path: str,
+    output_path: str,
+    fetch_fn: Callable[[list[str]], dict] = _default_action_api_fetch,
+    batch_size: int = BATCH_SIZE,
+    max_workers: int = DEFAULT_MAX_WORKERS,
+    rate_limiter: RateLimiter | None = None,
+) -> dict:
+    rate_limiter = rate_limiter or RateLimiter(TARGET_RATE_PER_MIN)
+    records = load_manifest(manifest_path)
+    already_fetched = read_fetched_specieskeys(output_path)
+    remaining = records_to_fetch(records, already_fetched)
+    batches = chunk(remaining, batch_size)
+    logger.info(
+        "wikipedia_extracts_fetch_starting",
+        extra={
+            "total_species": len(records),
+            "already_fetched": len(already_fetched),
+            "remaining": len(remaining),
+            "batches": len(batches),
+        },
+    )
+
+    def process_batch(batch: list[dict]) -> list[dict]:
+        rate_limiter.wait()
+        rows = fetch_extracts_for_batch(batch, fetch_fn=fetch_fn)
+        append_results(output_path, rows)
+        return rows
+
+    ok = 0
+    not_ok = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for rows in executor.map(process_batch, batches):
+            for row in rows:
+                if row["status"] == "ok":
+                    ok += 1
+                else:
+                    not_ok += 1
+
+    summary = {
+        "total_species": len(records),
+        "already_fetched": len(already_fetched),
+        "fetched_this_run": ok + not_ok,
+        "ok": ok,
+        "not_ok": not_ok,
+    }
+    logger.info("wikipedia_extracts_fetch_complete", extra=summary)
+    return summary
+
+
+def main() -> None:
+    configure_json_logging()
+    manifest_path = os.environ["WIKIPEDIA_EXTRACTS_MANIFEST_PATH"]
+    output_path = os.environ["WIKIPEDIA_EXTRACTS_OUTPUT_PATH"]
+    run(manifest_path, output_path)
+
+
+if __name__ == "__main__":
+    main()
