@@ -37,7 +37,8 @@ TARGET_RATE_PER_MIN = 200  # Wikimedia's documented ceiling
 DEFAULT_MAX_WORKERS = 3
 ACTION_API_URL = "https://en.wikipedia.org/w/api.php"
 REQUEST_TIMEOUT = 30.0
-MAX_RETRIES = 1
+MAX_RETRIES = 2
+RETRY_BACKOFF_SECONDS = 5.0
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -182,7 +183,13 @@ def _default_action_api_fetch(titles: list[str]) -> dict:
     prototypes/scripts/wikipedia_batch_action_api_poc.py (1,000/1,000 OK, 0
     failures, 0 429s at this exact request shape/pacing). Not unit tested
     directly, same as monthly_gbif_update.py's _default_checklistbank_fetch -
-    run() takes fetch_fn so tests inject a fake instead."""
+    run() takes fetch_fn so tests inject a fake instead.
+
+    Retries on both 429 (honouring Retry-After) and transient network
+    errors (timeouts, connection resets) - a real ~1h run against a real
+    network hits occasional ReadTimeouts that have nothing to do with rate
+    limiting; a first production run crashed the whole job on one such
+    timeout with no retry at all (see WORK_SUMMARY_261126.md)."""
     params = {
         "action": "query",
         "prop": "extracts",
@@ -194,17 +201,24 @@ def _default_action_api_fetch(titles: list[str]) -> dict:
         "titles": "|".join(titles),
     }
     headers = {"User-Agent": _build_user_agent()}
-    response = None
+    last_exception: requests.exceptions.RequestException | None = None
     for attempt in range(MAX_RETRIES + 1):
-        response = requests.get(ACTION_API_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        try:
+            response = requests.get(ACTION_API_URL, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        except requests.exceptions.RequestException as exc:
+            last_exception = exc
+            if attempt < MAX_RETRIES:
+                time.sleep(RETRY_BACKOFF_SECONDS)
+                continue
+            raise
         if response.status_code == 429 and attempt < MAX_RETRIES:
             retry_after = response.headers.get("Retry-After")
             time.sleep(float(retry_after) if retry_after else 5.0)
             continue
-        break
-    assert response is not None
-    response.raise_for_status()
-    return response.json()
+        response.raise_for_status()
+        return response.json()
+    assert last_exception is not None
+    raise last_exception
 
 
 def check_output_consistency(manifest_specieskeys: set[str], output_path: str) -> dict:
@@ -212,9 +226,13 @@ def check_output_consistency(manifest_specieskeys: set[str], output_path: str) -
     compares its actual row/distinct-specieskey counts against the
     manifest's total - the final confirmation that what's really on disk
     matches the ~243k-species target, not just what this run's own
-    bookkeeping believed it wrote."""
-    with open(output_path) as f:
-        row_count = sum(1 for line in f if line.strip())
+    bookkeeping believed it wrote. Handles output_path not existing yet -
+    e.g. every batch in a run failed before append_results ever created it."""
+    if not os.path.exists(output_path):
+        row_count = 0
+    else:
+        with open(output_path) as f:
+            row_count = sum(1 for line in f if line.strip())
     output_specieskeys = read_fetched_specieskeys(output_path)
     return {
         "manifest_species": len(manifest_specieskeys),
@@ -255,7 +273,18 @@ def run(
 
     def process_batch(batch: list[dict]) -> list[dict]:
         rate_limiter.wait()
-        rows = fetch_extracts_for_batch(batch, fetch_fn=fetch_fn)
+        try:
+            rows = fetch_extracts_for_batch(batch, fetch_fn=fetch_fn)
+        except Exception:
+            # A batch that still fails after fetch_fn's own retries must
+            # not crash the whole ~1h run - skip it (nothing appended, so
+            # read_fetched_specieskeys won't see these as fetched) and let
+            # a restart's records_to_fetch pick it back up.
+            logger.exception(
+                "wikipedia_extracts_fetch_batch_failed",
+                extra={"batch_specieskeys": [record["specieskey"] for record in batch]},
+            )
+            return []
         append_results(output_path, rows)
         return rows
 

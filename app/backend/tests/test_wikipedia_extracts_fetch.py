@@ -485,3 +485,53 @@ def test_run_logs_a_consistency_check_against_the_real_output_file(tmp_path, cap
     assert len(consistency_records) == 1
     assert consistency_records[0].output_covers_manifest is True
     assert consistency_records[0].manifest_species == 1
+
+
+# --- Resilience: one failing batch must not crash the whole run ------------
+
+
+def test_run_skips_a_batch_that_raises_and_continues_processing_the_rest(tmp_path, caplog):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [
+        ("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula"),
+        ("SP2", "Parus caeruleus", "Blue tit", 300, "Blue tit"),
+    ])
+
+    def flaky_fetch(titles):
+        if titles == ["Turdus merula"]:
+            raise ConnectionError("simulated transient network failure")
+        return {"query": {"pages": {"1": {"title": "Blue tit", "extract": "A small, colourful passerine."}}}}
+
+    with caplog.at_level("ERROR"):
+        summary = run(manifest_path, output_path, fetch_fn=flaky_fetch, batch_size=1, max_workers=1,
+                       rate_limiter=RateLimiter(rate_per_min=1_000_000))
+
+    assert summary == {"total_species": 2, "already_fetched": 0, "fetched_this_run": 1, "ok": 1, "not_ok": 0}
+    assert read_fetched_specieskeys(output_path) == {"SP2"}
+    failure_records = [r for r in caplog.records if r.message == "wikipedia_extracts_fetch_batch_failed"]
+    assert len(failure_records) == 1
+    assert failure_records[0].batch_specieskeys == ["SP1"]
+
+
+def test_run_can_resume_and_complete_a_species_that_failed_on_a_previous_attempt(tmp_path):
+    # Exercises the real restart path end to end: a first run skips SP1 (its
+    # batch raises), then a second run against the same output_path picks
+    # SP1 back up because it's still missing from the file.
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula")])
+
+    def failing_fetch(titles):
+        raise ConnectionError("simulated transient network failure")
+
+    def succeeding_fetch(titles):
+        return {"query": {"pages": {"1": {"title": "Turdus merula", "extract": "A common garden bird."}}}}
+
+    run(manifest_path, output_path, fetch_fn=failing_fetch, max_workers=1,
+        rate_limiter=RateLimiter(rate_per_min=1_000_000))
+    assert read_fetched_specieskeys(output_path) == set()
+
+    run(manifest_path, output_path, fetch_fn=succeeding_fetch, max_workers=1,
+        rate_limiter=RateLimiter(rate_per_min=1_000_000))
+    assert read_fetched_specieskeys(output_path) == {"SP1"}
