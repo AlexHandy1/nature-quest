@@ -19,6 +19,37 @@ since a full run is only expected to take ~1h.
 
 import json
 import os
+import threading
+import time
+
+
+class RateLimiter:
+    """Thread-safe pacing to at most rate_per_min calls/minute, shared across
+    a ThreadPoolExecutor's workers - each wait() call blocks until its own
+    slot arrives, so concurrent callers still land at the paced interval
+    rather than bursting."""
+
+    def __init__(self, rate_per_min: int):
+        self.min_interval = 60.0 / rate_per_min
+        self._lock = threading.Lock()
+        self._next_slot = time.perf_counter()
+
+    def wait(self) -> None:
+        slot = self._reserve_slot()
+        delay = slot - time.perf_counter()
+        if delay > 0:
+            time.sleep(delay)
+
+    def _reserve_slot(self) -> float:
+        """Allocates and returns this caller's own absolute slot time
+        (perf_counter units) - split out from wait() so tests can verify
+        slot allocation is race-free without depending on real sleep timing
+        across threads."""
+        with self._lock:
+            now = time.perf_counter()
+            start = max(now, self._next_slot)
+            self._next_slot = start + self.min_interval
+        return start
 
 
 def records_to_fetch(records: list[dict], already_fetched: set[str]) -> list[dict]:

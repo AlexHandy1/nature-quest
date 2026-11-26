@@ -1,4 +1,8 @@
+import itertools
+import time
+
 from jobs.wikipedia_extracts_fetch import (
+    RateLimiter,
     append_results,
     read_fetched_specieskeys,
     records_to_fetch,
@@ -170,3 +174,36 @@ def test_append_results_is_flushed_immediately_so_a_crash_mid_batch_keeps_earlie
     with open(output_path) as f:
         lines = f.readlines()
     assert len(lines) == 1
+
+
+# --- Rate limiting: stay under Wikimedia's documented requests/min ceiling --
+
+
+def test_rate_limiter_enforces_the_minimum_interval_between_consecutive_waits():
+    # A high rate (6000/min = one slot every 10ms) keeps this test fast while
+    # still exercising real pacing behaviour, not a mocked clock.
+    limiter = RateLimiter(rate_per_min=6000)
+
+    limiter.wait()
+    start = time.perf_counter()
+    limiter.wait()
+    elapsed = time.perf_counter() - start
+
+    assert elapsed >= 0.01 * 0.9  # small tolerance for scheduling jitter
+
+
+def test_rate_limiter_gives_every_concurrent_caller_a_distinct_non_overlapping_slot():
+    # Correctness here is "every thread gets its own slot, none shared or
+    # skipped" (the lock around _next_slot) - checked via each thread's own
+    # reserved delay, not real wall-clock gaps (which is inherently flaky
+    # under OS thread scheduling jitter).
+    import concurrent.futures
+
+    limiter = RateLimiter(rate_per_min=6000)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        slots = list(executor.map(lambda _: limiter._reserve_slot(), range(10)))
+
+    slots.sort()
+    gaps = [round(b - a, 6) for a, b in itertools.pairwise(slots)]
+    assert all(gap >= round(limiter.min_interval, 6) for gap in gaps)
