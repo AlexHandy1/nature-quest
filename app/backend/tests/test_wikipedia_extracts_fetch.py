@@ -6,6 +6,7 @@ import duckdb
 from jobs.wikipedia_extracts_fetch import (
     RateLimiter,
     append_results,
+    check_output_consistency,
     chunk,
     fetch_extracts_for_batch,
     load_manifest,
@@ -434,3 +435,53 @@ def test_run_is_a_cheap_noop_when_every_species_is_already_fetched(tmp_path):
 
     assert summary == {"total_species": 1, "already_fetched": 1, "fetched_this_run": 0, "ok": 0, "not_ok": 0}
     assert fetch_calls == []
+
+
+# --- Consistency check: actual output file vs. manifest target -------------
+
+
+def test_check_output_consistency_confirms_output_covers_the_full_manifest(tmp_path):
+    output_path = str(tmp_path / "extracts.jsonl")
+    append_results(output_path, [
+        {"specieskey": "SP1", "status": "ok", "extract": "A common garden bird."},
+        {"specieskey": "SP2", "status": "missing", "extract": None},
+    ])
+
+    result = check_output_consistency({"SP1", "SP2"}, output_path)
+
+    assert result == {
+        "manifest_species": 2,
+        "output_row_count": 2,
+        "output_distinct_specieskeys": 2,
+        "rows_match_distinct_keys": True,
+        "output_covers_manifest": True,
+    }
+
+
+def test_check_output_consistency_flags_when_output_is_missing_manifest_species(tmp_path):
+    output_path = str(tmp_path / "extracts.jsonl")
+    append_results(output_path, [{"specieskey": "SP1", "status": "ok", "extract": "A common garden bird."}])
+
+    result = check_output_consistency({"SP1", "SP2"}, output_path)
+
+    assert result["output_covers_manifest"] is False
+    assert result["output_distinct_specieskeys"] == 1
+    assert result["manifest_species"] == 2
+
+
+def test_run_logs_a_consistency_check_against_the_real_output_file(tmp_path, caplog):
+    manifest_path = str(tmp_path / "manifest.parquet")
+    output_path = str(tmp_path / "extracts.jsonl")
+    _write_manifest(manifest_path, [("SP1", "Turdus merula", "Common Blackbird", 500, "Turdus merula")])
+
+    def fake_fetch(titles):
+        return {"query": {"pages": {"1": {"title": "Turdus merula", "extract": "A common garden bird."}}}}
+
+    with caplog.at_level("INFO"):
+        run(manifest_path, output_path, fetch_fn=fake_fetch, max_workers=1,
+            rate_limiter=RateLimiter(rate_per_min=1_000_000))
+
+    consistency_records = [r for r in caplog.records if r.message == "wikipedia_extracts_fetch_consistency_check"]
+    assert len(consistency_records) == 1
+    assert consistency_records[0].output_covers_manifest is True
+    assert consistency_records[0].manifest_species == 1

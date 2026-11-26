@@ -3,6 +3,7 @@ import pytest
 
 from jobs.wikipedia_embed_extracts import (
     build_embedding_text,
+    check_output_consistency,
     embed_records,
     read_fetch_results,
     rows_to_embed,
@@ -126,3 +127,68 @@ def test_run_reads_fetch_output_embeds_ok_rows_and_writes_the_embeddings_parquet
     con = duckdb.connect()
     result = con.execute(f"SELECT specieskey FROM read_parquet('{embeddings_output_path}')").fetchall()
     assert result == [("SP1",)]
+
+
+# --- Consistency check: actual output file vs. embeddable target -----------
+
+
+def test_check_output_consistency_confirms_output_matches_the_embeddable_species(tmp_path):
+    path = str(tmp_path / "embeddings.parquet")
+    write_embeddings_parquet([{"specieskey": "SP1", "embedding": [0.1, 0.2]}], path, dim=2)
+
+    result = check_output_consistency({"SP1"}, path)
+
+    assert result == {
+        "embeddable_species": 1,
+        "output_row_count": 1,
+        "output_distinct_specieskeys": 1,
+        "rows_match_distinct_keys": True,
+        "output_matches_embeddable": True,
+    }
+
+
+def test_check_output_consistency_flags_when_output_is_missing_an_embeddable_species(tmp_path):
+    path = str(tmp_path / "embeddings.parquet")
+    write_embeddings_parquet([{"specieskey": "SP1", "embedding": [0.1, 0.2]}], path, dim=2)
+
+    result = check_output_consistency({"SP1", "SP2"}, path)
+
+    assert result["output_matches_embeddable"] is False
+    assert result["embeddable_species"] == 2
+
+
+def test_run_logs_a_consistency_check_against_the_real_output_file(caplog, tmp_path):
+    fetch_output_path = str(tmp_path / "extracts.jsonl")
+    embeddings_output_path = str(tmp_path / "embeddings.parquet")
+    with open(fetch_output_path, "w") as f:
+        f.write('{"specieskey": "SP1", "species": "Turdus merula", "common_name": "Common Blackbird", '
+                '"status": "ok", "extract": "A common garden bird."}\n')
+
+    def fake_embed_fn(texts):
+        return [[1.0, 2.0] for _ in texts]
+
+    with caplog.at_level("INFO"):
+        run(fetch_output_path, embeddings_output_path, embed_fn=fake_embed_fn, dim=2)
+
+    consistency_records = [r for r in caplog.records if r.message == "wikipedia_embed_extracts_consistency_check"]
+    assert len(consistency_records) == 1
+    assert consistency_records[0].output_matches_embeddable is True
+    assert consistency_records[0].embeddable_species == 1
+
+
+def test_run_processes_embeddable_species_in_chunks_logging_progress_per_chunk(caplog, tmp_path):
+    fetch_output_path = str(tmp_path / "extracts.jsonl")
+    embeddings_output_path = str(tmp_path / "embeddings.parquet")
+    with open(fetch_output_path, "w") as f:
+        f.writelines(f'{{"specieskey": "SP{i}", "species": "Species {i}", "common_name": null, '
+                     f'"status": "ok", "extract": "An extract."}}\n' for i in range(5))
+
+    def fake_embed_fn(texts):
+        return [[1.0, 2.0] for _ in texts]
+
+    with caplog.at_level("INFO"):
+        run(fetch_output_path, embeddings_output_path, embed_fn=fake_embed_fn, dim=2, chunk_size=2)
+
+    progress_records = [r for r in caplog.records if r.message == "wikipedia_embed_extracts_progress"]
+    assert len(progress_records) == 3  # chunks of 2, 2, 1
+    assert [r.species_embedded for r in progress_records] == [2, 4, 5]

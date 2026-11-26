@@ -207,6 +207,24 @@ def _default_action_api_fetch(titles: list[str]) -> dict:
     return response.json()
 
 
+def check_output_consistency(manifest_specieskeys: set[str], output_path: str) -> dict:
+    """Reads output_path back from disk (not in-memory run() counters) and
+    compares its actual row/distinct-specieskey counts against the
+    manifest's total - the final confirmation that what's really on disk
+    matches the ~243k-species target, not just what this run's own
+    bookkeeping believed it wrote."""
+    with open(output_path) as f:
+        row_count = sum(1 for line in f if line.strip())
+    output_specieskeys = read_fetched_specieskeys(output_path)
+    return {
+        "manifest_species": len(manifest_specieskeys),
+        "output_row_count": row_count,
+        "output_distinct_specieskeys": len(output_specieskeys),
+        "rows_match_distinct_keys": row_count == len(output_specieskeys),
+        "output_covers_manifest": output_specieskeys == manifest_specieskeys,
+    }
+
+
 def run(
     manifest_path: str,
     output_path: str,
@@ -229,6 +247,11 @@ def run(
             "batches": len(batches),
         },
     )
+    print(
+        f"Starting fetch: {len(records)} total species, {len(already_fetched)} already fetched, "
+        f"{len(remaining)} remaining in {len(batches)} batches",
+        flush=True,
+    )
 
     def process_batch(batch: list[dict]) -> list[dict]:
         rate_limiter.wait()
@@ -238,13 +261,32 @@ def run(
 
     ok = 0
     not_ok = 0
+    batches_done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         for rows in executor.map(process_batch, batches):
+            batches_done += 1
             for row in rows:
                 if row["status"] == "ok":
                     ok += 1
                 else:
                     not_ok += 1
+            species_done = len(already_fetched) + ok + not_ok
+            percent_complete = round(species_done / len(records) * 100, 1) if records else 0.0
+            logger.info(
+                "wikipedia_extracts_fetch_progress",
+                extra={
+                    "batches_done": batches_done,
+                    "total_batches": len(batches),
+                    "species_done": species_done,
+                    "total_species": len(records),
+                    "percent_complete": percent_complete,
+                },
+            )
+            print(
+                f"[batch {batches_done}/{len(batches)}] species fetched: "
+                f"{species_done}/{len(records)} ({percent_complete}%)",
+                flush=True,
+            )
 
     summary = {
         "total_species": len(records),
@@ -254,6 +296,18 @@ def run(
         "not_ok": not_ok,
     }
     logger.info("wikipedia_extracts_fetch_complete", extra=summary)
+
+    manifest_specieskeys = {record["specieskey"] for record in records}
+    consistency = check_output_consistency(manifest_specieskeys, output_path)
+    logger.info("wikipedia_extracts_fetch_consistency_check", extra=consistency)
+    print(
+        f"Consistency check: {consistency['output_row_count']} output rows, "
+        f"{consistency['output_distinct_specieskeys']} distinct specieskeys, "
+        f"manifest target {consistency['manifest_species']} "
+        f"(covers manifest: {consistency['output_covers_manifest']})",
+        flush=True,
+    )
+
     return summary
 
 

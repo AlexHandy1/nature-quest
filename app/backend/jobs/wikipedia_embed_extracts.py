@@ -19,6 +19,11 @@ logger = logging.getLogger("wikipedia_embed_extracts")
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 DIM = 384
+EMBED_CHUNK_SIZE = 2000  # progress-visibility granularity, not a model batching limit
+
+
+def chunk(items: list, size: int) -> list[list]:
+    return [items[i:i + size] for i in range(0, len(items), size)]
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -75,31 +80,78 @@ def write_embeddings_parquet(rows: list[dict], output_path: str, dim: int = DIM)
     """)
 
 
-def _default_embed_fn(texts: list[str]) -> list[list[float]]:
-    """Real fastembed/ONNX call - validated in
-    prototypes/scripts/semantic_search_index_fastembed.py. Not unit tested
-    directly (loads/downloads a real model); run() takes embed_fn so tests
-    inject a fake instead."""
+def _build_default_embed_fn() -> Callable[[list[str]], list[list[float]]]:
+    """Loads the real fastembed/ONNX model once (validated in
+    prototypes/scripts/semantic_search_index_fastembed.py) and returns a
+    closure reusing it across every chunk - not unit tested directly
+    (downloads/loads a real model); run() takes embed_fn so tests inject a
+    fake instead."""
     from fastembed import TextEmbedding
 
     model = TextEmbedding(model_name=MODEL_NAME)
-    return [vector.tolist() for vector in model.embed(texts)]
+
+    def embed_fn(texts: list[str]) -> list[list[float]]:
+        return [vector.tolist() for vector in model.embed(texts)]
+
+    return embed_fn
+
+
+def check_output_consistency(embeddable_specieskeys: set[str], output_path: str) -> dict:
+    """Reads output_path back from disk (not in-memory run() counters) and
+    compares its actual row/distinct-specieskey counts against the species
+    that were actually eligible to embed."""
+    con = duckdb.connect()
+    row_count = con.execute(f"SELECT count(*) FROM read_parquet('{output_path}')").fetchone()[0]  # type: ignore[index]
+    distinct_rows = con.execute(
+        f"SELECT DISTINCT specieskey FROM read_parquet('{output_path}')"
+    ).fetchall()
+    output_specieskeys = {row[0] for row in distinct_rows}
+    return {
+        "embeddable_species": len(embeddable_specieskeys),
+        "output_row_count": row_count,
+        "output_distinct_specieskeys": len(output_specieskeys),
+        "rows_match_distinct_keys": row_count == len(output_specieskeys),
+        "output_matches_embeddable": output_specieskeys == embeddable_specieskeys,
+    }
 
 
 def run(
     fetch_output_path: str,
     embeddings_output_path: str,
-    embed_fn: Callable[[list[str]], list[list[float]]] = _default_embed_fn,
+    embed_fn: Callable[[list[str]], list[list[float]]] | None = None,
     dim: int = DIM,
+    chunk_size: int = EMBED_CHUNK_SIZE,
 ) -> dict:
+    embed_fn = embed_fn or _build_default_embed_fn()
     fetch_results = read_fetch_results(fetch_output_path)
     embeddable = rows_to_embed(fetch_results)
     logger.info(
         "wikipedia_embed_extracts_starting",
         extra={"total_fetched": len(fetch_results), "embeddable": len(embeddable)},
     )
+    print(f"Starting embed: {len(embeddable)}/{len(fetch_results)} species have a usable extract", flush=True)
 
-    embedded_rows = embed_records(embeddable, embed_fn=embed_fn)
+    chunks = chunk(embeddable, chunk_size)
+    embedded_rows: list[dict] = []
+    for i, batch in enumerate(chunks, start=1):
+        embedded_rows.extend(embed_records(batch, embed_fn=embed_fn))
+        percent_complete = round(len(embedded_rows) / len(embeddable) * 100, 1) if embeddable else 0.0
+        logger.info(
+            "wikipedia_embed_extracts_progress",
+            extra={
+                "chunks_done": i,
+                "total_chunks": len(chunks),
+                "species_embedded": len(embedded_rows),
+                "total_embeddable": len(embeddable),
+                "percent_complete": percent_complete,
+            },
+        )
+        print(
+            f"[chunk {i}/{len(chunks)}] species embedded: "
+            f"{len(embedded_rows)}/{len(embeddable)} ({percent_complete}%)",
+            flush=True,
+        )
+
     write_embeddings_parquet(embedded_rows, embeddings_output_path, dim=dim)
 
     summary = {
@@ -108,6 +160,18 @@ def run(
         "skipped": len(fetch_results) - len(embedded_rows),
     }
     logger.info("wikipedia_embed_extracts_complete", extra=summary)
+
+    embeddable_specieskeys = {record["specieskey"] for record in embeddable}
+    consistency = check_output_consistency(embeddable_specieskeys, embeddings_output_path)
+    logger.info("wikipedia_embed_extracts_consistency_check", extra=consistency)
+    print(
+        f"Consistency check: {consistency['output_row_count']} output rows, "
+        f"{consistency['output_distinct_specieskeys']} distinct specieskeys, "
+        f"embeddable target {consistency['embeddable_species']} "
+        f"(matches embeddable: {consistency['output_matches_embeddable']})",
+        flush=True,
+    )
+
     return summary
 
 
