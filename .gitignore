@@ -17,3 +17,5 @@ node_modules/
 .vite/
 app/backend/jobs/wikipedia_pipeline_output/*
 !app/backend/jobs/wikipedia_pipeline_output/.gitkeep
+app/backend/jobs/logs/*
+!app/backend/jobs/logs/.gitkeep
