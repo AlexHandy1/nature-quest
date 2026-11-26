@@ -15,3 +15,5 @@ prototypes/osm_sample*.json
 **/tests/.security_review_output/
 node_modules/
 .vite/
+app/backend/jobs/wikipedia_pipeline_output/*
+!app/backend/jobs/wikipedia_pipeline_output/.gitkeep
