@@ -5,9 +5,13 @@ from jobs.wikipedia_embed_extracts import (
     build_embedding_text,
     check_output_consistency,
     embed_records,
+    merge_chunks_to_final,
+    read_embedded_specieskeys,
     read_fetch_results,
+    records_to_embed,
     rows_to_embed,
     run,
+    write_chunk_parquet,
     write_embeddings_parquet,
 )
 
@@ -106,6 +110,73 @@ def test_write_embeddings_parquet_writes_rows_that_can_be_read_back(tmp_path):
     assert vectors[1] == pytest.approx([0.4, 0.5, 0.6])
 
 
+# --- Chunk checkpointing ------------------------------------------------------
+
+
+def test_write_chunk_parquet_writes_a_new_file_into_the_chunk_dir(tmp_path):
+    chunk_dir = str(tmp_path / "chunks")
+    rows = [{"specieskey": "SP1", "embedding": [0.1, 0.2]}]
+
+    write_chunk_parquet(rows, chunk_dir, dim=2)
+
+    con = duckdb.connect()
+    result = con.execute(f"SELECT specieskey FROM read_parquet('{chunk_dir}/*.parquet')").fetchall()
+    assert result == [("SP1",)]
+
+
+def test_write_chunk_parquet_does_not_collide_with_an_existing_chunk_file(tmp_path):
+    chunk_dir = str(tmp_path / "chunks")
+
+    write_chunk_parquet([{"specieskey": "SP1", "embedding": [0.1, 0.2]}], chunk_dir, dim=2)
+    write_chunk_parquet([{"specieskey": "SP2", "embedding": [0.3, 0.4]}], chunk_dir, dim=2)
+
+    con = duckdb.connect()
+    result = con.execute(f"SELECT specieskey FROM read_parquet('{chunk_dir}/*.parquet') ORDER BY specieskey").fetchall()
+    assert result == [("SP1",), ("SP2",)]
+
+
+def test_read_embedded_specieskeys_reads_keys_across_all_chunk_files(tmp_path):
+    chunk_dir = str(tmp_path / "chunks")
+    write_chunk_parquet([{"specieskey": "SP1", "embedding": [0.1, 0.2]}], chunk_dir, dim=2)
+    write_chunk_parquet([{"specieskey": "SP2", "embedding": [0.3, 0.4]}], chunk_dir, dim=2)
+
+    result = read_embedded_specieskeys(chunk_dir)
+
+    assert result == {"SP1", "SP2"}
+
+
+def test_read_embedded_specieskeys_returns_empty_set_when_chunk_dir_does_not_exist(tmp_path):
+    chunk_dir = str(tmp_path / "does_not_exist")
+
+    result = read_embedded_specieskeys(chunk_dir)
+
+    assert result == set()
+
+
+def test_records_to_embed_excludes_already_embedded_specieskeys():
+    embeddable = [
+        {"specieskey": "SP1", "status": "ok", "extract": "A."},
+        {"specieskey": "SP2", "status": "ok", "extract": "B."},
+    ]
+
+    result = records_to_embed(embeddable, already_embedded={"SP1"})
+
+    assert result == [{"specieskey": "SP2", "status": "ok", "extract": "B."}]
+
+
+def test_merge_chunks_to_final_combines_every_chunk_file_into_one_output(tmp_path):
+    chunk_dir = str(tmp_path / "chunks")
+    final_path = str(tmp_path / "embeddings.parquet")
+    write_chunk_parquet([{"specieskey": "SP1", "embedding": [0.1, 0.2]}], chunk_dir, dim=2)
+    write_chunk_parquet([{"specieskey": "SP2", "embedding": [0.3, 0.4]}], chunk_dir, dim=2)
+
+    merge_chunks_to_final(chunk_dir, final_path, dim=2)
+
+    con = duckdb.connect()
+    result = con.execute(f"SELECT specieskey FROM read_parquet('{final_path}') ORDER BY specieskey").fetchall()
+    assert result == [("SP1",), ("SP2",)]
+
+
 # --- Orchestration -----------------------------------------------------------
 
 
@@ -130,6 +201,33 @@ def test_run_reads_fetch_output_embeds_ok_rows_and_writes_the_embeddings_parquet
 
 
 # --- Consistency check: actual output file vs. embeddable target -----------
+
+
+def test_run_resumes_by_skipping_specieskeys_already_checkpointed_in_chunk_dir(tmp_path):
+    fetch_output_path = str(tmp_path / "extracts.jsonl")
+    embeddings_output_path = str(tmp_path / "embeddings.parquet")
+    chunk_dir = str(tmp_path / "embeddings.parquet.chunks")
+    with open(fetch_output_path, "w") as f:
+        f.write('{"specieskey": "SP1", "species": "Turdus merula", "common_name": null, '
+                '"status": "ok", "extract": "A common garden bird."}\n')
+        f.write('{"specieskey": "SP2", "species": "Parus caeruleus", "common_name": null, '
+                '"status": "ok", "extract": "A small, colourful passerine."}\n')
+    write_chunk_parquet([{"specieskey": "SP1", "embedding": [9.0, 9.0]}], chunk_dir, dim=2)
+
+    calls = []
+
+    def fake_embed_fn(texts):
+        calls.append(list(texts))
+        return [[1.0, 2.0] for _ in texts]
+
+    summary = run(fetch_output_path, embeddings_output_path, embed_fn=fake_embed_fn, dim=2)
+
+    # only SP2 was actually sent to the embed_fn - SP1 was skipped as already checkpointed
+    assert calls == [["Parus caeruleus: A small, colourful passerine."]]
+    con = duckdb.connect()
+    result = con.execute(f"SELECT specieskey, embedding FROM read_parquet('{embeddings_output_path}') ORDER BY specieskey").fetchall()
+    assert result == [("SP1", [9.0, 9.0]), ("SP2", [1.0, 2.0])]
+    assert summary == {"total_fetched": 2, "embedded": 2, "skipped": 0}
 
 
 def test_check_output_consistency_confirms_output_matches_the_embeddable_species(tmp_path):
